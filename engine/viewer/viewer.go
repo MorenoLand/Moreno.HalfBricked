@@ -96,16 +96,19 @@ func (v *Viewer) Update() {
 func (v *Viewer) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{16, 18, 22, 255})
 	tileSize := v.tileSize()
-	for _, kind := range formats.RenderLayerKinds {
+	for _, kind := range formats.BaseRenderLayerKinds {
 		if v.Layers[kind] {
 			v.drawLayer(screen, kind, tileSize)
 		}
 	}
-	if v.Layers[formats.LayerC] {
-		v.drawCollision(screen, tileSize)
-	}
 	if v.Props {
 		v.drawProps(screen)
+	}
+	if v.Layers[formats.LayerH] {
+		v.drawLayer(screen, formats.LayerH, tileSize)
+	}
+	if v.Layers[formats.LayerC] {
+		v.drawCollision(screen, tileSize)
 	}
 	if v.Grid {
 		v.drawGrid(screen, tileSize)
