@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"log"
+	"math"
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
@@ -246,9 +247,24 @@ func (a *app) drawDetails(screen *ebiten.Image) {
 		return
 	}
 	item := levels[a.level]
+	if item.PostcardImage != "" {
+		a.drawLevelCard(screen, item)
+	}
 	a.text(screen, item.ID, 324, 104, .5)
 	a.text(screen, fmt.Sprintf("WORLD %d", item.WorldIndex+1), 324, 124, .5)
 	a.text(screen, strings.ReplaceAll(item.Description, "\n", " / "), 324, 156, .5)
+}
+func (a *app) drawLevelCard(screen *ebiten.Image, item formats.LevelInfo) {
+	image, err := a.Texture("ShopFront0/Textures/Shop/" + item.PostcardImage + "_SD")
+	if err != nil {
+		return
+	}
+	bounds := image.Bounds()
+	scale := math.Min(136/float64(bounds.Dx()), 82/float64(bounds.Dy()))
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Scale(scale, scale)
+	options.GeoM.Translate(316+(136-float64(bounds.Dx())*scale)/2, 180+(82-float64(bounds.Dy())*scale)/2)
+	screen.DrawImage(image, options)
 }
 func (a *app) drawBackdrop(screen *ebiten.Image) {
 	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {

@@ -17,13 +17,14 @@ var RenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD, LayerH}
 var BaseRenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
 
 type LevelInfo struct {
-	ID          string   `json:"id"`
-	DisplayName string   `json:"displayName"`
-	BaseFile    string   `json:"baseFile"`
-	WorldIndex  int      `json:"worldIndex"`
-	Flags       []string `json:"flags"`
-	Description string   `json:"description"`
-	SourceXML   string   `json:"sourceXML"`
+	ID            string   `json:"id"`
+	DisplayName   string   `json:"displayName"`
+	BaseFile      string   `json:"baseFile"`
+	WorldIndex    int      `json:"worldIndex"`
+	Flags         []string `json:"flags"`
+	Description   string   `json:"description"`
+	PostcardImage string   `json:"postcardImage"`
+	SourceXML     string   `json:"sourceXML"`
 }
 
 type Level struct {
