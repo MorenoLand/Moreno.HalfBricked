@@ -141,8 +141,8 @@ func (a *app) Update() error {
 		return a.activate()
 	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		_, y := a.pointer()
-		index := (y - 96) / 28
+		_, py := a.pointer()
+		index := (py - 96) / 28
 		if index >= 0 && index < len(a.items()) {
 			a.setCursor(index)
 			return a.activate()
@@ -158,6 +158,11 @@ func (a *app) Update() error {
 	return nil
 }
 func (a *app) Draw(screen *ebiten.Image) {
+	// Hide the OS cursor during play so the red reticule crosshair shows instead.
+	ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	if a.play != nil && !a.mobile {
+		ebiten.SetCursorMode(ebiten.CursorModeHidden)
+	}
 	if a.canvas == nil {
 		a.canvas = ebiten.NewImage(logicalWidth, logicalHeight)
 	}
@@ -209,10 +214,29 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	for i, item := range items {
 		y := 96 + i*28
 		a.drawMenuButton(screen, 34, float64(y), i == a.cursor())
-		a.text(screen, item, 48, float64(y), .5)
+		if a.page == 0 && i < len(mainMenuLabelRows) {
+			a.drawMenuLabel(screen, mainMenuLabelRows[i], 34, float64(y))
+		} else {
+			a.text(screen, item, 48, float64(y), .5)
+		}
 	}
 	a.drawDetails(screen)
 }
+
+var mainMenuLabelRows = []int{0, 3, 4, 7, 5}
+
+func (a *app) drawMenuLabel(screen *ebiten.Image, row int, x, y float64) {
+	texture, err := a.Texture("Common0/Textures/Button_Text_SD")
+	if err != nil || row < 0 || row*16+16 > texture.Bounds().Dy() {
+		return
+	}
+	source := texture.SubImage(image.Rect(0, row*16, texture.Bounds().Dx(), row*16+16)).(*ebiten.Image)
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Scale(.5, .5)
+	options.GeoM.Translate(x, y)
+	screen.DrawImage(source, options)
+}
+
 func (a *app) drawMenuButton(screen *ebiten.Image, x, y float64, selected bool) {
 	texture, err := a.Texture("Common0/Textures/Button_Screen")
 	if err != nil {
@@ -223,7 +247,7 @@ func (a *app) drawMenuButton(screen *ebiten.Image, x, y float64, selected bool) 
 		frame = 1
 	}
 	source := texture.SubImage(image.Rect(0, frame*64, 128, (frame+1)*64)).(*ebiten.Image)
-	options := &ebiten.DrawImageOptions{}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Scale(.25, .25)
 	options.GeoM.Translate(x, y)
 	screen.DrawImage(source, options)
@@ -411,6 +435,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	}
 	const scale = 1.0
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
+		a.drawBarryShadow(target, screenX, screenY, scale)
 		a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
@@ -418,6 +443,9 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		a.drawBullets(target)
 	})
 	a.drawPlayControls(screen)
+	if !a.mobile {
+		a.drawReticule(screen)
+	}
 	if a.play.paused {
 		ebitenutil.DrawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 		a.text(screen, "PAUSED", 195, 115, 1.0)
@@ -522,6 +550,34 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	}
 	options.GeoM.Translate(x, y)
 	screen.DrawImage(source, options)
+}
+func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
+	texture, err := a.Texture("Common0/Textures/shadow_SD")
+	if err != nil {
+		return
+	}
+	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+	// Draw an elliptical shadow at Barry's feet: scale narrower vertically, slightly below center.
+	const shadowScaleX = 0.45
+	const shadowScaleY = 0.20
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-w/2, -h/2)
+	options.GeoM.Scale(shadowScaleX*scale, shadowScaleY*scale)
+	options.GeoM.Translate(x, y+14*scale)
+	options.ColorScale.ScaleAlpha(0.55)
+	screen.DrawImage(texture, options)
+}
+func (a *app) drawReticule(screen *ebiten.Image) {
+	texture, err := a.Texture("Common0/Textures/Reticule_SD")
+	if err != nil {
+		return
+	}
+	px, py := a.pointer()
+	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Scale(2, 2)
+	options.GeoM.Translate(float64(px)-w, float64(py)-h)
+	screen.DrawImage(texture, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
 	if a.mobile {
