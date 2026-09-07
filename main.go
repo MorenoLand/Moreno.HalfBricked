@@ -47,13 +47,16 @@ const logicalWidth = 480
 const logicalHeight = 320
 
 type playState struct {
-	world    *viewer.Viewer
-	x, y     float64
-	time     float64
-	moving   bool
-	angle    int
-	tileSize int
-	radius   float64
+	world                                                *viewer.Viewer
+	x, y                                                 float64
+	time                                                 float64
+	moving                                               bool
+	angle                                                int
+	tileSize                                             int
+	radius                                               float64
+	stick                                                int
+	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY     float64
+	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY float64
 }
 
 const playerBaseSpeed = 180.0
@@ -93,7 +96,8 @@ func (a *app) Update() error {
 			a.play = nil
 			return nil
 		}
-		a.play.Update()
+		x, y := a.pointer()
+		a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
 		return nil
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
@@ -363,8 +367,16 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	}
 }
 func (a *app) drawBarryMenu(screen *ebiten.Image) {
-	frame := int(a.menuTime*8) % 4
-	a.drawBarry(screen, 416, 256, 2, frame, 2)
+	image, err := a.Texture("Frontend0/Textures/Barry")
+	if err != nil {
+		return
+	}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
+	options.GeoM.Scale(.25, .25)
+	options.GeoM.Rotate(math.Sin(a.menuTime*2.2) * .015)
+	options.GeoM.Translate(416+math.Sin(a.menuTime*1.7), 256+math.Sin(a.menuTime*2.2)*1.5)
+	screen.DrawImage(image, options)
 }
 func (a *app) drawPlay(screen *ebiten.Image) {
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
@@ -374,6 +386,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		frame = int(a.play.time*10) % 4
 	}
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) { a.drawBarry(target, screenX, screenY, 1, frame, a.play.angle) })
+	a.drawPlayControls(screen)
 }
 func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int) {
 	a.drawBarryPart(screen, "Common0/Textures/Characters/barryidle_SD", x, y, scale, frame, angle)
@@ -396,6 +409,28 @@ func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float
 	options.GeoM.Scale(scale, scale)
 	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
 	screen.DrawImage(source, options)
+}
+func (a *app) drawPlayControls(screen *ebiten.Image) {
+	if a.play.stick == 1 {
+		a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
+	}
+	if a.play.stick == 2 {
+		a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", a.play.rightBaseX, a.play.rightBaseY, a.play.rightDeflectX, a.play.rightDeflectY)
+	}
+}
+func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflectX, deflectY float64) {
+	if image, err := a.Texture("Common0/Textures/Analog_Back_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(baseX-float64(image.Bounds().Dx())*.25, baseY-float64(image.Bounds().Dy())*.25)
+		screen.DrawImage(image, options)
+	}
+	if image, err := a.Texture(name); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(baseX+deflectX*32-float64(image.Bounds().Dx())*.25, baseY+deflectY*32-float64(image.Bounds().Dy())*.25)
+		screen.DrawImage(image, options)
+	}
 }
 func cropSplash(source image.Image) image.Image {
 	bounds := source.Bounds()
@@ -537,7 +572,7 @@ func spawnPosition(level formats.Level, tileSize int) (float64, float64) {
 	}
 	return float64(level.Width*tileSize) / 2, float64(level.Height*tileSize) / 2
 }
-func (p *playState) Update() {
+func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPressed bool) {
 	tileSize := p.tileSize
 	if tileSize <= 0 {
 		tileSize = 32
@@ -545,6 +580,24 @@ func (p *playState) Update() {
 	radius := p.radius
 	if radius <= 0 {
 		radius = playerCollisionRadius
+	}
+	if !pointerDown {
+		p.stick = 0
+		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
+	} else if p.stick == 0 && pointerJustPressed {
+		if pointerX < logicalWidth/2 {
+			p.stick = 1
+			p.leftBaseX, p.leftBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
+		} else {
+			p.stick = 2
+			p.rightBaseX, p.rightBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
+		}
+	}
+	if pointerDown && p.stick == 1 {
+		p.leftDeflectX, p.leftDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.leftBaseX, p.leftBaseY)
+	}
+	if pointerDown && p.stick == 2 {
+		p.rightDeflectX, p.rightDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.rightBaseX, p.rightBaseY)
 	}
 	dx, dy := 0.0, 0.0
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
@@ -558,6 +611,12 @@ func (p *playState) Update() {
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyDown) || ebiten.IsKeyPressed(ebiten.KeyS) {
 		dy++
+	}
+	if p.stick == 1 {
+		dx, dy = p.leftDeflectX, p.leftDeflectY
+	}
+	if p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
+		p.angle = angleFromVector(p.rightDeflectX, p.rightDeflectY)
 	}
 	p.moving = dx != 0 || dy != 0
 	if p.moving {
@@ -577,14 +636,8 @@ func (p *playState) Update() {
 			}
 			p.x, p.y = candidateX, candidateY
 		}
-		if dx < 0 {
-			p.angle = 6
-		} else if dx > 0 {
-			p.angle = 2
-		} else if dy < 0 {
-			p.angle = 4
-		} else {
-			p.angle = 0
+		if p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5 {
+			p.angle = angleFromVector(dx, dy)
 		}
 	}
 	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
@@ -592,6 +645,17 @@ func (p *playState) Update() {
 	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
 	p.time += 1.0 / 60.0
 	p.updateCamera()
+}
+func stickDeflection(x, y, baseX, baseY float64) (float64, float64) {
+	dx, dy := x-baseX, y-baseY
+	length := math.Hypot(dx, dy)
+	if length > 32 {
+		dx, dy = dx/length*32, dy/length*32
+	}
+	return dx / 32, dy / 32
+}
+func angleFromVector(x, y float64) int {
+	return ((int(math.Round(math.Atan2(-y, x)/(math.Pi/4)))+2)%8 + 8) % 8
 }
 func (p *playState) centerCamera() {
 	tileSize := p.tileSize
@@ -721,6 +785,15 @@ func clamp(value, low, high int) int {
 	if high < low {
 		return low
 	}
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
+func clampFloat(value, low, high float64) float64 {
 	if value < low {
 		return low
 	}

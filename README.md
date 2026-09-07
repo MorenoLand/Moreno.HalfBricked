@@ -16,7 +16,7 @@ The desktop window can be resized or maximized; the 480×320 scene is stretched 
 go run . --assets=.\bin\data-cache
 ```
 
-Normal level selection enters the playable map slice. Use the arrow keys or WASD to move Barry. The diagnostic map viewer and its layer, grid, zoom, pan, and inspection controls are available only with `--debug`:
+Normal level selection enters the playable map slice. Use the arrow keys or WASD to move Barry, or click-drag on the left half of the playfield for the circular movement stick; click-dragging on the right half controls facing. The diagnostic map viewer and its layer, grid, zoom, pan, and inspection controls are available only with `--debug`:
 
 ```powershell
 go run . --assets=.\bin\data-cache --debug
