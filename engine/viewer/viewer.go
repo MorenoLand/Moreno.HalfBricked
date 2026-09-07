@@ -7,7 +7,7 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 )
 
 type PackManifest struct {

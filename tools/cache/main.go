@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/content"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 )
 
 func main() {

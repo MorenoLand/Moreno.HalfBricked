@@ -9,9 +9,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/content"
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/formats"
-	"github.com/MorenoLand/Moreno.AgeofZombies/engine/viewer"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -80,8 +80,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 		return
 	}
 	screen.Fill(colorDark)
-	ebitenutil.DebugPrintAt(screen, "AGE OF ZOMBIES", 32, 24)
-	ebitenutil.DebugPrintAt(screen, "PC RECONSTRUCTION", 32, 44)
+	ebitenutil.DebugPrintAt(screen, "HALFBRICKED", 32, 24)
+	ebitenutil.DebugPrintAt(screen, "MAIN MENU", 32, 44)
 	items := a.items()
 	for i, item := range items {
 		prefix := "  "
@@ -230,7 +230,7 @@ func main() {
 		log.Fatal(err)
 	}
 	ebiten.SetWindowSize(960, 640)
-	ebiten.SetWindowTitle("Age of Zombies PC Reconstruction")
+	ebiten.SetWindowTitle("HalfBricked")
 	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {
 		log.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-module github.com/MorenoLand/Moreno.AgeofZombies
+module github.com/MorenoLand/Moreno.HalfBricked
 
 go 1.26.0
 
