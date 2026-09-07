@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"log"
@@ -32,6 +33,8 @@ type app struct {
 	startupFrames int
 	menuTime      float64
 	canvas        *ebiten.Image
+	splash        *ebiten.Image
+	splashLoaded  bool
 	outputWidth   int
 	outputHeight  int
 }
@@ -91,6 +94,13 @@ func (a *app) Update() error {
 			return a.activate()
 		}
 	}
+	if a.page < 3 {
+		_, y := a.pointer()
+		index := (y - 82) / 28
+		if index >= 0 && index < len(a.items()) {
+			a.setCursor(index)
+		}
+	}
 	return nil
 }
 func (a *app) Draw(screen *ebiten.Image) {
@@ -142,10 +152,25 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	items := a.items()
 	for i, item := range items {
 		y := 96 + i*28
-		a.drawTexture(screen, "Common0/Textures/Button_Screen", 34, float64(y-16), .25)
+		a.drawMenuButton(screen, 34, float64(y-8), i == a.cursor())
 		a.text(screen, item, 48, float64(y), .5)
 	}
 	a.drawDetails(screen)
+}
+func (a *app) drawMenuButton(screen *ebiten.Image, x, y float64, selected bool) {
+	texture, err := a.Texture("Common0/Textures/Button_Screen")
+	if err != nil {
+		return
+	}
+	frame := 0
+	if selected {
+		frame = 1
+	}
+	source := texture.SubImage(image.Rect(0, frame*64, 128, (frame+1)*64)).(*ebiten.Image)
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Scale(.25, .25)
+	options.GeoM.Translate(x, y)
+	screen.DrawImage(source, options)
 }
 func (a *app) items() []string {
 	if a.page == 0 {
@@ -292,13 +317,48 @@ func (a *app) drawBackdrop(screen *ebiten.Image) {
 }
 func (a *app) drawStartup(screen *ebiten.Image) {
 	screen.Fill(colorDark)
-	if image, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
+	if !a.splashLoaded {
+		a.splashLoaded = true
+		if source, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
+			a.splash = cropSplash(source)
+		}
+	}
+	if a.splash != nil {
 		options := &ebiten.DrawImageOptions{}
-		options.GeoM.Scale(logicalWidth/float64(image.Bounds().Dx()), logicalHeight/float64(image.Bounds().Dy()))
-		screen.DrawImage(image, options)
+		options.GeoM.Scale(logicalWidth/float64(a.splash.Bounds().Dx()), logicalHeight/float64(a.splash.Bounds().Dy()))
+		screen.DrawImage(a.splash, options)
 	} else {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
 	}
+}
+func cropSplash(source *ebiten.Image) *ebiten.Image {
+	bounds := source.Bounds()
+	top, bottom := bounds.Max.Y, bounds.Min.Y
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		if splashRowHasContent(source, y, bounds) {
+			top = y
+			break
+		}
+	}
+	for y := bounds.Max.Y - 1; y >= bounds.Min.Y; y-- {
+		if splashRowHasContent(source, y, bounds) {
+			bottom = y + 1
+			break
+		}
+	}
+	if top >= bottom {
+		return source
+	}
+	return source.SubImage(image.Rect(bounds.Min.X, top, bounds.Max.X, bottom)).(*ebiten.Image)
+}
+func splashRowHasContent(source *ebiten.Image, y int, bounds image.Rectangle) bool {
+	for x := bounds.Min.X; x < bounds.Max.X; x += 8 {
+		r, g, b, a := source.At(x, y).RGBA()
+		if a > 0 && r+g+b > 24*257 {
+			return true
+		}
+	}
+	return false
 }
 func (a *app) text(screen *ebiten.Image, value string, x, y, scale float64) {
 	if a.font != nil {
