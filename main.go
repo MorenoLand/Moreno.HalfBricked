@@ -12,6 +12,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/ui"
@@ -29,6 +30,7 @@ type app struct {
 	level         int
 	mode          int
 	debug         bool
+	mobile        bool
 	images        map[string]*ebiten.Image
 	sources       map[string]image.Image
 	view          *viewer.Viewer
@@ -54,6 +56,7 @@ type playState struct {
 	angle                                                int
 	tileSize                                             int
 	radius                                               float64
+	flash                                                float64
 	stick                                                int
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY     float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY float64
@@ -63,7 +66,7 @@ const playerBaseSpeed = 180.0
 const playerCollisionRadius = 16.0
 const playerCollisionStep = 4.0
 
-func newApp(root string, debug bool) (*app, error) {
+func newApp(root string, debug, mobile bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
 	if err != nil {
 		return nil, err
@@ -72,7 +75,7 @@ func newApp(root string, debug bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	game := &app{pack: pack, levels: pack.List(), debug: debug, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
+	game := &app{pack: pack, levels: pack.List(), debug: debug, mobile: mobile || engine.IsMobileDevice(), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
 	game.font, _ = loadFont(pack)
 	return game, nil
 }
@@ -97,7 +100,7 @@ func (a *app) Update() error {
 			return nil
 		}
 		x, y := a.pointer()
-		a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile)
 		return nil
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
@@ -385,8 +388,15 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	if a.play.moving {
 		frame = int(a.play.time*10) % 4
 	}
-	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) { a.drawBarry(target, screenX, screenY, 1, frame, a.play.angle) })
-	a.drawPlayControls(screen)
+	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
+		a.drawBarry(target, screenX, screenY, 1, frame, a.play.angle)
+		if a.play.flash > 0 {
+			a.drawBarryFlash(target, screenX, screenY, 1, a.play.angle)
+		}
+	})
+	if a.mobile {
+		a.drawPlayControls(screen)
+	}
 }
 func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int) {
 	a.drawBarryPart(screen, "Common0/Textures/Characters/barryidle_SD", x, y, scale, frame, angle)
@@ -410,12 +420,42 @@ func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float
 	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
 	screen.DrawImage(source, options)
 }
+func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle int) {
+	texture, err := a.Texture("Common0/Textures/Characters/barrygun_01_flash_SD")
+	if err != nil {
+		return
+	}
+	const columns = 8
+	cellWidth, cellHeight := texture.Bounds().Dx()/columns, texture.Bounds().Dy()
+	if cellWidth <= 0 || cellHeight <= 0 {
+		return
+	}
+	angle = ((angle % columns) + columns) % columns
+	source := texture.SubImage(image.Rect(angle*cellWidth, 0, (angle+1)*cellWidth, cellHeight)).(*ebiten.Image)
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Scale(scale, scale)
+	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
+	screen.DrawImage(source, options)
+}
 func (a *app) drawPlayControls(screen *ebiten.Image) {
+	if !a.mobile {
+		return
+	}
 	if a.play.stick == 1 {
 		a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
+	} else {
+		a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", 64, 256, 0, 0)
 	}
 	if a.play.stick == 2 {
 		a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", a.play.rightBaseX, a.play.rightBaseY, a.play.rightDeflectX, a.play.rightDeflectY)
+	} else {
+		a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", 416, 256, 0, 0)
+	}
+	if image, err := a.Texture("Common0/Textures/Pause_Large_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(448, 8)
+		screen.DrawImage(image, options)
 	}
 }
 func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflectX, deflectY float64) {
@@ -572,7 +612,7 @@ func spawnPosition(level formats.Level, tileSize int) (float64, float64) {
 	}
 	return float64(level.Width*tileSize) / 2, float64(level.Height*tileSize) / 2
 }
-func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPressed bool) {
+func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPressed, mobile bool) {
 	tileSize := p.tileSize
 	if tileSize <= 0 {
 		tileSize = 32
@@ -581,7 +621,11 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	if radius <= 0 {
 		radius = playerCollisionRadius
 	}
-	if !pointerDown {
+	p.flash = math.Max(0, p.flash-1.0/60.0)
+	if !mobile {
+		p.stick = 0
+		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
+	} else if !pointerDown {
 		p.stick = 0
 		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
 	} else if p.stick == 0 && pointerJustPressed {
@@ -593,10 +637,10 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			p.rightBaseX, p.rightBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
 		}
 	}
-	if pointerDown && p.stick == 1 {
+	if mobile && pointerDown && p.stick == 1 {
 		p.leftDeflectX, p.leftDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.leftBaseX, p.leftBaseY)
 	}
-	if pointerDown && p.stick == 2 {
+	if mobile && pointerDown && p.stick == 2 {
 		p.rightDeflectX, p.rightDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.rightBaseX, p.rightBaseY)
 	}
 	dx, dy := 0.0, 0.0
@@ -612,11 +656,24 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	if ebiten.IsKeyPressed(ebiten.KeyDown) || ebiten.IsKeyPressed(ebiten.KeyS) {
 		dy++
 	}
-	if p.stick == 1 {
+	if mobile && p.stick == 1 {
 		dx, dy = p.leftDeflectX, p.leftDeflectY
 	}
-	if p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
+	if mobile && p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
 		p.angle = angleFromVector(p.rightDeflectX, p.rightDeflectY)
+		if pointerJustPressed {
+			p.flash = .1
+		}
+	}
+	if !mobile {
+		worldX := (float64(pointerX)-p.world.ViewportX)/p.world.Zoom + p.world.CameraX
+		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
+		if math.Hypot(worldX-p.x, worldY-p.y) > .001 {
+			p.angle = angleFromVector(worldX-p.x, worldY-p.y)
+		}
+		if pointerJustPressed {
+			p.flash = .1
+		}
 	}
 	p.moving = dx != 0 || dy != 0
 	if p.moving {
@@ -636,7 +693,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			}
 			p.x, p.y = candidateX, candidateY
 		}
-		if p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5 {
+		if mobile && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
 			p.angle = angleFromVector(dx, dy)
 		}
 	}
@@ -808,8 +865,9 @@ var colorDark = color.RGBA{10, 12, 18, 255}
 func main() {
 	assets := flag.String("assets", "data", "generated cache or reference content directory")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
+	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
 	flag.Parse()
-	game, err := newApp(*assets, *debug)
+	game, err := newApp(*assets, *debug, *mobile)
 	if err != nil {
 		log.Fatal(err)
 	}
