@@ -142,7 +142,7 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
 			id := v.Level.Layers[kind][y*v.Level.Width+x]
-			if id == math.MaxUint32 {
+			if int32(id) <= 0 {
 				continue
 			}
 			if v.Atlas == nil || !v.drawAtlasTile(screen, id, x, y, tileSize) {
@@ -316,9 +316,14 @@ func (v *Viewer) tileAt(x, y int) (uint32, formats.LayerKind) {
 	}
 	index := y*v.Level.Width + x
 	for _, kind := range []formats.LayerKind{formats.LayerC, formats.LayerH, formats.LayerD, formats.LayerHB, formats.LayerG} {
-		if v.Layers[kind] && v.Level.Layers[kind][index] != math.MaxUint32 {
-			return v.Level.Layers[kind][index], kind
+		if !v.Layers[kind] {
+			continue
 		}
+		id := v.Level.Layers[kind][index]
+		if (kind == formats.LayerC && id == math.MaxUint32) || (kind != formats.LayerC && int32(id) <= 0) {
+			continue
+		}
+		return id, kind
 	}
 	return math.MaxUint32, ""
 }
