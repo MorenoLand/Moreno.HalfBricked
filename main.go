@@ -120,7 +120,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.drawStartup(a.canvas)
 	}
 	screen.Fill(colorDark)
-	options := &ebiten.DrawImageOptions{}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
 	screen.DrawImage(a.canvas, options)
 }

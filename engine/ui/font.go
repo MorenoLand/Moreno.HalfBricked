@@ -66,6 +66,7 @@ func (f *Font) Draw(screen *ebiten.Image, value string, x, y, scale float64) {
 		if glyph.Width > 0 && glyph.Height > 0 {
 			source := f.Atlas.SubImage(image.Rect(glyph.X, glyph.Y, glyph.X+glyph.Width, glyph.Y+glyph.Height)).(*ebiten.Image)
 			options := &ebiten.DrawImageOptions{}
+			options.Filter = ebiten.FilterNearest
 			options.GeoM.Scale(scale, scale)
 			options.GeoM.Translate(x+float64(glyph.XOffset)*scale, y+float64(glyph.YOffset)*scale)
 			screen.DrawImage(source, options)
