@@ -234,7 +234,7 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		worldWidth := scaleX * float64(v.tileSize())
 		worldHeight := scaleY * float64(v.tileSize())
 		destinationX0 := float32((prop.X-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
-		destinationY0 := float32((prop.Y-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
+		destinationY0 := float32((prop.Y-prop.Height-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
 		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
 		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
 		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
