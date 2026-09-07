@@ -61,15 +61,14 @@ func (a *app) Update() error {
 		a.move(-1)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) {
-		switch a.page {
-		case 0:
-			a.page = 1
-			a.world = 0
-		case 1:
-			a.page = 2
-			a.level = 0
-		case 2:
-			return a.openViewer()
+		return a.activate()
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		_, y := ebiten.CursorPosition()
+		index := (y - 96) / 36
+		if index >= 0 && index < len(a.items()) {
+			a.setCursor(index)
+			return a.activate()
 		}
 	}
 	return nil
@@ -80,16 +79,28 @@ func (a *app) Draw(screen *ebiten.Image) {
 		return
 	}
 	screen.Fill(colorDark)
-	ebitenutil.DebugPrintAt(screen, "HALFBRICKED", 32, 24)
-	ebitenutil.DebugPrintAt(screen, "MAIN MENU", 32, 44)
+	ebitenutil.DrawRect(screen, 24, 18, 432, 42, color.RGBA{24, 29, 42, 255})
+	ebitenutil.DrawLine(screen, 24, 60, 456, 60, color.RGBA{93, 124, 186, 255})
+	ebitenutil.DebugPrintAt(screen, "HALFBRICKED", 38, 30)
+	title := "MAIN MENU"
+	if a.page == 1 {
+		title = "SELECT WORLD"
+	}
+	if a.page == 2 {
+		title = "SELECT LEVEL"
+	}
+	ebitenutil.DebugPrintAt(screen, title, 320, 34)
+	ebitenutil.DrawRect(screen, 24, 78, 276, 190, color.RGBA{18, 22, 32, 255})
+	ebitenutil.DrawRect(screen, 312, 78, 144, 190, color.RGBA{24, 29, 42, 255})
 	items := a.items()
 	for i, item := range items {
-		prefix := "  "
+		y := 96 + i*36
 		if i == a.cursor() {
-			prefix = "> "
+			ebitenutil.DrawRect(screen, 36, float64(y-5), 252, 28, color.RGBA{57, 78, 119, 255})
 		}
-		ebitenutil.DebugPrintAt(screen, prefix+item, 48, 96+i*32)
+		ebitenutil.DebugPrintAt(screen, item, 48, y)
 	}
+	a.drawDetails(screen)
 	ebitenutil.DebugPrintAt(screen, "UP/DOWN SELECT   ENTER OPEN   ESC BACK", 24, 292)
 }
 func (a *app) Layout(_, _ int) (int, int) { return 480, 320 }
@@ -150,6 +161,52 @@ func (a *app) move(delta int) {
 		return
 	}
 	a.level = clamp(a.level+delta, 0, len(a.filteredLevels())-1)
+}
+func (a *app) setCursor(index int) {
+	if a.page == 2 {
+		a.level = index
+	} else {
+		a.world = index
+	}
+}
+func (a *app) activate() error {
+	switch a.page {
+	case 0:
+		if a.world == 0 {
+			a.page, a.world = 1, 0
+		} else {
+			return ebiten.Termination
+		}
+	case 1:
+		a.page, a.level = 2, 0
+	case 2:
+		return a.openViewer()
+	}
+	return nil
+}
+func (a *app) drawDetails(screen *ebiten.Image) {
+	if a.page == 0 {
+		ebitenutil.DebugPrintAt(screen, "Explore converted content", 324, 100)
+		ebitenutil.DebugPrintAt(screen, "through the map viewer.", 324, 116)
+		return
+	}
+	if a.page == 1 {
+		worlds := a.worlds()
+		if a.world >= len(worlds) {
+			return
+		}
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("WORLD %d", worlds[a.world]+1), 330, 104)
+		ebitenutil.DebugPrintAt(screen, "ENTER TO VIEW LEVELS", 324, 136)
+		return
+	}
+	levels := a.filteredLevels()
+	if a.level >= len(levels) {
+		return
+	}
+	item := levels[a.level]
+	ebitenutil.DebugPrintAt(screen, item.ID, 324, 104)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("WORLD %d", item.WorldIndex+1), 324, 124)
+	ebitenutil.DebugPrintAt(screen, strings.ReplaceAll(item.Description, "\n", " / "), 324, 156)
 }
 func (a *app) openViewer() error {
 	levels := a.filteredLevels()
