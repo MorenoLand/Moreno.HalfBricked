@@ -31,7 +31,13 @@ type app struct {
 	font          *ui.Font
 	startupFrames int
 	menuTime      float64
+	canvas        *ebiten.Image
+	outputWidth   int
+	outputHeight  int
 }
+
+const logicalWidth = 480
+const logicalHeight = 320
 
 func newApp(root string) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -57,6 +63,7 @@ func (a *app) Update() error {
 			a.view = nil
 			return nil
 		}
+		a.view.SetInputSize(a.outputWidth, a.outputHeight)
 		a.view.Update()
 		return nil
 	}
@@ -77,7 +84,7 @@ func (a *app) Update() error {
 		return a.activate()
 	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		_, y := ebiten.CursorPosition()
+		_, y := a.pointer()
 		index := (y - 96) / 28
 		if index >= 0 && index < len(a.items()) {
 			a.setCursor(index)
@@ -87,14 +94,44 @@ func (a *app) Update() error {
 	return nil
 }
 func (a *app) Draw(screen *ebiten.Image) {
+	if a.canvas == nil {
+		a.canvas = ebiten.NewImage(logicalWidth, logicalHeight)
+	}
+	a.canvas.Fill(colorDark)
 	if a.startupFrames > 0 {
-		a.drawStartup(screen)
-		return
+	} else {
+		if a.view != nil {
+			a.view.Draw(a.canvas)
+		} else {
+			a.drawMenu(a.canvas)
+		}
 	}
-	if a.view != nil {
-		a.view.Draw(screen)
-		return
+	if a.startupFrames > 0 {
+		a.drawStartup(a.canvas)
 	}
+	screen.Fill(colorDark)
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
+	screen.DrawImage(a.canvas, options)
+}
+func (a *app) Layout(outsideWidth, outsideHeight int) (int, int) {
+	if outsideWidth < 1 {
+		outsideWidth = logicalWidth
+	}
+	if outsideHeight < 1 {
+		outsideHeight = logicalHeight
+	}
+	a.outputWidth, a.outputHeight = outsideWidth, outsideHeight
+	return outsideWidth, outsideHeight
+}
+func (a *app) pointer() (int, int) {
+	x, y := ebiten.CursorPosition()
+	if a.outputWidth < 1 || a.outputHeight < 1 {
+		return x, y
+	}
+	return x * logicalWidth / a.outputWidth, y * logicalHeight / a.outputHeight
+}
+func (a *app) drawMenu(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
 	if a.page == 0 {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 112, 12, .5)
@@ -110,7 +147,6 @@ func (a *app) Draw(screen *ebiten.Image) {
 	}
 	a.drawDetails(screen)
 }
-func (a *app) Layout(_, _ int) (int, int) { return 480, 320 }
 func (a *app) items() []string {
 	if a.page == 0 {
 		return []string{"PLAY", "SURVIVAL", "LEADERBOARDS", "OPTIONS", "QUIT"}
@@ -258,9 +294,7 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	screen.Fill(colorDark)
 	if image, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
 		options := &ebiten.DrawImageOptions{}
-		scale := math.Min(480/float64(image.Bounds().Dx()), 320/float64(image.Bounds().Dy()))
-		options.GeoM.Scale(scale, scale)
-		options.GeoM.Translate((480-float64(image.Bounds().Dx())*scale)/2, (320-float64(image.Bounds().Dy())*scale)/2)
+		options.GeoM.Scale(logicalWidth/float64(image.Bounds().Dx()), logicalHeight/float64(image.Bounds().Dy()))
 		screen.DrawImage(image, options)
 	} else {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
@@ -391,7 +425,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ebiten.SetWindowSize(960, 640)
+	ebiten.SetWindowSize(960, 540)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("HalfBricked")
 	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {

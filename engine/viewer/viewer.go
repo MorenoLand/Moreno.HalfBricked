@@ -30,14 +30,32 @@ type Viewer struct {
 	SelectedX, SelectedY   int
 	SelectedID             uint32
 	SelectedLayer          formats.LayerKind
+	inputWidth             int
+	inputHeight            int
 }
 
 func New(level formats.Level, tileSet formats.TileSet, atlas *ebiten.Image, textures TextureProvider) *Viewer {
 	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true}, Props: true}
+	viewer.inputWidth, viewer.inputHeight = 480, 320
 	viewer.fit(480, 320)
 	return viewer
 }
 func (v *Viewer) Back() bool { return inpututil.IsKeyJustPressed(ebiten.KeyEscape) }
+func (v *Viewer) SetInputSize(width, height int) {
+	if width > 0 {
+		v.inputWidth = width
+	}
+	if height > 0 {
+		v.inputHeight = height
+	}
+}
+func (v *Viewer) pointer() (int, int) {
+	x, y := ebiten.CursorPosition()
+	if v.inputWidth < 1 || v.inputHeight < 1 {
+		return x, y
+	}
+	return x * 480 / v.inputWidth, y * 320 / v.inputHeight
+}
 func (v *Viewer) Update() {
 	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		v.toggle(formats.LayerG)
@@ -72,7 +90,7 @@ func (v *Viewer) Update() {
 		v.ViewportX, v.ViewportY = 0, 0
 		v.clampCamera()
 	}
-	x, y := ebiten.CursorPosition()
+	x, y := v.pointer()
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonMiddle) {
 		v.ViewportX, v.ViewportY = 0, 0
 		if !v.dragging {
