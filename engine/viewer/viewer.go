@@ -117,13 +117,16 @@ func (v *Viewer) Draw(screen *ebiten.Image) {
 	}
 }
 func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize int) {
-	for index, id := range v.Level.Layers[kind] {
-		if int32(id) <= 0 {
-			continue
-		}
-		x, y := index%v.Level.Width, index/v.Level.Width
-		if v.Atlas == nil || !v.drawAtlasTile(screen, id, x, y, tileSize) {
-			v.drawFallback(screen, x, y, tileSize, kind)
+	minX, minY, maxX, maxY := v.visibleBounds(tileSize)
+	for y := minY; y < maxY; y++ {
+		for x := minX; x < maxX; x++ {
+			id := v.Level.Layers[kind][y*v.Level.Width+x]
+			if int32(id) <= 0 {
+				continue
+			}
+			if v.Atlas == nil || !v.drawAtlasTile(screen, id, x, y, tileSize) {
+				v.drawFallback(screen, x, y, tileSize, kind)
+			}
 		}
 	}
 }
@@ -166,20 +169,23 @@ func (v *Viewer) drawFallback(screen *ebiten.Image, x, y, tileSize int, kind for
 	ebitenutil.DrawRect(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX, (float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY, float64(tileSize)*v.Zoom, float64(tileSize)*v.Zoom, colors[kind])
 }
 func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
-	for index, id := range v.Level.Layers[formats.LayerC] {
-		if id == math.MaxUint32 {
-			continue
+	minX, minY, maxX, maxY := v.visibleBounds(tileSize)
+	for y := minY; y < maxY; y++ {
+		for x := minX; x < maxX; x++ {
+			id := v.Level.Layers[formats.LayerC][y*v.Level.Width+x]
+			if id == math.MaxUint32 {
+				continue
+			}
+			left := (float64(x*tileSize)-v.CameraX)*v.Zoom + v.ViewportX
+			top := (float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY
+			size := float64(tileSize) * v.Zoom
+			marker := collisionColor((id + 1) & 0xffff)
+			ebitenutil.DrawRect(screen, left, top, size, size, color.RGBA{marker.R, marker.G, marker.B, 45})
+			ebitenutil.DrawLine(screen, left, top, left+size, top, marker)
+			ebitenutil.DrawLine(screen, left+size, top, left+size, top+size, marker)
+			ebitenutil.DrawLine(screen, left+size, top+size, left, top+size, marker)
+			ebitenutil.DrawLine(screen, left, top+size, left, top, marker)
 		}
-		x, y := index%v.Level.Width, index/v.Level.Width
-		left := (float64(x*tileSize)-v.CameraX)*v.Zoom + v.ViewportX
-		top := (float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY
-		size := float64(tileSize) * v.Zoom
-		marker := collisionColor((id + 1) & 0xffff)
-		ebitenutil.DrawRect(screen, left, top, size, size, color.RGBA{marker.R, marker.G, marker.B, 45})
-		ebitenutil.DrawLine(screen, left, top, left+size, top, marker)
-		ebitenutil.DrawLine(screen, left+size, top, left+size, top+size, marker)
-		ebitenutil.DrawLine(screen, left+size, top+size, left, top+size, marker)
-		ebitenutil.DrawLine(screen, left, top+size, left, top, marker)
 	}
 }
 func collisionColor(value uint32) color.RGBA {
@@ -251,6 +257,25 @@ func (v *Viewer) clampCamera() {
 	maxY := math.Max(0, float64(v.Level.Height*v.tileSize())-320/v.Zoom)
 	v.CameraX = clampFloat(v.CameraX, 0, maxX)
 	v.CameraY = clampFloat(v.CameraY, 0, maxY)
+}
+func (v *Viewer) visibleBounds(tileSize int) (int, int, int, int) {
+	minX := int(math.Floor(v.CameraX / float64(tileSize)))
+	minY := int(math.Floor(v.CameraY / float64(tileSize)))
+	maxX := int(math.Ceil((v.CameraX + 480/v.Zoom) / float64(tileSize)))
+	maxY := int(math.Ceil((v.CameraY + 320/v.Zoom) / float64(tileSize)))
+	if minX < 0 {
+		minX = 0
+	}
+	if minY < 0 {
+		minY = 0
+	}
+	if maxX > v.Level.Width {
+		maxX = v.Level.Width
+	}
+	if maxY > v.Level.Height {
+		maxY = v.Level.Height
+	}
+	return minX, minY, maxX, maxY
 }
 func (v *Viewer) tileSize() int {
 	if v.TileSet.TileShift > 0 {
