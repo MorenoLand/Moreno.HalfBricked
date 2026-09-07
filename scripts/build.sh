@@ -10,3 +10,13 @@ case "$target" in
   wasm) GOOS=js GOARCH=wasm go build -o "$project/bin/aoz.wasm" "$project" ;;
   *) echo "target must be windows, linux, darwin, or wasm" >&2; exit 2 ;;
 esac
+if [ "$target" = wasm ]; then
+  mkdir -p "$project/bin/web"
+  cp "$project/bin/aoz.wasm" "$project/bin/web/aoz.wasm"
+  cp "$project/web/index.html" "$project/bin/web/index.html"
+  wasm_exec="$(go env GOROOT)/lib/wasm/wasm_exec.js"
+  if [ ! -f "$wasm_exec" ]; then wasm_exec="$(go env GOROOT)/misc/wasm/wasm_exec.js"; fi
+  if [ ! -f "$wasm_exec" ]; then echo "wasm_exec.js not found below GoROOT" >&2; exit 1; fi
+  cp "$wasm_exec" "$project/bin/web/wasm_exec.js"
+  if [ -d "$project/bin/data-cache" ]; then rm -rf "$project/bin/web/data"; cp -R "$project/bin/data-cache" "$project/bin/web/data"; fi
+fi

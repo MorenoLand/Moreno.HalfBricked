@@ -14,4 +14,6 @@ The `--assets` value may point to generated content or a local content directory
 go run . --assets=.\bin\data-cache
 ```
 
+Build the browser host bundle with `.\scripts\build.ps1 -Target wasm`; serve `bin\web` over HTTP.
+
 Original content, native libraries, and generated private caches are not part of this source tree. See `LEGAL_NOTICE.md` for the project boundary.

@@ -67,6 +67,7 @@ func (v *Viewer) Update() {
 	if wheelY != 0 {
 		v.Zoom = clampFloat(v.Zoom*(1+wheelY*.1), .1, 4)
 		v.ViewportX, v.ViewportY = 0, 0
+		v.clampCamera()
 	}
 	x, y := ebiten.CursorPosition()
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonMiddle) {
@@ -76,6 +77,7 @@ func (v *Viewer) Update() {
 		}
 		v.CameraX -= float64(x-v.lastX) / v.Zoom
 		v.CameraY -= float64(y-v.lastY) / v.Zoom
+		v.clampCamera()
 		v.lastX, v.lastY, v.dragging = x, y, true
 	} else {
 		v.dragging = false
@@ -145,7 +147,7 @@ func (v *Viewer) drawAtlasTile(screen *ebiten.Image, id uint32, x, y, tileSize i
 	destinationX1 := destinationX0 + float32(tileSize)*float32(v.Zoom)
 	destinationY1 := destinationY0 + float32(tileSize)*float32(v.Zoom)
 	vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: sourceX0, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: sourceX1, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: sourceX0, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: sourceX1, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
-	screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
+	screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterLinear})
 	return true
 }
 func (v *Viewer) drawFallback(screen *ebiten.Image, x, y, tileSize int, kind formats.LayerKind) {
@@ -158,7 +160,31 @@ func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 			continue
 		}
 		x, y := index%v.Level.Width, index/v.Level.Width
-		ebitenutil.DrawRect(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom, (float64(y*tileSize)-v.CameraY)*v.Zoom, float64(tileSize)*v.Zoom, float64(tileSize)*v.Zoom, color.RGBA{220, 45, 45, 75})
+		left := (float64(x*tileSize)-v.CameraX)*v.Zoom + v.ViewportX
+		top := (float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY
+		size := float64(tileSize) * v.Zoom
+		marker := collisionColor(id)
+		ebitenutil.DrawRect(screen, left, top, size, size, color.RGBA{marker.R, marker.G, marker.B, 45})
+		ebitenutil.DrawLine(screen, left, top, left+size, top, marker)
+		ebitenutil.DrawLine(screen, left+size, top, left+size, top+size, marker)
+		ebitenutil.DrawLine(screen, left+size, top+size, left, top+size, marker)
+		ebitenutil.DrawLine(screen, left, top+size, left, top, marker)
+	}
+}
+func collisionColor(value uint32) color.RGBA {
+	switch {
+	case value == 0:
+		return color.RGBA{230, 45, 45, 220}
+	case value == 1:
+		return color.RGBA{255, 165, 0, 220}
+	case value == 2:
+		return color.RGBA{45, 220, 90, 220}
+	case value >= 3 && value <= 8:
+		return color.RGBA{230, 45, 220, 220}
+	case value >= 12 && value <= 15:
+		return color.RGBA{45, 210, 240, 220}
+	default:
+		return color.RGBA{245, 220, 45, 220}
 	}
 }
 func (v *Viewer) drawProps(screen *ebiten.Image) {
@@ -185,10 +211,12 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 			sourceX0, sourceY0 = 0, 0
 			sourceX1, sourceY1 = float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
 		}
-		destinationX0 := float32((prop.X-v.CameraX)*v.Zoom + v.ViewportX)
-		destinationY0 := float32((prop.Y-v.CameraY)*v.Zoom + v.ViewportY)
-		destinationX1 := destinationX0 + float32(scaleX*v.Zoom*float64(v.tileSize()))
-		destinationY1 := destinationY0 + float32(scaleY*v.Zoom*float64(v.tileSize()))
+		worldWidth := scaleX * float64(v.tileSize())
+		worldHeight := scaleY * float64(v.tileSize())
+		destinationX0 := float32((prop.X-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
+		destinationY0 := float32((prop.Y-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
+		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
+		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
 		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
 		screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, texture, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
 	}
@@ -206,6 +234,12 @@ func (v *Viewer) fit(width, height int) {
 	v.CameraX, v.CameraY = 0, 0
 	v.ViewportX = (float64(width) - float64(v.Level.Width*v.tileSize())*v.Zoom) / 2
 	v.ViewportY = (float64(height) - float64(v.Level.Height*v.tileSize())*v.Zoom) / 2
+}
+func (v *Viewer) clampCamera() {
+	maxX := math.Max(0, float64(v.Level.Width*v.tileSize())-480/v.Zoom)
+	maxY := math.Max(0, float64(v.Level.Height*v.tileSize())-320/v.Zoom)
+	v.CameraX = clampFloat(v.CameraX, 0, maxX)
+	v.CameraY = clampFloat(v.CameraY, 0, maxY)
 }
 func (v *Viewer) tileSize() int {
 	if v.TileSet.TileShift > 0 {

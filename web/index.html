@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HalfBricked</title>
+<style>html,body{height:100%;margin:0;background:#0a0c12;color:#d8dbe5;font-family:system-ui,sans-serif}body{display:grid;place-items:center}main{text-align:center}canvas{display:block;max-width:96vw;max-height:90vh;image-rendering:auto}#status{margin:0 0 1rem;color:#8d94a8}</style>
+</head>
+<body>
+<main>
+<p id="status">Loading HalfBricked...</p>
+<script src="./wasm_exec.js"></script>
+<script>
+const status = document.getElementById("status");
+const go = new Go();
+WebAssembly.instantiateStreaming(fetch("./aoz.wasm"), go.importObject).then(result => { status.remove(); go.run(result.instance); }).catch(async () => { const response = await fetch("./aoz.wasm"); const bytes = await response.arrayBuffer(); const result = await WebAssembly.instantiate(bytes, go.importObject); status.remove(); go.run(result.instance); });
+</script>
+</main>
+</body>
+</html>
