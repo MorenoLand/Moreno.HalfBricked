@@ -10,10 +10,16 @@ go run . --assets="path-to-your-content"
 
 The `--assets` value may point to generated content or a local content directory. The first run prepares the local ignored cache automatically.
 
-The desktop window can be resized or maximized; the runtime keeps its 480×320 logical aspect ratio while scaling the content to the available window.
+The desktop window can be resized or maximized; the 480×320 scene is stretched to the full drawable window.
 
 ```powershell
 go run . --assets=.\bin\data-cache
+```
+
+Normal level selection enters the playable map slice. Use the arrow keys or WASD to move Barry. The diagnostic map viewer and its layer, grid, zoom, pan, and inspection controls are available only with `--debug`:
+
+```powershell
+go run . --assets=.\bin\data-cache --debug
 ```
 
 Build the browser host bundle with `.\scripts\build.ps1 -Target wasm`; serve `bin\web` over HTTP.

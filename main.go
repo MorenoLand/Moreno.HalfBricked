@@ -28,9 +28,11 @@ type app struct {
 	world         int
 	level         int
 	mode          int
+	debug         bool
 	images        map[string]*ebiten.Image
 	sources       map[string]image.Image
 	view          *viewer.Viewer
+	play          *playState
 	font          *ui.Font
 	startupFrames int
 	menuTime      float64
@@ -44,7 +46,15 @@ type app struct {
 const logicalWidth = 480
 const logicalHeight = 320
 
-func newApp(root string) (*app, error) {
+type playState struct {
+	world  *viewer.Viewer
+	x, y   float64
+	time   float64
+	moving bool
+	angle  int
+}
+
+func newApp(root string, debug bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
 	if err != nil {
 		return nil, err
@@ -53,7 +63,7 @@ func newApp(root string) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	game := &app{pack: pack, levels: pack.List(), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
+	game := &app{pack: pack, levels: pack.List(), debug: debug, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
 	game.font, _ = loadFont(pack)
 	return game, nil
 }
@@ -70,6 +80,14 @@ func (a *app) Update() error {
 		}
 		a.view.SetInputSize(a.outputWidth, a.outputHeight)
 		a.view.Update()
+		return nil
+	}
+	if a.play != nil {
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			a.play = nil
+			return nil
+		}
+		a.play.Update()
 		return nil
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
@@ -114,6 +132,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 	} else {
 		if a.view != nil {
 			a.view.Draw(a.canvas)
+		} else if a.play != nil {
+			a.drawPlay(a.canvas)
 		} else {
 			a.drawMenu(a.canvas)
 		}
@@ -147,7 +167,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
 	if a.page == 0 {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 112, 12, .5)
-		a.drawTexture(screen, "Frontend0/Textures/Barry", 352, 192, .25)
+		a.drawBarryMenu(screen)
 	} else {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 24, 10, .25)
 	}
@@ -265,7 +285,10 @@ func (a *app) activate() error {
 	case 1:
 		a.page, a.level = 2, 0
 	case 2:
-		return a.openViewer()
+		if a.debug {
+			return a.openViewer()
+		}
+		return a.openPlay()
 	}
 	return nil
 }
@@ -332,6 +355,42 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	} else {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
 	}
+}
+func (a *app) drawBarryMenu(screen *ebiten.Image) {
+	frame := int(a.menuTime*8) % 4
+	a.drawBarry(screen, 416, 256, 2, frame, 2)
+}
+func (a *app) drawPlay(screen *ebiten.Image) {
+	a.play.world.Draw(screen)
+	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
+	screenY := (a.play.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
+	frame := int(a.play.time*8) % 4
+	if a.play.moving {
+		frame = int(a.play.time*10) % 4
+	}
+	a.drawBarry(screen, screenX, screenY, 1, frame, a.play.angle)
+}
+func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int) {
+	a.drawBarryPart(screen, "Common0/Textures/Characters/barryidle_SD", x, y, scale, frame, angle)
+	a.drawBarryPart(screen, "Common0/Textures/Characters/barrygun_01_SD", x, y, scale, frame, angle)
+}
+func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float64, frame, angle int) {
+	texture, err := a.Texture(name)
+	if err != nil {
+		return
+	}
+	const columns, rows = 8, 4
+	cellWidth, cellHeight := texture.Bounds().Dx()/columns, texture.Bounds().Dy()/rows
+	if cellWidth <= 0 || cellHeight <= 0 {
+		return
+	}
+	frame = ((frame % rows) + rows) % rows
+	angle = ((angle % columns) + columns) % columns
+	source := texture.SubImage(image.Rect(angle*cellWidth, frame*cellHeight, (angle+1)*cellWidth, (frame+1)*cellHeight)).(*ebiten.Image)
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Scale(scale, scale)
+	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
+	screen.DrawImage(source, options)
 }
 func cropSplash(source image.Image) image.Image {
 	bounds := source.Bounds()
@@ -412,18 +471,107 @@ func (a *app) drawTexture(screen *ebiten.Image, name string, x, y, scale float64
 	screen.DrawImage(image, options)
 }
 func (a *app) openViewer() error {
-	levels := a.filteredLevels()
-	if a.level >= len(levels) {
-		return nil
-	}
-	level, err := a.pack.Load(levels[a.level].ID)
+	level, tileset, atlas, err := a.selectedLevel()
 	if err != nil {
 		return err
 	}
-	tileset := a.pack.Manifest().TileSets[strings.ToLower(level.Tileset)]
-	atlas, _ := a.Texture(tileset.Texture)
 	a.view = viewer.New(level, tileset, atlas, a)
+	a.view.Debug = true
 	return nil
+}
+func (a *app) openPlay() error {
+	level, tileset, atlas, err := a.selectedLevel()
+	if err != nil {
+		return err
+	}
+	world := viewer.New(level, tileset, atlas, a)
+	world.Zoom = .5
+	spawnX, spawnY := spawnPosition(level)
+	a.play = &playState{world: world, x: spawnX, y: spawnY}
+	a.play.centerCamera()
+	return nil
+}
+func (a *app) selectedLevel() (formats.Level, formats.TileSet, *ebiten.Image, error) {
+	levels := a.filteredLevels()
+	if a.level >= len(levels) {
+		return formats.Level{}, formats.TileSet{}, nil, fmt.Errorf("selected level is unavailable")
+	}
+	level, err := a.pack.Load(levels[a.level].ID)
+	if err != nil {
+		return formats.Level{}, formats.TileSet{}, nil, err
+	}
+	tileset, ok := a.pack.Manifest().TileSets[strings.ToLower(level.Tileset)]
+	if !ok {
+		return formats.Level{}, formats.TileSet{}, nil, fmt.Errorf("tileset %q not found", level.Tileset)
+	}
+	atlas, err := a.Texture(tileset.Texture)
+	if err != nil {
+		return formats.Level{}, formats.TileSet{}, nil, err
+	}
+	return level, tileset, atlas, nil
+}
+func spawnPosition(level formats.Level) (float64, float64) {
+	tileSize := 32
+	if strings.EqualFold(level.Info.ID, "World0Level0") {
+		return 530, 431
+	}
+	if level.Layers[formats.LayerC] != nil {
+		for y := 0; y < level.Height; y++ {
+			for x := 0; x < level.Width; x++ {
+				if level.Layers[formats.LayerC][y*level.Width+x] == 3 {
+					return float64(x*tileSize + tileSize/2), float64(y*tileSize + tileSize/2)
+				}
+			}
+		}
+	}
+	return float64(level.Width*tileSize) / 2, float64(level.Height*tileSize) / 2
+}
+func (p *playState) Update() {
+	dx, dy := 0.0, 0.0
+	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
+		dx--
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyRight) || ebiten.IsKeyPressed(ebiten.KeyD) {
+		dx++
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyUp) || ebiten.IsKeyPressed(ebiten.KeyW) {
+		dy--
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyDown) || ebiten.IsKeyPressed(ebiten.KeyS) {
+		dy++
+	}
+	p.moving = dx != 0 || dy != 0
+	if p.moving {
+		length := math.Sqrt(dx*dx + dy*dy)
+		dx, dy = dx/length*2, dy/length*2
+		p.x += dx
+		p.y += dy
+		if dx < 0 {
+			p.angle = 6
+		} else if dx > 0 {
+			p.angle = 2
+		} else if dy < 0 {
+			p.angle = 4
+		} else {
+			p.angle = 0
+		}
+	}
+	tileSize := 32
+	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
+	p.x = math.Max(float64(tileSize)/2, math.Min(maxX-float64(tileSize)/2, p.x))
+	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
+	p.time += 1.0 / 60.0
+	p.centerCamera()
+}
+func (p *playState) centerCamera() {
+	zoom := p.world.Zoom
+	worldWidth := float64(p.world.Level.Width * 32)
+	worldHeight := float64(p.world.Level.Height * 32)
+	maxX := math.Max(0, worldWidth-float64(logicalWidth)/zoom)
+	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
+	p.world.CameraX = math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))
+	p.world.CameraY = math.Max(0, math.Min(maxY, p.y-float64(logicalHeight)/(2*zoom)))
+	p.world.ViewportX, p.world.ViewportY = 0, 0
 }
 func (a *app) Texture(name string) (*ebiten.Image, error) {
 	key := strings.ToLower(strings.TrimSuffix(name, ".tex"))
@@ -499,8 +647,9 @@ var colorDark = color.RGBA{10, 12, 18, 255}
 
 func main() {
 	assets := flag.String("assets", "data", "generated cache or reference content directory")
+	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
 	flag.Parse()
-	game, err := newApp(*assets)
+	game, err := newApp(*assets, *debug)
 	if err != nil {
 		log.Fatal(err)
 	}
