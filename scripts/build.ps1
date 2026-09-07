@@ -9,6 +9,6 @@ switch ($Target) {
     'darwin' { $env:GOOS = 'darwin'; $env:GOARCH = 'amd64'; $output = Join-Path $bin 'aoz-darwin' }
     'wasm' { $env:GOOS = 'js'; $env:GOARCH = 'wasm'; $output = Join-Path $bin 'aoz.wasm' }
 }
-Push-Location (Join-Path $project 'frontend')
+Push-Location $project
 try { go build -o $output .; if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" } } finally { Pop-Location; Remove-Item Env:GOOS -ErrorAction SilentlyContinue; Remove-Item Env:GOARCH -ErrorAction SilentlyContinue }
 Write-Output $output
