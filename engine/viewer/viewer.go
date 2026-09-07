@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"sort"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/hajimehoshi/ebiten/v2"
@@ -155,7 +156,9 @@ func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 	}
 }
 func (v *Viewer) drawProps(screen *ebiten.Image) {
-	for _, prop := range v.Level.Props {
+	props := append([]formats.Prop(nil), v.Level.Props...)
+	sort.SliceStable(props, func(i, j int) bool { return props[i].Y+props[i].Height < props[j].Y+props[j].Height })
+	for _, prop := range props {
 		if v.Textures == nil {
 			continue
 		}
@@ -170,10 +173,18 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		if scaleY == 0 {
 			scaleY = 1
 		}
-		options := &ebiten.DrawImageOptions{}
-		options.GeoM.Scale(v.Zoom*scaleX, v.Zoom*scaleY)
-		options.GeoM.Translate((prop.X-v.CameraX)*v.Zoom, (prop.Y-v.CameraY)*v.Zoom)
-		screen.DrawImage(texture, options)
+		sourceX0, sourceY0 := prop.UV1X, prop.UV1Y
+		sourceX1, sourceY1 := prop.UV2X, prop.UV2Y
+		if sourceX1 <= sourceX0 || sourceY1 <= sourceY0 {
+			sourceX0, sourceY0 = 0, 0
+			sourceX1, sourceY1 = float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+		}
+		destinationX0 := float32((prop.X - v.CameraX) * v.Zoom)
+		destinationY0 := float32((prop.Y - v.CameraY) * v.Zoom)
+		destinationX1 := destinationX0 + float32(scaleX*v.Zoom*float64(v.tileSize()))
+		destinationY1 := destinationY0 + float32(scaleY*v.Zoom*float64(v.tileSize()))
+		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
+		screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, texture, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
 	}
 }
 func (v *Viewer) drawGrid(screen *ebiten.Image, tileSize int) {
