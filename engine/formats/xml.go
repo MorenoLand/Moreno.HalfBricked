@@ -90,7 +90,11 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		for _, item := range doc.Levels {
 			world, _ := strconv.Atoi(item.WorldIndex)
 			flags := splitFlags(item.Flags)
-			entries[item.LevelName] = LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, WorldIndex: world, Flags: flags, Description: item.Description, SourceXML: filepath.ToSlash(rel)}
+			candidate := LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, WorldIndex: world, Flags: flags, Description: item.Description, SourceXML: filepath.ToSlash(rel)}
+			current, exists := entries[item.LevelName]
+			if !exists || (!hasLevelFile(root, current) && hasLevelFile(root, candidate)) {
+				entries[item.LevelName] = candidate
+			}
 		}
 	}
 	result := make([]LevelInfo, 0, len(entries))
@@ -104,6 +108,12 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		return result[i].ID < result[j].ID
 	})
 	return result, nil
+}
+
+func hasLevelFile(root string, info LevelInfo) bool {
+	packageRoot := filepath.Dir(filepath.Dir(filepath.Join(root, "assets", filepath.FromSlash(info.SourceXML))))
+	_, err := os.Stat(filepath.Join(packageRoot, "Levels", info.BaseFile+".xml"))
+	return err == nil
 }
 
 func ParseLevel(root string, info LevelInfo) (Level, error) {
