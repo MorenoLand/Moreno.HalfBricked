@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"log"
 	"math"
@@ -28,6 +29,7 @@ type app struct {
 	level         int
 	mode          int
 	images        map[string]*ebiten.Image
+	sources       map[string]image.Image
 	view          *viewer.Viewer
 	font          *ui.Font
 	startupFrames int
@@ -51,7 +53,7 @@ func newApp(root string) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	game := &app{pack: pack, levels: pack.List(), images: map[string]*ebiten.Image{}, startupFrames: 45}
+	game := &app{pack: pack, levels: pack.List(), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
 	game.font, _ = loadFont(pack)
 	return game, nil
 }
@@ -319,8 +321,8 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	screen.Fill(colorDark)
 	if !a.splashLoaded {
 		a.splashLoaded = true
-		if source, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
-			a.splash = cropSplash(source)
+		if source, err := a.Source("Common0/Textures/splashscreen"); err == nil {
+			a.splash = ebiten.NewImageFromImage(cropSplash(source))
 		}
 	}
 	if a.splash != nil {
@@ -331,7 +333,7 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
 	}
 }
-func cropSplash(source *ebiten.Image) *ebiten.Image {
+func cropSplash(source image.Image) image.Image {
 	bounds := source.Bounds()
 	top, bottom := bounds.Max.Y, bounds.Min.Y
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -349,9 +351,11 @@ func cropSplash(source *ebiten.Image) *ebiten.Image {
 	if top >= bottom {
 		return source
 	}
-	return source.SubImage(image.Rect(bounds.Min.X, top, bounds.Max.X, bottom)).(*ebiten.Image)
+	cropped := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bottom-top))
+	draw.Draw(cropped, cropped.Bounds(), source, image.Point{X: bounds.Min.X, Y: top}, draw.Src)
+	return cropped
 }
-func splashRowHasContent(source *ebiten.Image, y int, bounds image.Rectangle) bool {
+func splashRowHasContent(source image.Image, y int, bounds image.Rectangle) bool {
 	for x := bounds.Min.X; x < bounds.Max.X; x += 8 {
 		r, g, b, a := source.At(x, y).RGBA()
 		if a > 0 && r+g+b > 24*257 {
@@ -444,8 +448,23 @@ func (a *app) Texture(name string) (*ebiten.Image, error) {
 		return nil, err
 	}
 	image := ebiten.NewImageFromImage(source)
+	a.sources[key] = source
 	a.images[key] = image
 	return image, nil
+}
+func (a *app) Source(name string) (image.Image, error) {
+	key := strings.ToLower(strings.TrimSuffix(name, ".tex"))
+	if source, ok := a.sources[key]; ok {
+		return source, nil
+	}
+	if _, err := a.Texture(name); err != nil {
+		return nil, err
+	}
+	source, ok := a.sources[key]
+	if !ok {
+		return nil, fmt.Errorf("texture source %q not found", name)
+	}
+	return source, nil
 }
 func ioReadAll(reader interface{ Read([]byte) (int, error) }) ([]byte, error) {
 	var data bytes.Buffer
