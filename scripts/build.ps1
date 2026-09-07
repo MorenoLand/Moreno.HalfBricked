@@ -16,6 +16,8 @@ if ($Target -eq 'wasm') {
     New-Item -ItemType Directory -Force -Path $web | Out-Null
     Copy-Item -LiteralPath $output -Destination (Join-Path $web 'aoz.wasm') -Force
     Copy-Item -LiteralPath (Join-Path $project 'web\index.html') -Destination (Join-Path $web 'index.html') -Force
+    if (Test-Path -LiteralPath (Join-Path $project 'web\favicon.png')) { Copy-Item -LiteralPath (Join-Path $project 'web\favicon.png') -Destination (Join-Path $web 'favicon.png') -Force }
+    if (Test-Path -LiteralPath (Join-Path $project 'web\favicon.ico')) { Copy-Item -LiteralPath (Join-Path $project 'web\favicon.ico') -Destination (Join-Path $web 'favicon.ico') -Force }
     $wasmExec = Join-Path (go env GOROOT) 'lib\wasm\wasm_exec.js'
     if (-not (Test-Path -LiteralPath $wasmExec)) { $wasmExec = Join-Path (go env GOROOT) 'misc\wasm\wasm_exec.js' }
     if (-not (Test-Path -LiteralPath $wasmExec)) { throw "wasm_exec.js not found below GoROOT" }

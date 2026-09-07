@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"flag"
 	"fmt"
 	"image"
@@ -54,6 +55,7 @@ type playState struct {
 	time                                                 float64
 	moving                                               bool
 	angle                                                int
+	flipX                                                bool
 	tileSize                                             int
 	radius                                               float64
 	flash                                                float64
@@ -388,53 +390,92 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	if a.play.moving {
 		frame = int(a.play.time*10) % 4
 	}
+	const scale = 1.0
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
-		a.drawBarry(target, screenX, screenY, 1, frame, a.play.angle)
+		a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 		if a.play.flash > 0 {
-			a.drawBarryFlash(target, screenX, screenY, 1, a.play.angle)
+			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
 	})
 	if a.mobile {
 		a.drawPlayControls(screen)
 	}
 }
-func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int) {
-	a.drawBarryPart(screen, "Common0/Textures/Characters/barryidle_SD", x, y, scale, frame, angle)
-	a.drawBarryPart(screen, "Common0/Textures/Characters/barrygun_01_SD", x, y, scale, frame, angle)
+func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle {
+	x0 := int(math.Round(float64(col) * float64(texW) / float64(numCols)))
+	x1 := int(math.Round(float64(col+1) * float64(texW) / float64(numCols)))
+	y0 := int(math.Round(float64(frame) * float64(texH) / float64(numRows)))
+	y1 := int(math.Round(float64(frame+1) * float64(texH) / float64(numRows)))
+	return image.Rect(x0, y0, x1, y1)
 }
-func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float64, frame, angle int) {
+func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int, flipX bool) {
+	bodySheet := "Common0/Textures/Characters/barryidle_SD"
+	if a.play != nil && a.play.moving {
+		bodySheet = "Common0/Textures/Characters/barryrun_SD"
+	}
+	a.drawBarryPart(screen, bodySheet, x, y, scale, frame, angle, flipX)
+	if angle != 8 {
+		a.drawBarryPart(screen, "Common0/Textures/Characters/barrygun_01_SD", x, y, scale, frame, angle, flipX)
+	}
+}
+func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float64, frame, angle int, flipX bool) {
 	texture, err := a.Texture(name)
 	if err != nil {
 		return
 	}
-	const columns, rows = 8, 4
-	cellWidth, cellHeight := texture.Bounds().Dx()/columns, texture.Bounds().Dy()/rows
+	const columns, rows = 9, 4
+	if angle < 0 {
+		angle = 0
+	} else if angle >= columns {
+		angle = columns - 1
+	}
+	frame = ((frame % rows) + rows) % rows
+	texW, texH := texture.Bounds().Dx(), texture.Bounds().Dy()
+	rect := barryCellRect(angle, frame, columns, rows, texW, texH)
+	cellWidth, cellHeight := float64(rect.Dx()), float64(rect.Dy())
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
 	}
-	frame = ((frame % rows) + rows) % rows
-	angle = ((angle % columns) + columns) % columns
-	source := texture.SubImage(image.Rect(angle*cellWidth, frame*cellHeight, (angle+1)*cellWidth, (frame+1)*cellHeight)).(*ebiten.Image)
+	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Scale(scale, scale)
-	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
+	options.GeoM.Translate(-cellWidth/2, -cellHeight/2)
+	if flipX {
+		options.GeoM.Scale(-scale, scale)
+	} else {
+		options.GeoM.Scale(scale, scale)
+	}
+	options.GeoM.Translate(x, y)
 	screen.DrawImage(source, options)
 }
-func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle int) {
+func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle int, flipX bool) {
+	if angle == 8 {
+		return
+	}
 	texture, err := a.Texture("Common0/Textures/Characters/barrygun_01_flash_SD")
 	if err != nil {
 		return
 	}
-	const columns = 8
-	cellWidth, cellHeight := texture.Bounds().Dx()/columns, texture.Bounds().Dy()
+	const columns, rows = 9, 1
+	if angle < 0 {
+		angle = 0
+	} else if angle >= columns {
+		angle = columns - 1
+	}
+	texW, texH := texture.Bounds().Dx(), texture.Bounds().Dy()
+	rect := barryCellRect(angle, 0, columns, rows, texW, texH)
+	cellWidth, cellHeight := float64(rect.Dx()), float64(rect.Dy())
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
 	}
-	angle = ((angle % columns) + columns) % columns
-	source := texture.SubImage(image.Rect(angle*cellWidth, 0, (angle+1)*cellWidth, cellHeight)).(*ebiten.Image)
+	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Scale(scale, scale)
-	options.GeoM.Translate(x-float64(cellWidth)*scale/2, y-float64(cellHeight)*scale/2)
+	options.GeoM.Translate(-cellWidth/2, -cellHeight/2)
+	if flipX {
+		options.GeoM.Scale(-scale, scale)
+	} else {
+		options.GeoM.Scale(scale, scale)
+	}
+	options.GeoM.Translate(x, y)
 	screen.DrawImage(source, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
@@ -660,7 +701,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		dx, dy = p.leftDeflectX, p.leftDeflectY
 	}
 	if mobile && p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
-		p.angle = angleFromVector(p.rightDeflectX, p.rightDeflectY)
+		p.angle, p.flipX = barryDirection(p.rightDeflectX, p.rightDeflectY)
 		if pointerJustPressed {
 			p.flash = .1
 		}
@@ -669,7 +710,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		worldX := (float64(pointerX)-p.world.ViewportX)/p.world.Zoom + p.world.CameraX
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		if math.Hypot(worldX-p.x, worldY-p.y) > .001 {
-			p.angle = angleFromVector(worldX-p.x, worldY-p.y)
+			p.angle, p.flipX = barryDirection(worldX-p.x, worldY-p.y)
 		}
 		if pointerJustPressed {
 			p.flash = .1
@@ -694,7 +735,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			p.x, p.y = candidateX, candidateY
 		}
 		if mobile && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
-			p.angle = angleFromVector(dx, dy)
+			p.angle, p.flipX = barryDirection(dx, dy)
 		}
 	}
 	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
@@ -711,8 +752,21 @@ func stickDeflection(x, y, baseX, baseY float64) (float64, float64) {
 	}
 	return dx / 32, dy / 32
 }
-func angleFromVector(x, y float64) int {
-	return ((int(math.Round(math.Atan2(-y, x)/(math.Pi/4)))+2)%8 + 8) % 8
+func barryDirection(dx, dy float64) (int, bool) {
+	flipX := dx < -0.001
+	absX := math.Abs(dx)
+	if absX < 0.0001 && math.Abs(dy) < 0.0001 {
+		return 0, false
+	}
+	angleRad := math.Atan2(dy, absX)
+	t := (math.Pi/2 - angleRad) / math.Pi
+	col := int(math.Round(t * 8.0))
+	if col < 0 {
+		col = 0
+	} else if col > 8 {
+		col = 8
+	}
+	return col, flipX
 }
 func (p *playState) centerCamera() {
 	tileSize := p.tileSize
@@ -862,6 +916,38 @@ func clampFloat(value, low, high float64) float64 {
 
 var colorDark = color.RGBA{10, 12, 18, 255}
 
+//go:embed icon_16.png
+var icon16Bytes []byte
+
+//go:embed icon_32.png
+var icon32Bytes []byte
+
+//go:embed icon_48.png
+var icon48Bytes []byte
+
+//go:embed icon_64.png
+var icon64Bytes []byte
+
+//go:embed icon_128.png
+var icon128Bytes []byte
+
+//go:embed icon_256.png
+var icon256Bytes []byte
+
+func loadAppIcons() []image.Image {
+	var icons []image.Image
+	for _, b := range [][]byte{icon16Bytes, icon32Bytes, icon48Bytes, icon64Bytes, icon128Bytes, icon256Bytes} {
+		if len(b) == 0 {
+			continue
+		}
+		img, err := png.Decode(bytes.NewReader(b))
+		if err == nil {
+			icons = append(icons, img)
+		}
+	}
+	return icons
+}
+
 func main() {
 	assets := flag.String("assets", "data", "generated cache or reference content directory")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
@@ -874,6 +960,9 @@ func main() {
 	ebiten.SetWindowSize(960, 540)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("HalfBricked")
+	if icons := loadAppIcons(); len(icons) > 0 {
+		ebiten.SetWindowIcon(icons)
+	}
 	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {
 		log.Fatal(err)
 	}

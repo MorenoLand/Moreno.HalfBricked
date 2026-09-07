@@ -14,6 +14,8 @@ if [ "$target" = wasm ]; then
   mkdir -p "$project/bin/web"
   cp "$project/bin/aoz.wasm" "$project/bin/web/aoz.wasm"
   cp "$project/web/index.html" "$project/bin/web/index.html"
+  if [ -f "$project/web/favicon.png" ]; then cp "$project/web/favicon.png" "$project/bin/web/favicon.png"; fi
+  if [ -f "$project/web/favicon.ico" ]; then cp "$project/web/favicon.ico" "$project/bin/web/favicon.ico"; fi
   wasm_exec="$(go env GOROOT)/lib/wasm/wasm_exec.js"
   if [ ! -f "$wasm_exec" ]; then wasm_exec="$(go env GOROOT)/misc/wasm/wasm_exec.js"; fi
   if [ ! -f "$wasm_exec" ]; then echo "wasm_exec.js not found below GoROOT" >&2; exit 1; fi
