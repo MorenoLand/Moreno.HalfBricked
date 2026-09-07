@@ -209,7 +209,9 @@ func collisionColor(value uint32) color.RGBA {
 }
 func (v *Viewer) drawProps(screen *ebiten.Image) {
 	props := append([]formats.Prop(nil), v.Level.Props...)
-	sort.SliceStable(props, func(i, j int) bool { return props[i].Y+props[i].Height < props[j].Y+props[j].Height })
+	sort.SliceStable(props, func(i, j int) bool {
+		return props[i].Y+props[i].Height*float64(v.tileSize()) < props[j].Y+props[j].Height*float64(v.tileSize())
+	})
 	for _, prop := range props {
 		if v.Textures == nil {
 			continue
@@ -234,7 +236,7 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		worldWidth := scaleX * float64(v.tileSize())
 		worldHeight := scaleY * float64(v.tileSize())
 		destinationX0 := float32((prop.X-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
-		destinationY0 := float32((prop.Y-prop.Height-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
+		destinationY0 := float32((prop.Y-prop.Height*float64(v.tileSize())-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
 		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
 		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
 		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
