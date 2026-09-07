@@ -49,6 +49,13 @@ type app struct {
 const logicalWidth = 480
 const logicalHeight = 320
 
+type bullet struct {
+	x, y   float64
+	vx, vy float64
+	life   float64
+	angle  float64
+}
+
 type playState struct {
 	world                                                *viewer.Viewer
 	x, y                                                 float64
@@ -62,6 +69,10 @@ type playState struct {
 	stick                                                int
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY     float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY float64
+	bullets                                              []bullet
+	shootCooldown                                        float64
+	paused                                               bool
+	shouldQuit                                           bool
 }
 
 const playerBaseSpeed = 180.0
@@ -98,11 +109,19 @@ func (a *app) Update() error {
 	}
 	if a.play != nil {
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-			a.play = nil
+			if a.play.paused {
+				a.play = nil
+				return nil
+			}
+			a.play.paused = true
 			return nil
 		}
 		x, y := a.pointer()
 		a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile)
+		if a.play.shouldQuit {
+			a.play = nil
+			return nil
+		}
 		return nil
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
@@ -396,9 +415,35 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
+		a.drawBullets(target)
 	})
-	if a.mobile {
-		a.drawPlayControls(screen)
+	a.drawPlayControls(screen)
+	if a.play.paused {
+		ebitenutil.DrawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
+		a.text(screen, "PAUSED", 195, 115, 1.0)
+		a.text(screen, "RESUME", 212, 160, 0.5)
+		a.text(screen, "QUIT TO MENU", 192, 190, 0.5)
+	}
+}
+func (a *app) drawBullets(screen *ebiten.Image) {
+	if a.play == nil || len(a.play.bullets) == 0 {
+		return
+	}
+	bulletImg, err := a.Texture("Common0/Textures/bullet_SD")
+	if err != nil {
+		return
+	}
+	texW, texH := float64(bulletImg.Bounds().Dx()), float64(bulletImg.Bounds().Dy())
+	zoom := a.play.world.Zoom
+	for _, b := range a.play.bullets {
+		sx := (b.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
+		sy := (b.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Translate(-texW/2, -texH/2)
+		options.GeoM.Rotate(b.angle)
+		options.GeoM.Scale(zoom, zoom)
+		options.GeoM.Translate(sx, sy)
+		screen.DrawImage(bulletImg, options)
 	}
 }
 func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle {
@@ -479,18 +524,17 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	screen.DrawImage(source, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
-	if !a.mobile {
-		return
-	}
-	if a.play.stick == 1 {
-		a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
-	} else {
-		a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", 64, 256, 0, 0)
-	}
-	if a.play.stick == 2 {
-		a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", a.play.rightBaseX, a.play.rightBaseY, a.play.rightDeflectX, a.play.rightDeflectY)
-	} else {
-		a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", 416, 256, 0, 0)
+	if a.mobile {
+		if a.play.stick == 1 {
+			a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
+		} else {
+			a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", 64, 256, 0, 0)
+		}
+		if a.play.stick == 2 {
+			a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", a.play.rightBaseX, a.play.rightBaseY, a.play.rightDeflectX, a.play.rightDeflectY)
+		} else {
+			a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", 416, 256, 0, 0)
+		}
 	}
 	if image, err := a.Texture("Common0/Textures/Pause_Large_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
@@ -606,7 +650,10 @@ func (a *app) openPlay() error {
 		return err
 	}
 	world := viewer.New(level, tileset, atlas, a)
-	world.Zoom = .5
+	world.Zoom = 1.0
+	world.ViewportX = 0
+	world.ViewportY = 0
+	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
 	a.play = &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius}
@@ -662,14 +709,50 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	if radius <= 0 {
 		radius = playerCollisionRadius
 	}
+	inPauseBtn := pointerX >= 440 && pointerX <= 480 && pointerY >= 0 && pointerY <= 48
+	if pointerJustPressed && inPauseBtn {
+		p.paused = !p.paused
+		return
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
+		p.paused = !p.paused
+		return
+	}
+	if p.paused {
+		if pointerJustPressed {
+			if pointerX >= 180 && pointerX <= 300 && pointerY >= 150 && pointerY <= 175 {
+				p.paused = false
+				return
+			}
+			if pointerX >= 170 && pointerX <= 310 && pointerY >= 180 && pointerY <= 205 {
+				p.shouldQuit = true
+				return
+			}
+		}
+		return
+	}
 	p.flash = math.Max(0, p.flash-1.0/60.0)
+	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
+
+	const dt = 1.0 / 60.0
+	activeBullets := p.bullets[:0]
+	for _, b := range p.bullets {
+		b.x += b.vx * dt
+		b.y += b.vy * dt
+		b.life -= dt
+		if b.life > 0 && !p.isSolid(b.x, b.y) {
+			activeBullets = append(activeBullets, b)
+		}
+	}
+	p.bullets = activeBullets
+
 	if !mobile {
 		p.stick = 0
 		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
 	} else if !pointerDown {
 		p.stick = 0
 		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
-	} else if p.stick == 0 && pointerJustPressed {
+	} else if p.stick == 0 && pointerJustPressed && !inPauseBtn {
 		if pointerX < logicalWidth/2 {
 			p.stick = 1
 			p.leftBaseX, p.leftBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
@@ -702,18 +785,21 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	}
 	if mobile && p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
 		p.angle, p.flipX = barryDirection(p.rightDeflectX, p.rightDeflectY)
-		if pointerJustPressed {
-			p.flash = .1
+		if p.shootCooldown <= 0 {
+			p.fire(p.rightDeflectX, p.rightDeflectY)
 		}
 	}
 	if !mobile {
 		worldX := (float64(pointerX)-p.world.ViewportX)/p.world.Zoom + p.world.CameraX
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
-		if math.Hypot(worldX-p.x, worldY-p.y) > .001 {
-			p.angle, p.flipX = barryDirection(worldX-p.x, worldY-p.y)
+		aimDX := worldX - p.x
+		aimDY := worldY - p.y
+		if math.Hypot(aimDX, aimDY) > .001 {
+			p.angle, p.flipX = barryDirection(aimDX, aimDY)
 		}
-		if pointerJustPressed {
-			p.flash = .1
+		firing := (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn
+		if firing && p.shootCooldown <= 0 {
+			p.fire(aimDX, aimDY)
 		}
 	}
 	p.moving = dx != 0 || dy != 0
@@ -743,6 +829,42 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
 	p.time += 1.0 / 60.0
 	p.updateCamera()
+}
+
+func (p *playState) fire(dx, dy float64) {
+	dist := math.Hypot(dx, dy)
+	if dist < 0.0001 {
+		return
+	}
+	dirX, dirY := dx/dist, dy/dist
+	const muzzleOffset = 24.0
+	const bulletSpeed = 600.0
+	const bulletLife = 0.75
+	bx := p.x + dirX*muzzleOffset
+	by := p.y + dirY*muzzleOffset
+	bvx := dirX * bulletSpeed
+	bvy := dirY * bulletSpeed
+	bAngle := math.Atan2(dirY, dirX) + math.Pi/2
+	p.bullets = append(p.bullets, bullet{
+		x:     bx,
+		y:     by,
+		vx:    bvx,
+		vy:    bvy,
+		life:  bulletLife,
+		angle: bAngle,
+	})
+	p.flash = 0.08
+	p.shootCooldown = 0.25
+}
+
+func (p *playState) isSolid(x, y float64) bool {
+	tileSize := p.tileSize
+	if tileSize <= 0 {
+		tileSize = 32
+	}
+	tileX := int(math.Floor(x / float64(tileSize)))
+	tileY := int(math.Floor(y / float64(tileSize)))
+	return p.collisionValue(tileX, tileY) == 1
 }
 func stickDeflection(x, y, baseX, baseY float64) (float64, float64) {
 	dx, dy := x-baseX, y-baseY
@@ -794,8 +916,8 @@ func (p *playState) updateCamera() {
 	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
 	targetX := math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))
 	targetY := math.Max(0, math.Min(maxY, p.y-float64(logicalHeight)/(2*zoom)))
-	p.world.CameraX += (targetX - p.world.CameraX) * 0.15
-	p.world.CameraY += (targetY - p.world.CameraY) * 0.15
+	p.world.CameraX = math.Max(0, math.Min(maxX, p.world.CameraX+(targetX-p.world.CameraX)*0.15))
+	p.world.CameraY = math.Max(0, math.Min(maxY, p.world.CameraY+(targetY-p.world.CameraY)*0.15))
 	p.world.ViewportX, p.world.ViewportY = 0, 0
 }
 func (p *playState) collisionDisplacement(x, y, radius float64, tileSize int) (float64, float64, bool) {

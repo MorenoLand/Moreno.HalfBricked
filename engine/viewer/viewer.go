@@ -35,7 +35,7 @@ type Viewer struct {
 }
 
 func New(level formats.Level, tileSet formats.TileSet, atlas *ebiten.Image, textures TextureProvider) *Viewer {
-	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true}, Props: true}
+	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true, formats.LayerH: true}, Props: true}
 	viewer.inputWidth, viewer.inputHeight = 480, 320
 	viewer.fit(480, 320)
 	return viewer
@@ -80,6 +80,11 @@ func (v *Viewer) Update() {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		v.fit(480, 320)
+	}
+	if inpututil.IsKeyJustPressed(ebiten.Key0) {
+		v.Zoom = 1.0
+		v.ViewportX, v.ViewportY = 0, 0
+		v.clampCamera()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
 		v.Debug = !v.Debug
