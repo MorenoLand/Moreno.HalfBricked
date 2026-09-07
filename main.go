@@ -53,7 +53,12 @@ type playState struct {
 	moving   bool
 	angle    int
 	tileSize int
+	radius   float64
 }
+
+const playerBaseSpeed = 180.0
+const playerCollisionRadius = 16.0
+const playerCollisionStep = 4.0
 
 func newApp(root string, debug bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -488,7 +493,7 @@ func (a *app) openPlay() error {
 	world.Zoom = .5
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	a.play = &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize}
+	a.play = &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius}
 	a.play.centerCamera()
 	return nil
 }
@@ -521,13 +526,10 @@ func tileSizeFor(tileset formats.TileSet) int {
 	return 32
 }
 func spawnPosition(level formats.Level, tileSize int) (float64, float64) {
-	if strings.EqualFold(level.Info.ID, "World0Level0") {
-		return 530, 431
-	}
 	if level.Layers[formats.LayerC] != nil {
 		for y := 0; y < level.Height; y++ {
 			for x := 0; x < level.Width; x++ {
-				if level.Layers[formats.LayerC][y*level.Width+x] == 3 {
+				if level.Layers[formats.LayerC][y*level.Width+x] == 2 {
 					return float64(x*tileSize + tileSize/2), float64(y*tileSize + tileSize/2)
 				}
 			}
@@ -539,6 +541,10 @@ func (p *playState) Update() {
 	tileSize := p.tileSize
 	if tileSize <= 0 {
 		tileSize = 32
+	}
+	radius := p.radius
+	if radius <= 0 {
+		radius = playerCollisionRadius
 	}
 	dx, dy := 0.0, 0.0
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
@@ -556,9 +562,21 @@ func (p *playState) Update() {
 	p.moving = dx != 0 || dy != 0
 	if p.moving {
 		length := math.Sqrt(dx*dx + dy*dy)
-		dx, dy = dx/length*2, dy/length*2
-		p.x += dx
-		p.y += dy
+		moveX, moveY := dx/length*playerBaseSpeed/60, dy/length*playerBaseSpeed/60
+		stepLength := math.Sqrt(moveX*moveX + moveY*moveY)
+		steps := int(math.Ceil(stepLength / playerCollisionStep))
+		if steps < 1 {
+			steps = 1
+		}
+		for step := 0; step < steps; step++ {
+			candidateX, candidateY := p.x+moveX/float64(steps), p.y+moveY/float64(steps)
+			pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
+			if hit {
+				candidateX += pushX
+				candidateY += pushY
+			}
+			p.x, p.y = candidateX, candidateY
+		}
 		if dx < 0 {
 			p.angle = 6
 		} else if dx > 0 {
@@ -573,7 +591,7 @@ func (p *playState) Update() {
 	p.x = math.Max(float64(tileSize)/2, math.Min(maxX-float64(tileSize)/2, p.x))
 	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
 	p.time += 1.0 / 60.0
-	p.centerCamera()
+	p.updateCamera()
 }
 func (p *playState) centerCamera() {
 	tileSize := p.tileSize
@@ -588,6 +606,59 @@ func (p *playState) centerCamera() {
 	p.world.CameraX = math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))
 	p.world.CameraY = math.Max(0, math.Min(maxY, p.y-float64(logicalHeight)/(2*zoom)))
 	p.world.ViewportX, p.world.ViewportY = 0, 0
+}
+func (p *playState) updateCamera() {
+	tileSize := p.tileSize
+	if tileSize <= 0 {
+		tileSize = 32
+	}
+	zoom := p.world.Zoom
+	worldWidth := float64(p.world.Level.Width * tileSize)
+	worldHeight := float64(p.world.Level.Height * tileSize)
+	maxX := math.Max(0, worldWidth-float64(logicalWidth)/zoom)
+	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
+	targetX := math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))
+	targetY := math.Max(0, math.Min(maxY, p.y-float64(logicalHeight)/(2*zoom)))
+	p.world.CameraX += (targetX - p.world.CameraX) * 0.15
+	p.world.CameraY += (targetY - p.world.CameraY) * 0.15
+	p.world.ViewportX, p.world.ViewportY = 0, 0
+}
+func (p *playState) collisionDisplacement(x, y, radius float64, tileSize int) (float64, float64, bool) {
+	minX := int(math.Floor((x - radius) / float64(tileSize)))
+	maxX := int(math.Floor((x + radius) / float64(tileSize)))
+	minY := int(math.Floor((y - radius) / float64(tileSize)))
+	maxY := int(math.Floor((y + radius) / float64(tileSize)))
+	bestX, bestY, bestPen := 0.0, 0.0, math.Inf(1)
+	for tileY := minY; tileY <= maxY; tileY++ {
+		for tileX := minX; tileX <= maxX; tileX++ {
+			if p.collisionValue(tileX, tileY) != 1 {
+				continue
+			}
+			centerX := (float64(tileX) + .5) * float64(tileSize)
+			centerY := (float64(tileY) + .5) * float64(tileSize)
+			penX := float64(tileSize)/2 + radius - math.Abs(x-centerX)
+			penY := float64(tileSize)/2 + radius - math.Abs(y-centerY)
+			if penX <= 0 || penY <= 0 {
+				continue
+			}
+			if penX < penY && penX < bestPen {
+				bestX, bestY, bestPen = math.Copysign(penX, x-centerX), 0, penX
+			} else if penY < bestPen {
+				bestX, bestY, bestPen = 0, math.Copysign(penY, y-centerY), penY
+			}
+		}
+	}
+	return bestX, bestY, bestPen != math.Inf(1)
+}
+func (p *playState) collisionValue(tileX, tileY int) uint32 {
+	if tileX < 0 || tileX >= p.world.Level.Width || tileY < 0 || tileY >= p.world.Level.Height {
+		return 1
+	}
+	raw := p.world.Level.Layers[formats.LayerC][tileY*p.world.Level.Width+tileX]
+	if raw == ^uint32(0) {
+		return 0
+	}
+	return (raw + 1) & 0xffff
 }
 func (a *app) Texture(name string) (*ebiten.Image, error) {
 	key := strings.ToLower(strings.TrimSuffix(name, ".tex"))
