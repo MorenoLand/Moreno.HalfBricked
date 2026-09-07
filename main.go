@@ -29,6 +29,7 @@ type app struct {
 	view          *viewer.Viewer
 	font          *ui.Font
 	startupFrames int
+	menuTime      float64
 }
 
 func newApp(root string) (*app, error) {
@@ -49,6 +50,7 @@ func (a *app) Update() error {
 		a.startupFrames--
 		return nil
 	}
+	a.menuTime += 1.0 / 60.0
 	if a.view != nil {
 		if a.view.Back() {
 			a.view = nil
@@ -251,7 +253,9 @@ func (a *app) drawDetails(screen *ebiten.Image) {
 func (a *app) drawBackdrop(screen *ebiten.Image) {
 	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{}
-		options.GeoM.Translate(float64(480-image.Bounds().Dx())/2, float64(320-image.Bounds().Dy())/2)
+		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
+		options.GeoM.Rotate(a.menuTime * .3)
+		options.GeoM.Translate(240, 160)
 		screen.DrawImage(image, options)
 	}
 	ebitenutil.DrawRect(screen, 0, 0, 480, 320, color.RGBA{5, 12, 22, 80})
