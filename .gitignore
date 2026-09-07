@@ -1,0 +1,10 @@
+bin/
+.aoz-cache/
+data/
+*.wasm
+wasm_exec.js
+bin/data-cache/
+test-output/
+*.golden
+*.capture.png
+*.trace
