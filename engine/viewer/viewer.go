@@ -264,10 +264,10 @@ func (v *Viewer) clampCamera() {
 	v.CameraY = clampFloat(v.CameraY, 0, maxY)
 }
 func (v *Viewer) visibleBounds(tileSize int) (int, int, int, int) {
-	minX := int(math.Floor(v.CameraX / float64(tileSize)))
-	minY := int(math.Floor(v.CameraY / float64(tileSize)))
-	maxX := int(math.Ceil((v.CameraX + 480/v.Zoom) / float64(tileSize)))
-	maxY := int(math.Ceil((v.CameraY + 320/v.Zoom) / float64(tileSize)))
+	minX := int(math.Floor(v.CameraX/float64(tileSize))) - 1
+	minY := int(math.Floor(v.CameraY/float64(tileSize))) - 1
+	maxX := int(math.Ceil((v.CameraX+480/v.Zoom)/float64(tileSize))) + 1
+	maxY := int(math.Ceil((v.CameraY+320/v.Zoom)/float64(tileSize))) + 1
 	if minX < 0 {
 		minX = 0
 	}

@@ -102,31 +102,13 @@ func (a *app) Draw(screen *ebiten.Image) {
 	} else {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 24, 10, .25)
 	}
-	ebitenutil.DrawRect(screen, 24, 18, 432, 42, color.RGBA{8, 12, 20, 155})
-	ebitenutil.DrawLine(screen, 24, 60, 456, 60, color.RGBA{115, 165, 195, 220})
-	if a.page == 0 {
-		a.text(screen, "HALFBRICKED", 38, 30, .5)
-	}
-	title := "MAIN MENU"
-	if a.page == 1 {
-		title = "SELECT WORLD"
-	}
-	if a.page == 2 {
-		title = "SELECT LEVEL"
-	}
-	a.text(screen, title, 320, 34, .5)
-	ebitenutil.DrawRect(screen, 24, 78, 276, 190, color.RGBA{8, 12, 20, 205})
-	ebitenutil.DrawRect(screen, 312, 78, 144, 190, color.RGBA{8, 12, 20, 180})
 	items := a.items()
 	for i, item := range items {
 		y := 96 + i*28
-		if i == a.cursor() {
-			ebitenutil.DrawRect(screen, 36, float64(y-3), 252, 22, color.RGBA{57, 78, 119, 255})
-		}
+		a.drawTexture(screen, "Common0/Textures/Button_Screen", 34, float64(y-16), .25)
 		a.text(screen, item, 48, float64(y), .5)
 	}
 	a.drawDetails(screen)
-	a.text(screen, "UP/DOWN SELECT   ENTER OPEN   ESC BACK", 24, 292, .5)
 }
 func (a *app) Layout(_, _ int) (int, int) { return 480, 320 }
 func (a *app) items() []string {
@@ -226,8 +208,6 @@ func (a *app) activate() error {
 }
 func (a *app) drawDetails(screen *ebiten.Image) {
 	if a.page == 0 {
-		a.text(screen, "Explore converted content", 324, 100, .5)
-		a.text(screen, "through the map viewer.", 324, 116, .5)
 		return
 	}
 	if a.page == 1 {
@@ -239,7 +219,6 @@ func (a *app) drawDetails(screen *ebiten.Image) {
 		if worlds[a.world] < 5 {
 			a.drawTexture(screen, fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", worlds[a.world]+1), 320, 122, 1)
 		}
-		a.text(screen, "ENTER TO VIEW LEVELS", 324, 260, .5)
 		return
 	}
 	levels := a.filteredLevels()
@@ -274,13 +253,14 @@ func (a *app) drawBackdrop(screen *ebiten.Image) {
 		options.GeoM.Translate(240, 160)
 		screen.DrawImage(image, options)
 	}
-	ebitenutil.DrawRect(screen, 0, 0, 480, 320, color.RGBA{5, 12, 22, 80})
 }
 func (a *app) drawStartup(screen *ebiten.Image) {
 	screen.Fill(colorDark)
 	if image, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
 		options := &ebiten.DrawImageOptions{}
-		options.GeoM.Translate(float64(480-image.Bounds().Dx())/2, float64(320-image.Bounds().Dy())/2)
+		scale := math.Min(480/float64(image.Bounds().Dx()), 320/float64(image.Bounds().Dy()))
+		options.GeoM.Scale(scale, scale)
+		options.GeoM.Translate((480-float64(image.Bounds().Dx())*scale)/2, (320-float64(image.Bounds().Dy())*scale)/2)
 		screen.DrawImage(image, options)
 	} else {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
