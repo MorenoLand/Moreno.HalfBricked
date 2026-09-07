@@ -392,6 +392,7 @@ func main() {
 		log.Fatal(err)
 	}
 	ebiten.SetWindowSize(960, 640)
+	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("HalfBricked")
 	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {
 		log.Fatal(err)

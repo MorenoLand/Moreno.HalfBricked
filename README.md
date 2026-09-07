@@ -10,6 +10,8 @@ go run . --assets="path-to-your-content"
 
 The `--assets` value may point to generated content or a local content directory. The first run prepares the local ignored cache automatically.
 
+The desktop window can be resized or maximized; the runtime keeps its 480×320 logical aspect ratio while scaling the content to the available window.
+
 ```powershell
 go run . --assets=.\bin\data-cache
 ```
