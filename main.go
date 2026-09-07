@@ -24,6 +24,7 @@ type app struct {
 	page          int
 	world         int
 	level         int
+	mode          int
 	images        map[string]*ebiten.Image
 	view          *viewer.Viewer
 	font          *ui.Font
@@ -74,7 +75,7 @@ func (a *app) Update() error {
 	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		_, y := ebiten.CursorPosition()
-		index := (y - 96) / 36
+		index := (y - 96) / 28
 		if index >= 0 && index < len(a.items()) {
 			a.setCursor(index)
 			return a.activate()
@@ -115,9 +116,9 @@ func (a *app) Draw(screen *ebiten.Image) {
 	ebitenutil.DrawRect(screen, 312, 78, 144, 190, color.RGBA{8, 12, 20, 180})
 	items := a.items()
 	for i, item := range items {
-		y := 96 + i*36
+		y := 96 + i*28
 		if i == a.cursor() {
-			ebitenutil.DrawRect(screen, 36, float64(y-5), 252, 28, color.RGBA{57, 78, 119, 255})
+			ebitenutil.DrawRect(screen, 36, float64(y-3), 252, 22, color.RGBA{57, 78, 119, 255})
 		}
 		a.text(screen, item, 48, float64(y), .5)
 	}
@@ -127,12 +128,17 @@ func (a *app) Draw(screen *ebiten.Image) {
 func (a *app) Layout(_, _ int) (int, int) { return 480, 320 }
 func (a *app) items() []string {
 	if a.page == 0 {
-		return []string{"START / MAP VIEWER", "QUIT"}
+		return []string{"PLAY", "SURVIVAL", "LEADERBOARDS", "OPTIONS", "QUIT"}
 	}
 	if a.page == 1 {
 		var result []string
+		worldNames := []string{"PREHISTORIC", "1930S CHICAGO", "ANCIENT EGYPT", "FEUDAL JAPAN", "THE FUTURE", "THE WESTERN FRONTIER"}
 		for _, world := range a.worlds() {
-			result = append(result, fmt.Sprintf("WORLD %d", world+1))
+			label := fmt.Sprintf("WORLD %d", world+1)
+			if world >= 0 && world < len(worldNames) {
+				label += " / " + worldNames[world]
+			}
+			result = append(result, label)
 		}
 		return result
 	}
@@ -160,7 +166,14 @@ func (a *app) filteredLevels() []formats.LevelInfo {
 	}
 	var result []formats.LevelInfo
 	for _, item := range a.levels {
-		if item.WorldIndex == worlds[a.world] {
+		isSurvival := false
+		for _, flag := range item.Flags {
+			if flag == "SURVIVAL" {
+				isSurvival = true
+				break
+			}
+		}
+		if item.WorldIndex == worlds[a.world] && ((a.mode == 1) == isSurvival) {
 			result = append(result, item)
 		}
 	}
@@ -174,7 +187,7 @@ func (a *app) cursor() int {
 }
 func (a *app) move(delta int) {
 	if a.page == 0 {
-		a.world = clamp(a.world+delta, 0, 1)
+		a.world = clamp(a.world+delta, 0, len(a.items())-1)
 		return
 	}
 	if a.page == 1 {
@@ -193,9 +206,12 @@ func (a *app) setCursor(index int) {
 func (a *app) activate() error {
 	switch a.page {
 	case 0:
-		if a.world == 0 {
-			a.page, a.world = 1, 0
-		} else {
+		switch a.world {
+		case 0:
+			a.mode, a.page, a.world = 0, 1, 0
+		case 1:
+			a.mode, a.page, a.world = 1, 1, 0
+		case 4:
 			return ebiten.Termination
 		}
 	case 1:
