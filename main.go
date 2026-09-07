@@ -94,7 +94,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
 	if a.page == 0 {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 112, 12, .5)
-		a.drawTexture(screen, "Frontend0/Textures/Barry", 392, 224, 1)
+		a.drawTexture(screen, "Frontend0/Textures/Barry", 352, 192, .25)
 	} else {
 		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 24, 10, .25)
 	}
