@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	reference := flag.String("reference", "", "extracted APK directory")
+	reference := flag.String("reference", "", "content directory")
 	output := flag.String("out", ".aoz-cache", "generated cache directory")
 	flag.Parse()
 	if *reference == "" {

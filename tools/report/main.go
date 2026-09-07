@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	reference := flag.String("reference", "", "extracted APK directory")
+	reference := flag.String("reference", "", "content directory")
 	levelID := flag.String("level", "World0Level0", "level identifier")
 	flag.Parse()
 	if *reference == "" {
