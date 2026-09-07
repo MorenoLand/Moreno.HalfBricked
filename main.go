@@ -47,11 +47,12 @@ const logicalWidth = 480
 const logicalHeight = 320
 
 type playState struct {
-	world  *viewer.Viewer
-	x, y   float64
-	time   float64
-	moving bool
-	angle  int
+	world    *viewer.Viewer
+	x, y     float64
+	time     float64
+	moving   bool
+	angle    int
+	tileSize int
 }
 
 func newApp(root string, debug bool) (*app, error) {
@@ -116,7 +117,7 @@ func (a *app) Update() error {
 	}
 	if a.page < 3 {
 		_, y := a.pointer()
-		index := (y - 82) / 28
+		index := (y - 96) / 28
 		if index >= 0 && index < len(a.items()) {
 			a.setCursor(index)
 		}
@@ -174,7 +175,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	items := a.items()
 	for i, item := range items {
 		y := 96 + i*28
-		a.drawMenuButton(screen, 34, float64(y-8), i == a.cursor())
+		a.drawMenuButton(screen, 34, float64(y), i == a.cursor())
 		a.text(screen, item, 48, float64(y), .5)
 	}
 	a.drawDetails(screen)
@@ -361,14 +362,13 @@ func (a *app) drawBarryMenu(screen *ebiten.Image) {
 	a.drawBarry(screen, 416, 256, 2, frame, 2)
 }
 func (a *app) drawPlay(screen *ebiten.Image) {
-	a.play.world.Draw(screen)
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (a.play.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
 	frame := int(a.play.time*8) % 4
 	if a.play.moving {
 		frame = int(a.play.time*10) % 4
 	}
-	a.drawBarry(screen, screenX, screenY, 1, frame, a.play.angle)
+	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) { a.drawBarry(target, screenX, screenY, 1, frame, a.play.angle) })
 }
 func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int) {
 	a.drawBarryPart(screen, "Common0/Textures/Characters/barryidle_SD", x, y, scale, frame, angle)
@@ -486,8 +486,9 @@ func (a *app) openPlay() error {
 	}
 	world := viewer.New(level, tileset, atlas, a)
 	world.Zoom = .5
-	spawnX, spawnY := spawnPosition(level)
-	a.play = &playState{world: world, x: spawnX, y: spawnY}
+	tileSize := tileSizeFor(tileset)
+	spawnX, spawnY := spawnPosition(level, tileSize)
+	a.play = &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize}
 	a.play.centerCamera()
 	return nil
 }
@@ -510,8 +511,16 @@ func (a *app) selectedLevel() (formats.Level, formats.TileSet, *ebiten.Image, er
 	}
 	return level, tileset, atlas, nil
 }
-func spawnPosition(level formats.Level) (float64, float64) {
-	tileSize := 32
+func tileSizeFor(tileset formats.TileSet) int {
+	if tileset.TileShift > 0 {
+		return 1 << tileset.TileShift
+	}
+	if tileset.TileSize > 0 {
+		return tileset.TileSize
+	}
+	return 32
+}
+func spawnPosition(level formats.Level, tileSize int) (float64, float64) {
 	if strings.EqualFold(level.Info.ID, "World0Level0") {
 		return 530, 431
 	}
@@ -527,6 +536,10 @@ func spawnPosition(level formats.Level) (float64, float64) {
 	return float64(level.Width*tileSize) / 2, float64(level.Height*tileSize) / 2
 }
 func (p *playState) Update() {
+	tileSize := p.tileSize
+	if tileSize <= 0 {
+		tileSize = 32
+	}
 	dx, dy := 0.0, 0.0
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
 		dx--
@@ -556,7 +569,6 @@ func (p *playState) Update() {
 			p.angle = 0
 		}
 	}
-	tileSize := 32
 	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
 	p.x = math.Max(float64(tileSize)/2, math.Min(maxX-float64(tileSize)/2, p.x))
 	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
@@ -564,9 +576,13 @@ func (p *playState) Update() {
 	p.centerCamera()
 }
 func (p *playState) centerCamera() {
+	tileSize := p.tileSize
+	if tileSize <= 0 {
+		tileSize = 32
+	}
 	zoom := p.world.Zoom
-	worldWidth := float64(p.world.Level.Width * 32)
-	worldHeight := float64(p.world.Level.Height * 32)
+	worldWidth := float64(p.world.Level.Width * tileSize)
+	worldHeight := float64(p.world.Level.Height * tileSize)
 	maxX := math.Max(0, worldWidth-float64(logicalWidth)/zoom)
 	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
 	p.world.CameraX = math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))

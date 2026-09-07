@@ -112,6 +112,9 @@ func (v *Viewer) Update() {
 	}
 }
 func (v *Viewer) Draw(screen *ebiten.Image) {
+	v.DrawWithEntities(screen, nil)
+}
+func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Image)) {
 	screen.Fill(color.RGBA{16, 18, 22, 255})
 	tileSize := v.tileSize()
 	for _, kind := range formats.BaseRenderLayerKinds {
@@ -121,6 +124,9 @@ func (v *Viewer) Draw(screen *ebiten.Image) {
 	}
 	if v.Props {
 		v.drawProps(screen)
+	}
+	if entities != nil {
+		entities(screen)
 	}
 	if v.Layers[formats.LayerH] {
 		v.drawLayer(screen, formats.LayerH, tileSize)
