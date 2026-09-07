@@ -19,7 +19,7 @@ type Font struct {
 	Glyphs     map[rune]Glyph
 }
 
-var fontField = regexp.MustCompile(`(id|x|y|width|height|xoffset|yoffset|xadvance)=(-?\d+)`)
+var fontField = regexp.MustCompile(`(id|x|y|width|height|xoffset|yoffset|xadvance|lineHeight)=(-?\d+)`)
 
 func LoadFont(reader io.Reader, atlas *ebiten.Image) (*Font, error) {
 	font := &Font{Atlas: atlas, Glyphs: map[rune]Glyph{}}
