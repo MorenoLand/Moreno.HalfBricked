@@ -74,7 +74,7 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		return nil, err
 	}
 	sort.Strings(files)
-	var result []LevelInfo
+	entries := make(map[string]LevelInfo)
 	for _, path := range files {
 		f, err := os.Open(path)
 		if err != nil {
@@ -90,8 +90,12 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		for _, item := range doc.Levels {
 			world, _ := strconv.Atoi(item.WorldIndex)
 			flags := splitFlags(item.Flags)
-			result = append(result, LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, WorldIndex: world, Flags: flags, Description: item.Description, SourceXML: filepath.ToSlash(rel)})
+			entries[item.LevelName] = LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, WorldIndex: world, Flags: flags, Description: item.Description, SourceXML: filepath.ToSlash(rel)}
 		}
+	}
+	result := make([]LevelInfo, 0, len(entries))
+	for _, item := range entries {
+		result = append(result, item)
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].WorldIndex != result[j].WorldIndex {
@@ -103,9 +107,14 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 }
 
 func ParseLevel(root string, info LevelInfo) (Level, error) {
-	path, err := findBaseFile(root, info.BaseFile, ".xml")
-	if err != nil {
-		return Level{}, err
+	packageRoot := filepath.Dir(filepath.Dir(filepath.Join(root, "assets", filepath.FromSlash(info.SourceXML))))
+	path := filepath.Join(packageRoot, "Levels", info.BaseFile+".xml")
+	if _, statErr := os.Stat(path); statErr != nil {
+		fallback, findErr := findBaseFile(root, info.BaseFile, ".xml")
+		if findErr != nil {
+			return Level{}, findErr
+		}
+		path = fallback
 	}
 	f, err := os.Open(path)
 	if err != nil {

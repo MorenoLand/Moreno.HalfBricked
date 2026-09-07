@@ -24,7 +24,7 @@ type Viewer struct {
 	CameraX, CameraY, Zoom float64
 	ViewportX, ViewportY   float64
 	Layers                 map[formats.LayerKind]bool
-	Props, Grid            bool
+	Props, Grid, Debug     bool
 	dragging               bool
 	lastX, lastY           int
 	SelectedX, SelectedY   int
@@ -62,6 +62,9 @@ func (v *Viewer) Update() {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		v.fit(480, 320)
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
+		v.Debug = !v.Debug
 	}
 	_, wheelY := ebiten.Wheel()
 	if wheelY != 0 {
@@ -107,12 +110,15 @@ func (v *Viewer) Draw(screen *ebiten.Image) {
 	if v.Grid {
 		v.drawGrid(screen, tileSize)
 	}
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%s %dx%d zoom %.2f tile %d,%d id %d layer %s", v.Level.Info.ID, v.Level.Width, v.Level.Height, v.Zoom, v.SelectedX, v.SelectedY, v.SelectedID, v.SelectedLayer), 4, 4)
-	ebitenutil.DebugPrintAt(screen, "1:G 2:D 3:H 4:HB 5:C P:props G:grid R:fit MMB:pan ESC:back", 4, 20)
+	if v.Debug {
+		ebitenutil.DrawRect(screen, 0, 0, 480, 38, color.RGBA{0, 0, 0, 185})
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%s %dx%d zoom %.2f tile %d,%d id %d layer %s", v.Level.Info.ID, v.Level.Width, v.Level.Height, v.Zoom, v.SelectedX, v.SelectedY, v.SelectedID, v.SelectedLayer), 4, 4)
+		ebitenutil.DebugPrintAt(screen, "1:G 2:D 3:H 4:HB 5:C P:props G:grid R:fit F1:debug", 4, 20)
+	}
 }
 func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize int) {
 	for index, id := range v.Level.Layers[kind] {
-		if id == math.MaxUint32 {
+		if int32(id) <= 0 {
 			continue
 		}
 		x, y := index%v.Level.Width, index/v.Level.Width
@@ -163,7 +169,7 @@ func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 		left := (float64(x*tileSize)-v.CameraX)*v.Zoom + v.ViewportX
 		top := (float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY
 		size := float64(tileSize) * v.Zoom
-		marker := collisionColor(id)
+		marker := collisionColor((id + 1) & 0xffff)
 		ebitenutil.DrawRect(screen, left, top, size, size, color.RGBA{marker.R, marker.G, marker.B, 45})
 		ebitenutil.DrawLine(screen, left, top, left+size, top, marker)
 		ebitenutil.DrawLine(screen, left+size, top, left+size, top+size, marker)
@@ -173,15 +179,15 @@ func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 }
 func collisionColor(value uint32) color.RGBA {
 	switch {
-	case value == 0:
-		return color.RGBA{230, 45, 45, 220}
 	case value == 1:
-		return color.RGBA{255, 165, 0, 220}
+		return color.RGBA{230, 45, 45, 220}
 	case value == 2:
+		return color.RGBA{255, 165, 0, 220}
+	case value == 3:
 		return color.RGBA{45, 220, 90, 220}
-	case value >= 3 && value <= 8:
+	case value >= 4 && value <= 9:
 		return color.RGBA{230, 45, 220, 220}
-	case value >= 12 && value <= 15:
+	case value >= 13 && value <= 16:
 		return color.RGBA{45, 210, 240, 220}
 	default:
 		return color.RGBA{245, 220, 45, 220}
@@ -257,7 +263,7 @@ func (v *Viewer) tileAt(x, y int) (uint32, formats.LayerKind) {
 	}
 	index := y*v.Level.Width + x
 	for _, kind := range []formats.LayerKind{formats.LayerC, formats.LayerH, formats.LayerD, formats.LayerHB, formats.LayerG} {
-		if v.Layers[kind] && v.Level.Layers[kind][index] != math.MaxUint32 {
+		if v.Layers[kind] && int32(v.Level.Layers[kind][index]) > 0 {
 			return v.Level.Layers[kind][index], kind
 		}
 	}
