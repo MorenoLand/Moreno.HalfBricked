@@ -14,10 +14,4 @@ go run . --assets="G:\Development\Go\Moreno.AgeofZombies\Age of Zombies"
 go run . --assets=.aoz-cache
 ```
 
-## Inspect
-
-```powershell
-go run ../tools/aoz-inspect --reference "G:\Development\Go\Moreno.AgeofZombies\Age of Zombies" --level World0Level0
-```
-
 Original content, native libraries, and generated private caches are not part of this source tree. See `LEGAL_NOTICE.md` for the project boundary.
