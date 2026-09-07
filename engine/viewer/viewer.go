@@ -3,7 +3,6 @@ package viewer
 import (
 	"encoding/json"
 	"fmt"
-	"image"
 	"image/color"
 	"math"
 
@@ -86,10 +85,13 @@ func (v *Viewer) Update() {
 func (v *Viewer) Draw(screen *ebiten.Image) {
 	screen.Fill(color.RGBA{16, 18, 22, 255})
 	tileSize := v.tileSize()
-	for _, kind := range formats.LayerKinds {
+	for _, kind := range formats.RenderLayerKinds {
 		if v.Layers[kind] {
 			v.drawLayer(screen, kind, tileSize)
 		}
+	}
+	if v.Layers[formats.LayerC] {
+		v.drawCollision(screen, tileSize)
 	}
 	if v.Props {
 		v.drawProps(screen)
@@ -115,20 +117,42 @@ func (v *Viewer) drawAtlasTile(screen *ebiten.Image, id uint32, x, y, tileSize i
 	bounds := v.Atlas.Bounds()
 	cols := bounds.Dx() / tileSize
 	rows := bounds.Dy() / tileSize
-	if cols <= 0 || rows <= 0 || uint64(id) >= uint64(cols*rows) {
+	tileID := id & 0xffff
+	if cols <= 0 || rows <= 0 || uint64(tileID) >= uint64(cols*rows) {
 		return false
 	}
-	tileX, tileY := int(id)%cols, int(id)/cols
-	source := v.Atlas.SubImage(image.Rect(tileX*tileSize, tileY*tileSize, tileX*tileSize+tileSize, tileY*tileSize+tileSize)).(*ebiten.Image)
-	options := &ebiten.DrawImageOptions{}
-	options.GeoM.Scale(v.Zoom, v.Zoom)
-	options.GeoM.Translate((float64(x*tileSize)-v.CameraX)*v.Zoom, (float64(y*tileSize)-v.CameraY)*v.Zoom)
-	screen.DrawImage(source, options)
+	tileX, tileY := int(tileID)%cols, int(tileID)/cols
+	uvOffset := float32(v.TileSet.UVOffset)
+	sourceX0 := float32(tileX*tileSize) + uvOffset
+	sourceY0 := float32(tileY*tileSize) + uvOffset
+	sourceX1 := float32((tileX+1)*tileSize) - uvOffset
+	sourceY1 := float32((tileY+1)*tileSize) - uvOffset
+	if id&0x00010000 != 0 {
+		sourceX0, sourceX1 = sourceX1, sourceX0
+	}
+	if id&0x00020000 != 0 {
+		sourceY0, sourceY1 = sourceY1, sourceY0
+	}
+	destinationX0 := float32((float64(x*tileSize) - v.CameraX) * v.Zoom)
+	destinationY0 := float32((float64(y*tileSize) - v.CameraY) * v.Zoom)
+	destinationX1 := destinationX0 + float32(tileSize)*float32(v.Zoom)
+	destinationY1 := destinationY0 + float32(tileSize)*float32(v.Zoom)
+	vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: sourceX0, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: sourceX1, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: sourceX0, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: sourceX1, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
+	screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
 	return true
 }
 func (v *Viewer) drawFallback(screen *ebiten.Image, x, y, tileSize int, kind formats.LayerKind) {
 	colors := map[formats.LayerKind]color.Color{formats.LayerG: color.RGBA{46, 72, 48, 255}, formats.LayerD: color.RGBA{82, 70, 45, 255}, formats.LayerH: color.RGBA{70, 50, 90, 180}, formats.LayerHB: color.RGBA{50, 85, 100, 180}, formats.LayerC: color.RGBA{130, 45, 45, 180}}
 	ebitenutil.DrawRect(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom, (float64(y*tileSize)-v.CameraY)*v.Zoom, float64(tileSize)*v.Zoom, float64(tileSize)*v.Zoom, colors[kind])
+}
+func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
+	for index, id := range v.Level.Layers[formats.LayerC] {
+		if id == math.MaxUint32 {
+			continue
+		}
+		x, y := index%v.Level.Width, index/v.Level.Width
+		ebitenutil.DrawRect(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom, (float64(y*tileSize)-v.CameraY)*v.Zoom, float64(tileSize)*v.Zoom, float64(tileSize)*v.Zoom, color.RGBA{220, 45, 45, 75})
+	}
 }
 func (v *Viewer) drawProps(screen *ebiten.Image) {
 	for _, prop := range v.Level.Props {
@@ -165,6 +189,9 @@ func (v *Viewer) fit(width, height int) {
 	v.CameraX, v.CameraY = 0, 0
 }
 func (v *Viewer) tileSize() int {
+	if v.TileSet.TileShift > 0 {
+		return 1 << v.TileSet.TileShift
+	}
 	if v.TileSet.TileSize > 0 {
 		return v.TileSet.TileSize
 	}
@@ -176,8 +203,7 @@ func (v *Viewer) tileAt(x, y int) (uint32, formats.LayerKind) {
 		return math.MaxUint32, ""
 	}
 	index := y*v.Level.Width + x
-	for i := len(formats.LayerKinds) - 1; i >= 0; i-- {
-		kind := formats.LayerKinds[i]
+	for _, kind := range []formats.LayerKind{formats.LayerC, formats.LayerH, formats.LayerD, formats.LayerHB, formats.LayerG} {
 		if v.Layers[kind] && v.Level.Layers[kind][index] != math.MaxUint32 {
 			return v.Level.Layers[kind][index], kind
 		}
