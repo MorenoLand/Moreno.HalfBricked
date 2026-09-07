@@ -33,7 +33,7 @@ type Viewer struct {
 }
 
 func New(level formats.Level, tileSet formats.TileSet, atlas *ebiten.Image, textures TextureProvider) *Viewer {
-	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerD: true}, Props: true}
+	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true}, Props: true}
 	viewer.fit(480, 320)
 	return viewer
 }
@@ -118,7 +118,7 @@ func (v *Viewer) Draw(screen *ebiten.Image) {
 }
 func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize int) {
 	for index, id := range v.Level.Layers[kind] {
-		if id == math.MaxUint32 {
+		if int32(id) <= 0 {
 			continue
 		}
 		x, y := index%v.Level.Width, index/v.Level.Width
@@ -136,7 +136,12 @@ func (v *Viewer) drawAtlasTile(screen *ebiten.Image, id uint32, x, y, tileSize i
 		return false
 	}
 	tileX, tileY := int(tileID)%cols, int(tileID)/cols
-	uvOffset := float32(v.TileSet.UVOffset)
+	uvOffset := float32(0)
+	filter := ebiten.FilterNearest
+	if v.Zoom < 1 {
+		uvOffset = float32(v.TileSet.UVOffset)
+		filter = ebiten.FilterLinear
+	}
 	sourceX0 := float32(tileX*tileSize) + uvOffset
 	sourceY0 := float32(tileY*tileSize) + uvOffset
 	sourceX1 := float32((tileX+1)*tileSize) - uvOffset
@@ -153,7 +158,7 @@ func (v *Viewer) drawAtlasTile(screen *ebiten.Image, id uint32, x, y, tileSize i
 	destinationX1 := destinationX0 + float32(tileSize)*float32(v.Zoom)
 	destinationY1 := destinationY0 + float32(tileSize)*float32(v.Zoom)
 	vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: sourceX0, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: sourceX1, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: sourceX0, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: sourceX1, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
-	screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterLinear})
+	screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: filter, DisableMipmaps: true})
 	return true
 }
 func (v *Viewer) drawFallback(screen *ebiten.Image, x, y, tileSize int, kind formats.LayerKind) {
@@ -263,7 +268,7 @@ func (v *Viewer) tileAt(x, y int) (uint32, formats.LayerKind) {
 	}
 	index := y*v.Level.Width + x
 	for _, kind := range []formats.LayerKind{formats.LayerC, formats.LayerH, formats.LayerD, formats.LayerHB, formats.LayerG} {
-		if v.Layers[kind] && v.Level.Layers[kind][index] != math.MaxUint32 {
+		if v.Layers[kind] && int32(v.Level.Layers[kind][index]) > 0 {
 			return v.Level.Layers[kind][index], kind
 		}
 	}
