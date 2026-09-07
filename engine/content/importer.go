@@ -89,7 +89,8 @@ func importAssets(root, out string, manifest *PackManifest) error {
 			if err != nil {
 				return fmt.Errorf("%s: %w", rel, err)
 			}
-			name := filepath.ToSlash(filepath.Join("textures", key+".png"))
+			sourceKey := strings.ToLower(strings.TrimSuffix(rel, ext))
+			name := filepath.ToSlash(filepath.Join("textures", strings.TrimSuffix(rel, ext)+".png"))
 			target := filepath.Join(out, filepath.FromSlash(name))
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return err
@@ -103,7 +104,10 @@ func importAssets(root, out string, manifest *PackManifest) error {
 			if err != nil {
 				return err
 			}
-			if _, ok := manifest.Textures[key]; !ok {
+			manifest.Textures[sourceKey] = name
+			if _, ok := manifest.Textures[key]; ok {
+				delete(manifest.Textures, key)
+			} else {
 				manifest.Textures[key] = name
 			}
 			manifest.Files[rel] = name

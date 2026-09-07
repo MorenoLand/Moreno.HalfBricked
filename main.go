@@ -11,6 +11,7 @@ import (
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/ui"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -18,13 +19,15 @@ import (
 )
 
 type app struct {
-	pack   *content.Pack
-	levels []formats.LevelInfo
-	page   int
-	world  int
-	level  int
-	images map[string]*ebiten.Image
-	view   *viewer.Viewer
+	pack          *content.Pack
+	levels        []formats.LevelInfo
+	page          int
+	world         int
+	level         int
+	images        map[string]*ebiten.Image
+	view          *viewer.Viewer
+	font          *ui.Font
+	startupFrames int
 }
 
 func newApp(root string) (*app, error) {
@@ -36,9 +39,15 @@ func newApp(root string) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &app{pack: pack, levels: pack.List(), images: map[string]*ebiten.Image{}}, nil
+	game := &app{pack: pack, levels: pack.List(), images: map[string]*ebiten.Image{}, startupFrames: 45}
+	game.font, _ = loadFont(pack)
+	return game, nil
 }
 func (a *app) Update() error {
+	if a.startupFrames > 0 {
+		a.startupFrames--
+		return nil
+	}
 	if a.view != nil {
 		if a.view.Back() {
 			a.view = nil
@@ -74,14 +83,26 @@ func (a *app) Update() error {
 	return nil
 }
 func (a *app) Draw(screen *ebiten.Image) {
+	if a.startupFrames > 0 {
+		a.drawStartup(screen)
+		return
+	}
 	if a.view != nil {
 		a.view.Draw(screen)
 		return
 	}
-	screen.Fill(colorDark)
-	ebitenutil.DrawRect(screen, 24, 18, 432, 42, color.RGBA{24, 29, 42, 255})
-	ebitenutil.DrawLine(screen, 24, 60, 456, 60, color.RGBA{93, 124, 186, 255})
-	ebitenutil.DebugPrintAt(screen, "HALFBRICKED", 38, 30)
+	a.drawBackdrop(screen)
+	if a.page == 0 {
+		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 112, 12, .5)
+		a.drawTexture(screen, "Frontend0/Textures/Barry", 392, 224, 1)
+	} else {
+		a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 24, 10, .25)
+	}
+	ebitenutil.DrawRect(screen, 24, 18, 432, 42, color.RGBA{8, 12, 20, 155})
+	ebitenutil.DrawLine(screen, 24, 60, 456, 60, color.RGBA{115, 165, 195, 220})
+	if a.page == 0 {
+		a.text(screen, "HALFBRICKED", 38, 30, .5)
+	}
 	title := "MAIN MENU"
 	if a.page == 1 {
 		title = "SELECT WORLD"
@@ -89,19 +110,19 @@ func (a *app) Draw(screen *ebiten.Image) {
 	if a.page == 2 {
 		title = "SELECT LEVEL"
 	}
-	ebitenutil.DebugPrintAt(screen, title, 320, 34)
-	ebitenutil.DrawRect(screen, 24, 78, 276, 190, color.RGBA{18, 22, 32, 255})
-	ebitenutil.DrawRect(screen, 312, 78, 144, 190, color.RGBA{24, 29, 42, 255})
+	a.text(screen, title, 320, 34, .5)
+	ebitenutil.DrawRect(screen, 24, 78, 276, 190, color.RGBA{8, 12, 20, 205})
+	ebitenutil.DrawRect(screen, 312, 78, 144, 190, color.RGBA{8, 12, 20, 180})
 	items := a.items()
 	for i, item := range items {
 		y := 96 + i*36
 		if i == a.cursor() {
 			ebitenutil.DrawRect(screen, 36, float64(y-5), 252, 28, color.RGBA{57, 78, 119, 255})
 		}
-		ebitenutil.DebugPrintAt(screen, item, 48, y)
+		a.text(screen, item, 48, float64(y), .5)
 	}
 	a.drawDetails(screen)
-	ebitenutil.DebugPrintAt(screen, "UP/DOWN SELECT   ENTER OPEN   ESC BACK", 24, 292)
+	a.text(screen, "UP/DOWN SELECT   ENTER OPEN   ESC BACK", 24, 292, .5)
 }
 func (a *app) Layout(_, _ int) (int, int) { return 480, 320 }
 func (a *app) items() []string {
@@ -186,8 +207,8 @@ func (a *app) activate() error {
 }
 func (a *app) drawDetails(screen *ebiten.Image) {
 	if a.page == 0 {
-		ebitenutil.DebugPrintAt(screen, "Explore converted content", 324, 100)
-		ebitenutil.DebugPrintAt(screen, "through the map viewer.", 324, 116)
+		a.text(screen, "Explore converted content", 324, 100, .5)
+		a.text(screen, "through the map viewer.", 324, 116, .5)
 		return
 	}
 	if a.page == 1 {
@@ -195,8 +216,11 @@ func (a *app) drawDetails(screen *ebiten.Image) {
 		if a.world >= len(worlds) {
 			return
 		}
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("WORLD %d", worlds[a.world]+1), 330, 104)
-		ebitenutil.DebugPrintAt(screen, "ENTER TO VIEW LEVELS", 324, 136)
+		a.text(screen, fmt.Sprintf("WORLD %d", worlds[a.world]+1), 330, 104, .5)
+		if worlds[a.world] < 5 {
+			a.drawTexture(screen, fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", worlds[a.world]+1), 320, 122, 1)
+		}
+		a.text(screen, "ENTER TO VIEW LEVELS", 324, 260, .5)
 		return
 	}
 	levels := a.filteredLevels()
@@ -204,9 +228,74 @@ func (a *app) drawDetails(screen *ebiten.Image) {
 		return
 	}
 	item := levels[a.level]
-	ebitenutil.DebugPrintAt(screen, item.ID, 324, 104)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("WORLD %d", item.WorldIndex+1), 324, 124)
-	ebitenutil.DebugPrintAt(screen, strings.ReplaceAll(item.Description, "\n", " / "), 324, 156)
+	a.text(screen, item.ID, 324, 104, .5)
+	a.text(screen, fmt.Sprintf("WORLD %d", item.WorldIndex+1), 324, 124, .5)
+	a.text(screen, strings.ReplaceAll(item.Description, "\n", " / "), 324, 156, .5)
+}
+func (a *app) drawBackdrop(screen *ebiten.Image) {
+	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{}
+		options.GeoM.Translate(float64(480-image.Bounds().Dx())/2, float64(320-image.Bounds().Dy())/2)
+		screen.DrawImage(image, options)
+	}
+	ebitenutil.DrawRect(screen, 0, 0, 480, 320, color.RGBA{5, 12, 22, 80})
+}
+func (a *app) drawStartup(screen *ebiten.Image) {
+	screen.Fill(colorDark)
+	if image, err := a.Texture("Common0/Textures/splashscreen"); err == nil {
+		options := &ebiten.DrawImageOptions{}
+		options.GeoM.Translate(float64(480-image.Bounds().Dx())/2, float64(320-image.Bounds().Dy())/2)
+		screen.DrawImage(image, options)
+	} else {
+		a.text(screen, "HALFBRICKED", 160, 148, .5)
+	}
+}
+func (a *app) text(screen *ebiten.Image, value string, x, y, scale float64) {
+	if a.font != nil {
+		a.font.Draw(screen, value, x, y, scale)
+		return
+	}
+	ebitenutil.DebugPrintAt(screen, value, int(x), int(y))
+}
+func loadFont(pack *content.Pack) (*ui.Font, error) {
+	manifest := pack.Manifest()
+	metadataPath, ok := manifest.Files["Common0/Fonts/font.fnt"]
+	if !ok {
+		return nil, fmt.Errorf("font metadata not found")
+	}
+	atlasPath, ok := pack.TexturePath("Common0/Fonts/font_0")
+	if !ok {
+		return nil, fmt.Errorf("font atlas not found")
+	}
+	metadata, err := pack.Open(metadataPath)
+	if err != nil {
+		return nil, err
+	}
+	defer metadata.Close()
+	atlasReader, err := pack.Open(atlasPath)
+	if err != nil {
+		return nil, err
+	}
+	defer atlasReader.Close()
+	data, err := ioReadAll(atlasReader)
+	if err != nil {
+		return nil, err
+	}
+	source, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return ui.LoadFont(metadata, ebiten.NewImageFromImage(source))
+}
+func (a *app) drawTexture(screen *ebiten.Image, name string, x, y, scale float64) {
+	image, err := a.Texture(name)
+	if err != nil {
+		return
+	}
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Scale(scale, scale)
+	options.GeoM.Translate(x, y)
+	screen.DrawImage(image, options)
 }
 func (a *app) openViewer() error {
 	levels := a.filteredLevels()

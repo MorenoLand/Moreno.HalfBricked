@@ -68,7 +68,12 @@ func (p *Pack) Load(id string) (formats.Level, error) {
 	return level, nil
 }
 func (p *Pack) TexturePath(name string) (string, bool) {
-	path, ok := p.manifest.Textures[strings.ToLower(strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))]
+	pathName := strings.ToLower(strings.TrimSuffix(filepath.ToSlash(name), filepath.Ext(name)))
+	if path, ok := p.manifest.Textures[pathName]; ok {
+		return path, true
+	}
+	baseName := strings.ToLower(strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))
+	path, ok := p.manifest.Textures[baseName]
 	return path, ok
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) { return p.source.Open(path) }
