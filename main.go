@@ -380,29 +380,50 @@ func (a *app) drawWorldDetails(screen *ebiten.Image) {
 
 func (a *app) drawTitle(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
-	a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .15)
-	if image, err := a.Texture("Frontend0/Textures/Barry"); err == nil {
-		position, ok := a.variables.Vec2Value("SPLASHSCREENS_HAND_ANIM_POS_VAR")
-		if !ok {
-			return
-		}
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
-		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
-		options.GeoM.Scale(.5, .5)
-		options.GeoM.Translate(position.X, position.Y)
-		screen.DrawImage(image, options)
-	}
+	a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
+	a.drawTitleBarry(screen)
 	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil {
 		base, ok := a.variables.FloatValue("SPLASHSCREENS_ZOMBIE_BASE_DIST_VAR")
 		if !ok {
 			return
 		}
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
-		options.GeoM.Scale(1.25, 1.25)
-		options.GeoM.Translate(logicalWidth-base/2-float64(image.Bounds().Dx())*.625, 178-float64(image.Bounds().Dy())*.625)
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(logicalWidth-base/2-float64(image.Bounds().Dx())*.25, 178-float64(image.Bounds().Dy())*.25)
 		screen.DrawImage(image, options)
 	}
-	a.textCentered(screen, "Touch to Start", 278, .72)
+	a.textCentered(screen, "Touch to Start", 290, .72)
+}
+
+type titleBarryPiece struct {
+	source      image.Rectangle
+	x, y, angle float64
+}
+
+var titleBarryPieces = []titleBarryPiece{
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: math.Pi/2 - .25},
+}
+
+func (a *app) drawTitleBarry(screen *ebiten.Image) {
+	texture, err := a.Texture("Frontend0/Textures/Barry")
+	if err != nil {
+		return
+	}
+	phase := 2 * math.Pi * (a.menuTime * 28000 / 65536)
+	xOffset := math.Sin(phase+2*math.Pi*.5*28000/65536) * 1.5
+	yOffset := math.Sin(phase) * 1.5
+	for _, piece := range titleBarryPieces {
+		part := texture.SubImage(piece.source).(*ebiten.Image)
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options.GeoM.Translate(-float64(piece.source.Dx())/2, -float64(piece.source.Dy())/2)
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Rotate(piece.angle)
+		options.GeoM.Translate(piece.x+xOffset, piece.y+yOffset)
+		screen.DrawImage(part, options)
+	}
 }
 
 func (a *app) drawBanner(screen *ebiten.Image, positionName, scaleName string, angle float64) {
