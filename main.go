@@ -430,10 +430,10 @@ type titleBarryPiece struct {
 }
 
 var titleBarryPieces = []titleBarryPiece{
-	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25},
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},
-	{source: image.Rect(409, 0, 512, 152), x: 85, y: 245, angle: math.Pi/2 - .25},
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190}, // Barry body
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 230, angle: math.Pi/2 - .25}, // shotgun
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 220, angle: math.Pi/2 - .25}, // grip/pump
+	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25}, // arm/hand
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
