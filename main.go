@@ -682,7 +682,8 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 	}
 	if selected {
 		if flash, flashErr := a.Texture("Common0/Textures/Button_Screen_Flash"); flashErr == nil {
-			screen.DrawImage(flash.SubImage(image.Rect(0, 128, 128, 192)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
+			frame := 1 + int(a.menuTime*8)%2
+			screen.DrawImage(flash.SubImage(image.Rect(0, frame*64, 128, frame*64+64)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
 		}
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
@@ -969,14 +970,14 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		a.drawBullets(target)
 	})
 	a.drawPlayControls(screen)
-	if !a.mobile {
-		a.drawReticule(screen)
-	}
 	if a.play.paused {
 		ebitenutil.DrawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 		a.text(screen, "PAUSED", 195, 115, 1.0)
 		a.text(screen, "RESUME", 212, 160, 0.5)
 		a.text(screen, "QUIT TO MENU", 192, 190, 0.5)
+	}
+	if !a.mobile {
+		a.drawReticule(screen)
 	}
 }
 func (a *app) drawBullets(screen *ebiten.Image) {
@@ -1740,6 +1741,7 @@ func main() {
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
 	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
+	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
 	game, err := newApp(*assets, *debug, *mobile)
 	if err != nil {
@@ -1754,6 +1756,9 @@ func main() {
 		if err := game.setCaptureState(*captureState); err != nil {
 			log.Fatal(err)
 		}
+	}
+	if *captureSelection >= 0 && *captureSelection < len(mainMenuButtons) {
+		game.menuSelection = *captureSelection
 	}
 	defer game.sound.Close()
 	ebiten.SetWindowSize(960, 540)
