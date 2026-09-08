@@ -49,6 +49,9 @@ func LoadFont(reader io.Reader, atlas *ebiten.Image) (*Font, error) {
 	return font, nil
 }
 func (f *Font) Draw(screen *ebiten.Image, value string, x, y, scale float64) {
+	f.DrawScaled(screen, value, x, y, scale, scale)
+}
+func (f *Font) DrawScaled(screen *ebiten.Image, value string, x, y, scaleX, scaleY float64) {
 	if f == nil || f.Atlas == nil {
 		return
 	}
@@ -56,7 +59,7 @@ func (f *Font) Draw(screen *ebiten.Image, value string, x, y, scale float64) {
 	for _, runeValue := range value {
 		if runeValue == '\n' {
 			x = originX
-			y += float64(f.LineHeight) * scale
+			y += float64(f.LineHeight) * scaleY
 			continue
 		}
 		glyph, ok := f.Glyphs[runeValue]
@@ -67,11 +70,11 @@ func (f *Font) Draw(screen *ebiten.Image, value string, x, y, scale float64) {
 			source := f.Atlas.SubImage(image.Rect(glyph.X, glyph.Y, glyph.X+glyph.Width, glyph.Y+glyph.Height)).(*ebiten.Image)
 			options := &ebiten.DrawImageOptions{}
 			options.Filter = ebiten.FilterNearest
-			options.GeoM.Scale(scale, scale)
-			options.GeoM.Translate(x+float64(glyph.XOffset)*scale, y+float64(glyph.YOffset)*scale)
+			options.GeoM.Scale(scaleX, scaleY)
+			options.GeoM.Translate(x+float64(glyph.XOffset)*scaleX, y+float64(glyph.YOffset)*scaleY)
 			screen.DrawImage(source, options)
 		}
-		x += float64(glyph.XAdvance) * scale
+		x += float64(glyph.XAdvance) * scaleX
 	}
 }
 func fields(line string) map[string]int {

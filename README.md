@@ -10,7 +10,7 @@ go run . --assets="path-to-your-content"
 
 The `--assets` value may point to a generated cache, a local content directory, or a native Android package containing the game content. When an APK is supplied on desktop, the runtime reads it into the ignored disposable cache under `bin/` and reuses that cache by source hash; the package and extracted files are never part of the repository. The first run prepares the local ignored cache automatically, including the shipped level XML, frontend variables, and story scripts.
 
-The desktop window can be resized or maximized; the 480×320 scene is stretched to the full drawable window.
+The desktop window can be resized or maximized. Title, loading, and frontend menu states render directly to the full drawable output at the forced 16:9 aspect, using nearest sampling with no linear interpolation; gameplay and the diagnostic viewer retain the 480×320 logical scene.
 
 Source icon assets live under `resources/`. The Windows build regenerates the multi-resolution icon resource from `resources/icon.ico` and stages the linker input only for that build, so the project root stays free of icon files while Explorer can select the correct size.
 

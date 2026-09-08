@@ -25,35 +25,37 @@ import (
 )
 
 type app struct {
-	pack          *content.Pack
-	levels        []formats.LevelInfo
-	variables     formats.FrontendVariables
-	page          int
-	menuSelection int
-	world         int
-	level         int
-	mode          int
-	weapon        formats.Weapon
-	debug         bool
-	mobile        bool
-	titleScreen   bool
-	unlocked      map[string]bool
-	capture       *engine.Capture
-	captureLimit  int
-	sound         *engine.SoundSystem
-	images        map[string]*ebiten.Image
-	sources       map[string]image.Image
-	view          *viewer.Viewer
-	play          *playState
-	font          *ui.Font
-	computerFont  *ui.Font
-	startupFrames int
-	menuTime      float64
-	canvas        *ebiten.Image
-	splash        *ebiten.Image
-	splashLoaded  bool
-	outputWidth   int
-	outputHeight  int
+	pack           *content.Pack
+	levels         []formats.LevelInfo
+	variables      formats.FrontendVariables
+	page           int
+	menuSelection  int
+	world          int
+	level          int
+	mode           int
+	weapon         formats.Weapon
+	debug          bool
+	mobile         bool
+	titleScreen    bool
+	unlocked       map[string]bool
+	capture        *engine.Capture
+	captureLimit   int
+	sound          *engine.SoundSystem
+	images         map[string]*ebiten.Image
+	sources        map[string]image.Image
+	view           *viewer.Viewer
+	play           *playState
+	font           *ui.Font
+	computerFont   *ui.Font
+	startupFrames  int
+	menuTime       float64
+	canvas         *ebiten.Image
+	splash         *ebiten.Image
+	splashLoaded   bool
+	outputWidth    int
+	outputHeight   int
+	frontendScaleX float64
+	frontendScaleY float64
 }
 
 const logicalWidth = 480
@@ -109,7 +111,7 @@ func newApp(root string, debug, mobile bool) (*app, error) {
 	if !ok {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
@@ -251,36 +253,54 @@ func (a *app) Draw(screen *ebiten.Image) {
 	if a.play != nil && !a.mobile {
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
 	}
-	if a.canvas == nil {
-		a.canvas = ebiten.NewImage(logicalWidth, logicalHeight)
-	}
-	a.canvas.Fill(colorDark)
-	if a.startupFrames > 0 {
+	frontend := a.startupFrames > 0 || a.titleScreen || (a.view == nil && a.play == nil)
+	if frontend {
+		a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
+		a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
+		screen.Fill(colorDark)
+		if a.startupFrames > 0 {
+			a.drawStartup(screen)
+		} else if a.titleScreen {
+			a.drawTitle(screen)
+		} else {
+			a.drawMenu(screen)
+		}
+		a.frontendScaleX = 1
+		a.frontendScaleY = 1
 	} else {
+		a.frontendScaleX = 1
+		a.frontendScaleY = 1
+		if a.canvas == nil {
+			a.canvas = ebiten.NewImage(logicalWidth, logicalHeight)
+		}
+		a.canvas.Fill(colorDark)
 		if a.view != nil {
 			a.view.Draw(a.canvas)
-		} else if a.play != nil {
-			a.drawPlay(a.canvas)
 		} else {
-			a.drawMenu(a.canvas)
+			a.drawPlay(a.canvas)
 		}
+		screen.Fill(colorDark)
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
+		screen.DrawImage(a.canvas, options)
 	}
-	if a.startupFrames > 0 {
-		a.drawStartup(a.canvas)
-	} else if a.titleScreen {
-		a.drawTitle(a.canvas)
-	}
-	screen.Fill(colorDark)
-	filter := ebiten.FilterNearest
-	options := &ebiten.DrawImageOptions{Filter: filter}
-	options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
-	screen.DrawImage(a.canvas, options)
 	if a.capture != nil {
 		if err := a.capture.Save(screen, a.captureState()); err != nil {
 			log.Printf("capture: %v", err)
 			a.capture = nil
 		}
 	}
+}
+
+func (a *app) drawImage(screen, source *ebiten.Image, options *ebiten.DrawImageOptions) {
+	if a.frontendScaleX == 1 && a.frontendScaleY == 1 {
+		screen.DrawImage(source, options)
+		return
+	}
+	scaled := *options
+	scaled.Filter = ebiten.FilterNearest
+	scaled.GeoM.Scale(a.frontendScaleX, a.frontendScaleY)
+	screen.DrawImage(source, &scaled)
 }
 
 func (a *app) captureState() string {
@@ -396,10 +416,10 @@ func (a *app) drawTitle(screen *ebiten.Image) {
 		if !ok {
 			return
 		}
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
 		options.GeoM.Translate(logicalWidth-base/2+float64(image.Bounds().Dx())*.125, 178-float64(image.Bounds().Dy())*.25)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 	a.textCentered(screen, "Touch to Start", 290, .72)
 }
@@ -410,7 +430,7 @@ type titleBarryPiece struct {
 }
 
 var titleBarryPieces = []titleBarryPiece{
-	{source: image.Rect(0, 0, 342, 512), x: 110, y: 176},
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},
 	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25},
 	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},
 	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: math.Pi/2 - .25},
@@ -426,12 +446,12 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 	yOffset := math.Sin(phase) * 1.5
 	for _, piece := range titleBarryPieces {
 		part := texture.SubImage(piece.source).(*ebiten.Image)
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(piece.source.Dx())/2, -float64(piece.source.Dy())/2)
 		options.GeoM.Scale(.5, .66)
 		options.GeoM.Rotate(piece.angle)
 		options.GeoM.Translate(piece.x+xOffset, piece.y+yOffset)
-		screen.DrawImage(part, options)
+		a.drawImage(screen, part, options)
 	}
 }
 
@@ -448,12 +468,12 @@ func (a *app) drawBanner(screen *ebiten.Image, positionName, scaleName string, a
 	if !ok {
 		return
 	}
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(texture.Bounds().Dx())/2, -float64(texture.Bounds().Dy())/2)
 	options.GeoM.Scale(scale, scale)
 	options.GeoM.Rotate(angle)
 	options.GeoM.Translate(position.X, position.Y)
-	screen.DrawImage(texture, options)
+	a.drawImage(screen, texture, options)
 }
 
 func (a *app) drawLevelSelect(screen *ebiten.Image) {
@@ -487,11 +507,11 @@ func (a *app) drawLevelTabs(screen *ebiten.Image) {
 		row = 1
 	}
 	source := texture.SubImage(image.Rect(0, row*64, 256, row*64+64)).(*ebiten.Image)
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-128, -32)
 	options.GeoM.Scale(size.X/256, size.Y/64)
 	options.GeoM.Translate(position.X, position.Y)
-	screen.DrawImage(source, options)
+	a.drawImage(screen, source, options)
 }
 
 func (a *app) drawLevelCardAt(screen *ebiten.Image, item formats.LevelInfo, x, y float64, selected, unlocked bool) {
@@ -502,7 +522,7 @@ func (a *app) drawLevelCardAt(screen *ebiten.Image, item formats.LevelInfo, x, y
 	if err != nil {
 		return
 	}
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-64, -64)
 	options.GeoM.Scale(1, 1)
 	options.GeoM.Translate(x, y)
@@ -512,7 +532,7 @@ func (a *app) drawLevelCardAt(screen *ebiten.Image, item formats.LevelInfo, x, y
 	if !unlocked {
 		options.ColorScale.ScaleAlpha(.58)
 	}
-	screen.DrawImage(texture, options)
+	a.drawImage(screen, texture, options)
 }
 
 func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
@@ -521,7 +541,7 @@ func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
 		return
 	}
 	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
-		drawNineSlice(screen, texture, image.Rect(0, 0, 64, 64), outerPos)
+		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), outerPos)
 	}
 	innerPos, innerOK := a.ndcBox("SHOPFRONT_TEXT_BOX_INNER_POS_VAR", "SHOPFRONT_TEXT_BOX_INNER_WIDTH_VAR", "SHOPFRONT_TEXT_BOX_INNER_HEIGHT_VAR")
 	textX, textY := float64(outerPos.Min.X+24), float64(outerPos.Min.Y+18)
@@ -529,7 +549,7 @@ func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
 		textX, textY = float64(innerPos.Min.X+16), float64(innerPos.Min.Y+14)
 	}
 	if a.computerFont != nil {
-		a.computerFont.Draw(screen, item.DisplayName, textX, textY, .7)
+		a.drawFont(screen, a.computerFont, item.DisplayName, textX, textY, .7)
 	} else {
 		a.text(screen, item.DisplayName, textX, textY, .6)
 	}
@@ -540,7 +560,7 @@ func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
 			descriptionY = float64(innerPos.Min.Y + 46)
 		}
 		if a.computerFont != nil {
-			a.computerFont.Draw(screen, description, textX, descriptionY, .45)
+			a.drawFont(screen, a.computerFont, description, textX, descriptionY, .45)
 		} else {
 			a.text(screen, description, textX, descriptionY, .45)
 		}
@@ -572,7 +592,7 @@ func (a *app) ndcBox(positionName, widthName, heightName string) (image.Rectangl
 
 func (a *app) drawShopAction(screen *ebiten.Image, label string, x, y, width, height float64, enabled bool) {
 	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
-		drawNineSlice(screen, texture, image.Rect(0, 0, 64, 64), image.Rect(int(x-width/2), int(y-height/2), int(x+width/2), int(y+height/2)))
+		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), image.Rect(int(x-width/2), int(y-height/2), int(x+width/2), int(y+height/2)))
 	}
 	row := 0
 	if label == "BACK" {
@@ -582,7 +602,7 @@ func (a *app) drawShopAction(screen *ebiten.Image, label string, x, y, width, he
 	if err != nil {
 		return
 	}
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	textRect, ok := buttonTextRect(row)
 	if !ok {
 		return
@@ -593,7 +613,7 @@ func (a *app) drawShopAction(screen *ebiten.Image, label string, x, y, width, he
 	if !enabled {
 		options.ColorScale.ScaleAlpha(.4)
 	}
-	screen.DrawImage(texture.SubImage(textRect).(*ebiten.Image), options)
+	a.drawImage(screen, texture.SubImage(textRect).(*ebiten.Image), options)
 }
 
 func buttonTextRect(row int) (image.Rectangle, bool) {
@@ -613,7 +633,7 @@ func buttonTextRect(row int) (image.Rectangle, bool) {
 	}
 }
 
-func drawNineSlice(screen, texture *ebiten.Image, source, target image.Rectangle) {
+func drawNineSlice(a *app, screen, texture *ebiten.Image, source, target image.Rectangle) {
 	const edge = 8
 	sourceParts := []image.Rectangle{
 		image.Rect(source.Min.X, source.Min.Y, source.Min.X+edge, source.Min.Y+edge),
@@ -641,10 +661,10 @@ func drawNineSlice(screen, texture *ebiten.Image, source, target image.Rectangle
 		if sourceParts[index].Dx() <= 0 || sourceParts[index].Dy() <= 0 || targetParts[index].Dx() <= 0 || targetParts[index].Dy() <= 0 {
 			continue
 		}
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(float64(targetParts[index].Dx())/float64(sourceParts[index].Dx()), float64(targetParts[index].Dy())/float64(sourceParts[index].Dy()))
 		options.GeoM.Translate(float64(targetParts[index].Min.X), float64(targetParts[index].Min.Y))
-		screen.DrawImage(texture.SubImage(sourceParts[index]).(*ebiten.Image), options)
+		a.drawImage(screen, texture.SubImage(sourceParts[index]).(*ebiten.Image), options)
 	}
 }
 
@@ -675,10 +695,10 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 	}
 	zombie, err := a.Texture(fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", button.zombie))
 	if err == nil {
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(zombieScale, zombieScale)
 		options.GeoM.Translate(button.cx-float64(zombie.Bounds().Dx())*zombieScale/2, button.cy-float64(zombie.Bounds().Dy())*zombieScale/2-8)
-		screen.DrawImage(zombie, options)
+		a.drawImage(screen, zombie, options)
 	}
 	board, err := a.Texture("Common0/Textures/Button_Screen")
 	boardImage := (*ebiten.Image)(nil)
@@ -692,18 +712,18 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 		}
 	}
 	if boardImage != nil {
-		screen.DrawImage(boardImage, marqueeImageOptions(button, boardScale, float64(boardImage.Bounds().Dx())/2, float64(boardImage.Bounds().Dy())/2))
+		a.drawImage(screen, boardImage, marqueeImageOptions(button, boardScale, float64(boardImage.Bounds().Dx())/2, float64(boardImage.Bounds().Dy())/2))
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
 	textRect, ok := buttonTextRect(button.labelRow)
 	if err != nil || !ok {
 		return
 	}
-	screen.DrawImage(labels.SubImage(textRect).(*ebiten.Image), marqueeImageOptions(button, labelScale, float64(textRect.Dx())/2, float64(textRect.Dy())/2))
+	a.drawImage(screen, labels.SubImage(textRect).(*ebiten.Image), marqueeImageOptions(button, labelScale, float64(textRect.Dx())/2, float64(textRect.Dy())/2))
 }
 
 func marqueeImageOptions(button menuButton, scale, offsetX, offsetY float64) *ebiten.DrawImageOptions {
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-offsetX, -offsetY)
 	options.GeoM.Scale(scale, scale)
 	options.GeoM.Rotate(button.angle)
@@ -724,7 +744,7 @@ func (a *app) drawMenuButton(screen *ebiten.Image, x, y float64, selected bool) 
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Scale(.25, .25)
 	options.GeoM.Translate(x, y)
-	screen.DrawImage(source, options)
+	a.drawImage(screen, source, options)
 }
 func (a *app) items() []string {
 	if a.page == 0 {
@@ -922,16 +942,16 @@ func (a *app) drawLevelCard(screen *ebiten.Image, item formats.LevelInfo) {
 	options := &ebiten.DrawImageOptions{}
 	options.GeoM.Scale(scale, scale)
 	options.GeoM.Translate(316+(136-float64(bounds.Dx())*scale)/2, 180+(82-float64(bounds.Dy())*scale)/2)
-	screen.DrawImage(image, options)
+	a.drawImage(screen, image, options)
 }
 func (a *app) drawBackdrop(screen *ebiten.Image) {
 	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
 		options.GeoM.Scale(1.6875, 1.6875)
 		options.GeoM.Rotate(a.menuTime * .3)
 		options.GeoM.Translate(336, 96)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 }
 func (a *app) drawStartup(screen *ebiten.Image) {
@@ -945,7 +965,7 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	if a.splash != nil {
 		options := &ebiten.DrawImageOptions{}
 		options.GeoM.Scale(logicalWidth/float64(a.splash.Bounds().Dx()), logicalHeight/float64(a.splash.Bounds().Dy()))
-		screen.DrawImage(a.splash, options)
+		a.drawImage(screen, a.splash, options)
 	} else {
 		a.text(screen, "HALFBRICKED", 160, 148, .5)
 	}
@@ -960,7 +980,7 @@ func (a *app) drawBarryMenu(screen *ebiten.Image) {
 	options.GeoM.Scale(.25, .25)
 	options.GeoM.Rotate(math.Sin(a.menuTime*2.2) * .015)
 	options.GeoM.Translate(416+math.Sin(a.menuTime*1.7), 256+math.Sin(a.menuTime*2.2)*1.5)
-	screen.DrawImage(image, options)
+	a.drawImage(screen, image, options)
 }
 func (a *app) drawPlay(screen *ebiten.Image) {
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
@@ -1007,7 +1027,7 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 		options.GeoM.Rotate(b.angle)
 		options.GeoM.Scale(zoom, zoom)
 		options.GeoM.Translate(sx, sy)
-		screen.DrawImage(bulletImg, options)
+		a.drawImage(screen, bulletImg, options)
 	}
 }
 func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle {
@@ -1066,7 +1086,7 @@ func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float
 		options.GeoM.Scale(scale, scale)
 	}
 	options.GeoM.Translate(x, y)
-	screen.DrawImage(source, options)
+	a.drawImage(screen, source, options)
 }
 func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle int, flipX bool) {
 	if angle == 8 {
@@ -1100,7 +1120,7 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 		options.GeoM.Scale(scale, scale)
 	}
 	options.GeoM.Translate(x, y)
-	screen.DrawImage(source, options)
+	a.drawImage(screen, source, options)
 }
 func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
 	texture, err := a.Texture("Common0/Textures/shadow_SD")
@@ -1116,7 +1136,7 @@ func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
 	options.GeoM.Scale(shadowScaleX*scale, shadowScaleY*scale)
 	options.GeoM.Translate(x, y+14*scale)
 	options.ColorScale.ScaleAlpha(0.55)
-	screen.DrawImage(texture, options)
+	a.drawImage(screen, texture, options)
 }
 func (a *app) drawReticule(screen *ebiten.Image) {
 	texture, err := a.Texture("Common0/Textures/Reticule_SD")
@@ -1128,7 +1148,7 @@ func (a *app) drawReticule(screen *ebiten.Image) {
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Scale(2, 2)
 	options.GeoM.Translate(float64(px)-w, float64(py)-h)
-	screen.DrawImage(texture, options)
+	a.drawImage(screen, texture, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
 	a.drawGrenadeButton(screen)
@@ -1148,7 +1168,7 @@ func (a *app) drawPlayControls(screen *ebiten.Image) {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
 		options.GeoM.Translate(448, 8)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 }
 
@@ -1169,7 +1189,7 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 		options.GeoM.Translate(-32, -16)
 		options.GeoM.Scale(size.X/64, size.Y/32)
 		options.GeoM.Translate(x, y)
-		screen.DrawImage(texture.SubImage(image.Rect(0, 0, 64, 32)).(*ebiten.Image), options)
+		a.drawImage(screen, texture.SubImage(image.Rect(0, 0, 64, 32)).(*ebiten.Image), options)
 	}
 	offset, ok := a.variables.Vec2Value("HUD_SECOND_ICON_OFFSET_VAR")
 	if !ok {
@@ -1179,7 +1199,7 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
 		options.GeoM.Translate(x+offset.X, y+offset.Y)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 }
 func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflectX, deflectY float64) {
@@ -1187,13 +1207,13 @@ func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflect
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
 		options.GeoM.Translate(baseX-float64(image.Bounds().Dx())*.25, baseY-float64(image.Bounds().Dy())*.25)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 	if image, err := a.Texture(name); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
 		options.GeoM.Translate(baseX+deflectX*32-float64(image.Bounds().Dx())*.25, baseY+deflectY*32-float64(image.Bounds().Dy())*.25)
-		screen.DrawImage(image, options)
+		a.drawImage(screen, image, options)
 	}
 }
 func cropSplash(source image.Image) image.Image {
@@ -1229,8 +1249,12 @@ func splashRowHasContent(source image.Image, y int, bounds image.Rectangle) bool
 }
 func (a *app) text(screen *ebiten.Image, value string, x, y, scale float64) {
 	if a.font != nil {
-		a.font.Draw(screen, value, x, y, scale)
+		a.drawFont(screen, a.font, value, x, y, scale)
 		return
+	}
+	if a.frontendScaleX != 1 || a.frontendScaleY != 1 {
+		x *= a.frontendScaleX
+		y *= a.frontendScaleY
 	}
 	ebitenutil.DebugPrintAt(screen, value, int(x), int(y))
 }
@@ -1244,6 +1268,16 @@ func (a *app) textCentered(screen *ebiten.Image, value string, y, scale float64)
 		}
 	}
 	a.text(screen, value, (logicalWidth-width)/2, y, scale)
+}
+func (a *app) drawFont(screen *ebiten.Image, font *ui.Font, value string, x, y, scale float64) {
+	if font == nil {
+		return
+	}
+	if a.frontendScaleX == 1 && a.frontendScaleY == 1 {
+		font.Draw(screen, value, x, y, scale)
+		return
+	}
+	font.DrawScaled(screen, value, x*a.frontendScaleX, y*a.frontendScaleY, scale*a.frontendScaleX, scale*a.frontendScaleY)
 }
 func loadFont(pack *content.Pack) (*ui.Font, error) {
 	return loadNamedFont(pack, "Common0/Fonts/font.fnt", "Common0/Fonts/font_0")
@@ -1285,7 +1319,7 @@ func (a *app) drawTexture(screen *ebiten.Image, name string, x, y, scale float64
 	options := &ebiten.DrawImageOptions{}
 	options.GeoM.Scale(scale, scale)
 	options.GeoM.Translate(x, y)
-	screen.DrawImage(image, options)
+	a.drawImage(screen, image, options)
 }
 func (a *app) openViewer() error {
 	level, tileset, atlas, err := a.selectedLevel()

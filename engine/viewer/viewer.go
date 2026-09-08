@@ -175,11 +175,7 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	if len(vertices) == 0 {
 		return
 	}
-	filter := ebiten.FilterNearest
-	if v.Zoom < 1 {
-		filter = ebiten.FilterLinear
-	}
-	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: filter, DisableMipmaps: true})
+	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest, DisableMipmaps: true})
 }
 func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Vertex, bool) {
 	var vertices [4]ebiten.Vertex
