@@ -391,7 +391,7 @@ func (a *app) drawWorldDetails(screen *ebiten.Image) {
 }
 
 func (a *app) drawTitle(screen *ebiten.Image) {
-	a.drawTitleBackdrop(screen)
+	a.drawBackdrop(screen)
 	a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
 	a.drawTitleBarry(screen)
 	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil {
@@ -401,7 +401,7 @@ func (a *app) drawTitle(screen *ebiten.Image) {
 		}
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Scale(.5, .5)
-		options.GeoM.Translate(logicalWidth-base/2-float64(image.Bounds().Dx())*.25, 178-float64(image.Bounds().Dy())*.25)
+		options.GeoM.Translate(logicalWidth-base/2+float64(image.Bounds().Dx())*.125, 178-float64(image.Bounds().Dy())*.25)
 		screen.DrawImage(image, options)
 	}
 	a.textCentered(screen, "Touch to Start", 290, .72)
@@ -413,10 +413,10 @@ type titleBarryPiece struct {
 }
 
 var titleBarryPieces = []titleBarryPiece{
-	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 212, angle: math.Pi/2 - .25},
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 202, angle: math.Pi/2 - .25},
-	{source: image.Rect(409, 0, 512, 152), x: 85, y: 245, angle: math.Pi/2 - .25},
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 176},
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 198, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 188, angle: math.Pi/2 - .25},
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 231, angle: math.Pi/2 - .25},
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
@@ -431,7 +431,7 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 		part := texture.SubImage(piece.source).(*ebiten.Image)
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Translate(-float64(piece.source.Dx())/2, -float64(piece.source.Dy())/2)
-		options.GeoM.Scale(.5, .5)
+		options.GeoM.Scale(.5, .66)
 		options.GeoM.Rotate(piece.angle)
 		options.GeoM.Translate(piece.x+xOffset, piece.y+yOffset)
 		screen.DrawImage(part, options)
@@ -657,10 +657,10 @@ type menuButton struct {
 }
 
 var mainMenuButtons = []menuButton{
-	{zombie: 3, labelRow: 8, action: 2, cx: 76, cy: 105, width: 96, height: 48, angle: -0.10},
-	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 96, height: 48, angle: -0.17},
-	{zombie: 3, labelRow: 6, action: 4, cx: 76, cy: 274, width: 96, height: 48, angle: -0.16},
-	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 96, height: 48, angle: 0.02},
+	{zombie: 3, labelRow: 8, action: 2, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
+	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: -0.17},
+	{zombie: 3, labelRow: 6, action: 4, cx: 76, cy: 274, width: 128, height: 64, angle: -0.16},
+	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
 }
 
 func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
@@ -668,30 +668,41 @@ func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
 }
 
 func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selected bool) {
+	boardScale := 2.0 / 3.0
+	labelScale := 2.0 / 3.0
+	zombieScale := .65
+	if selected {
+		boardScale = 1
+		labelScale = 1
+		zombieScale = .9
+	}
 	zombie, err := a.Texture(fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", button.zombie))
 	if err == nil {
-		const zombieScale = .65
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Scale(zombieScale, zombieScale)
 		options.GeoM.Translate(button.cx-float64(zombie.Bounds().Dx())*zombieScale/2, button.cy-float64(zombie.Bounds().Dy())*zombieScale/2-8)
 		screen.DrawImage(zombie, options)
 	}
 	board, err := a.Texture("Common0/Textures/Button_Screen")
+	boardImage := (*ebiten.Image)(nil)
 	if err == nil {
-		screen.DrawImage(board.SubImage(image.Rect(0, 0, 128, 64)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
+		boardImage = board.SubImage(image.Rect(0, 0, 128, 64)).(*ebiten.Image)
 	}
 	if selected {
 		if flash, flashErr := a.Texture("Common0/Textures/Button_Screen_Flash"); flashErr == nil {
 			frame := 1 + int(a.menuTime*8)%2
-			screen.DrawImage(flash.SubImage(image.Rect(0, frame*64, 128, frame*64+64)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
+			boardImage = flash.SubImage(image.Rect(0, frame*64, 128, frame*64+64)).(*ebiten.Image)
 		}
+	}
+	if boardImage != nil {
+		screen.DrawImage(boardImage, marqueeImageOptions(button, boardScale, 64, 32))
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
 	textRect, ok := buttonTextRect(button.labelRow)
 	if err != nil || !ok {
 		return
 	}
-	screen.DrawImage(labels.SubImage(textRect).(*ebiten.Image), marqueeImageOptions(button, .75, float64(textRect.Dx())/2, float64(textRect.Dy())/2))
+	screen.DrawImage(labels.SubImage(textRect).(*ebiten.Image), marqueeImageOptions(button, labelScale, float64(textRect.Dx())/2, float64(textRect.Dy())/2))
 }
 
 func marqueeImageOptions(button menuButton, scale, offsetX, offsetY float64) *ebiten.DrawImageOptions {
@@ -917,15 +928,6 @@ func (a *app) drawLevelCard(screen *ebiten.Image, item formats.LevelInfo) {
 	screen.DrawImage(image, options)
 }
 func (a *app) drawBackdrop(screen *ebiten.Image) {
-	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
-		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
-		options.GeoM.Rotate(a.menuTime * .3)
-		options.GeoM.Translate(240, 160)
-		screen.DrawImage(image, options)
-	}
-}
-func (a *app) drawTitleBackdrop(screen *ebiten.Image) {
 	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
