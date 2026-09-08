@@ -391,7 +391,7 @@ func (a *app) drawWorldDetails(screen *ebiten.Image) {
 }
 
 func (a *app) drawTitle(screen *ebiten.Image) {
-	a.drawBackdrop(screen)
+	a.drawTitleBackdrop(screen)
 	a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
 	a.drawTitleBarry(screen)
 	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil {
@@ -414,9 +414,9 @@ type titleBarryPiece struct {
 
 var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25},
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},
-	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 212, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 202, angle: math.Pi/2 - .25},
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 245, angle: math.Pi/2 - .25},
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
@@ -922,6 +922,16 @@ func (a *app) drawBackdrop(screen *ebiten.Image) {
 		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
 		options.GeoM.Rotate(a.menuTime * .3)
 		options.GeoM.Translate(240, 160)
+		screen.DrawImage(image, options)
+	}
+}
+func (a *app) drawTitleBackdrop(screen *ebiten.Image) {
+	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
+		options.GeoM.Scale(1.45, 1.45)
+		options.GeoM.Rotate(a.menuTime * .3)
+		options.GeoM.Translate(280, 150)
 		screen.DrawImage(image, options)
 	}
 }
