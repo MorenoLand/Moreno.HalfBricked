@@ -10,7 +10,27 @@ switch ($Target) {
     'wasm' { $env:GOOS = 'js'; $env:GOARCH = 'wasm'; $output = Join-Path $bin 'aoz.wasm' }
 }
 Push-Location $project
-try { go build -o $output .; if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" } } finally { Pop-Location; Remove-Item Env:GOOS -ErrorAction SilentlyContinue; Remove-Item Env:GOARCH -ErrorAction SilentlyContinue }
+$stagedResource = $null
+try {
+    if ($Target -eq 'windows') {
+        $resource = Join-Path $project 'resources\icon_windows_amd64.syso'
+        $windres = Get-Command windres -ErrorAction SilentlyContinue
+        if ($null -ne $windres) {
+            & $windres.Source -i 'resources/icon.rc' -o 'resources/icon_windows_amd64.syso'
+            if ($LASTEXITCODE -ne 0) { throw "windres failed with exit code $LASTEXITCODE" }
+        }
+        if (-not (Test-Path -LiteralPath $resource)) { throw "Windows icon resource not found: $resource" }
+        $stagedResource = Join-Path $project 'icon_windows_amd64.syso'
+        Copy-Item -LiteralPath $resource -Destination $stagedResource -Force
+    }
+    go build -o $output .
+    if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
+} finally {
+    if ($null -ne $stagedResource -and (Test-Path -LiteralPath $stagedResource)) { Remove-Item -LiteralPath $stagedResource -Force }
+    Pop-Location
+    Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+    Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+}
 if ($Target -eq 'wasm') {
     $web = Join-Path $bin 'web'
     New-Item -ItemType Directory -Force -Path $web | Out-Null

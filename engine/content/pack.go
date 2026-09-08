@@ -29,9 +29,10 @@ type LevelRepository interface {
 }
 
 type Pack struct {
-	source   AssetSource
-	manifest PackManifest
-	levels   map[string]formats.Level
+	source    AssetSource
+	manifest  PackManifest
+	levels    map[string]formats.Level
+	variables formats.FrontendVariables
 }
 
 func NewPack(source AssetSource) (*Pack, error) {
@@ -42,9 +43,23 @@ func NewPack(source AssetSource) (*Pack, error) {
 	if manifest.SchemaVersion != 1 {
 		return nil, fmt.Errorf("unsupported cache schema %d", manifest.SchemaVersion)
 	}
-	return &Pack{source: source, manifest: manifest, levels: make(map[string]formats.Level)}, nil
+	pack := &Pack{source: source, manifest: manifest, levels: make(map[string]formats.Level)}
+	if path, ok := manifestPath(manifest.Files, "Common0/Xml/Common0_Variables.xml"); ok {
+		r, err := source.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		pack.variables, err = formats.ParseVariables(r)
+		r.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return pack, nil
 }
-func (p *Pack) Manifest() PackManifest { return p.manifest }
+func (p *Pack) Manifest() PackManifest                { return p.manifest }
+func (p *Pack) Variables() formats.FrontendVariables  { return p.variables }
+func (p *Pack) SourcePath(path string) (string, bool) { return manifestPath(p.manifest.Files, path) }
 func (p *Pack) List() []formats.LevelInfo {
 	return append([]formats.LevelInfo(nil), p.manifest.Levels...)
 }
@@ -77,3 +92,27 @@ func (p *Pack) TexturePath(name string) (string, bool) {
 	return path, ok
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) { return p.source.Open(path) }
+func (p *Pack) Script(path string) (formats.Script, error) {
+	name, ok := manifestPath(p.manifest.Files, path)
+	if !ok {
+		return formats.Script{}, fmt.Errorf("script %q not found", path)
+	}
+	r, err := p.source.Open(name)
+	if err != nil {
+		return formats.Script{}, err
+	}
+	defer r.Close()
+	script, err := formats.ParseScript(r)
+	if err != nil {
+		return formats.Script{}, fmt.Errorf("%s: %w", name, err)
+	}
+	return script, nil
+}
+func manifestPath(files map[string]string, wanted string) (string, bool) {
+	for key, path := range files {
+		if strings.EqualFold(filepath.ToSlash(key), filepath.ToSlash(wanted)) {
+			return path, true
+		}
+	}
+	return "", false
+}

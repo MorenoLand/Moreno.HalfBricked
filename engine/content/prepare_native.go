@@ -3,11 +3,19 @@
 package content
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func PrepareAssets(root string) (string, error) {
+	if strings.EqualFold(filepath.Ext(root), ".apk") {
+		return prepareAPK(root)
+	}
+	if info, err := os.Stat(root); err == nil && !info.IsDir() {
+		return "", fmt.Errorf("assets path %q is not a directory or APK", root)
+	}
 	if _, err := os.Stat(filepath.Join(root, "pack.json")); err == nil {
 		return root, nil
 	}

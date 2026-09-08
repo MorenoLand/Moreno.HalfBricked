@@ -3,8 +3,15 @@ set -eu
 project=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 target=${1:-linux}
 mkdir -p "$project/bin"
+staged_resource="$project/icon_windows_amd64.syso"
+cleanup() { rm -f "$staged_resource"; }
 case "$target" in
-  windows) GOOS=windows GOARCH=amd64 go build -o "$project/bin/aoz.exe" "$project" ;;
+  windows)
+    if command -v windres >/dev/null 2>&1; then (cd "$project" && windres -i resources/icon.rc -o resources/icon_windows_amd64.syso); fi
+    if [ ! -f "$project/resources/icon_windows_amd64.syso" ]; then echo "Windows icon resource not found" >&2; exit 1; fi
+    cp "$project/resources/icon_windows_amd64.syso" "$staged_resource"
+    trap cleanup EXIT
+    GOOS=windows GOARCH=amd64 go build -o "$project/bin/aoz.exe" "$project" ;;
   linux) GOOS=linux GOARCH=amd64 go build -o "$project/bin/aoz-linux" "$project" ;;
   darwin) GOOS=darwin GOARCH=amd64 go build -o "$project/bin/aoz-darwin" "$project" ;;
   wasm) GOOS=js GOARCH=wasm go build -o "$project/bin/aoz.wasm" "$project" ;;
