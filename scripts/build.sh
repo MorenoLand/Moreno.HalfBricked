@@ -1,11 +1,12 @@
 #!/usr/bin/env sh
 set -eu
 project=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-target=${1:-linux}
+target=${1:-all}
 mkdir -p "$project/bin"
 staged_resource="$project/icon_windows_amd64.syso"
 cleanup() { rm -f "$staged_resource"; }
 case "$target" in
+  all) "$0" windows; "$0" wasm ;;
   windows)
     if command -v windres >/dev/null 2>&1; then (cd "$project" && windres -i resources/icon.rc -o resources/icon_windows_amd64.syso); fi
     if [ ! -f "$project/resources/icon_windows_amd64.syso" ]; then echo "Windows icon resource not found" >&2; exit 1; fi
@@ -15,7 +16,7 @@ case "$target" in
   linux) GOOS=linux GOARCH=amd64 go build -o "$project/bin/aoz-linux" "$project" ;;
   darwin) GOOS=darwin GOARCH=amd64 go build -o "$project/bin/aoz-darwin" "$project" ;;
   wasm) GOOS=js GOARCH=wasm go build -o "$project/bin/aoz.wasm" "$project" ;;
-  *) echo "target must be windows, linux, darwin, or wasm" >&2; exit 2 ;;
+*) echo "target must be windows, linux, darwin, wasm, or all" >&2; exit 2 ;;
 esac
 if [ "$target" = wasm ]; then
   mkdir -p "$project/bin/web"

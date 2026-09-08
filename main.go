@@ -49,6 +49,10 @@ type app struct {
 	computerFont                         *ui.Font
 	startupFrames                        int
 	menuTime                             float64
+	menuSpawnTime                        float64
+	titleSoundElapsed                    float64
+	titleSoundStage                      int
+	titleCocking                         bool
 	canvas                               *ebiten.Image
 	splash                               *ebiten.Image
 	splashLoaded                         bool
@@ -56,6 +60,7 @@ type app struct {
 	outputHeight                         int
 	frontendScaleX                       float64
 	frontendScaleY                       float64
+	menuClick                            *menuClickState
 	debugPanelVisible                    bool
 	debugPanelDragging                   bool
 	debugPanelX, debugPanelY             float64
@@ -73,8 +78,7 @@ type bullet struct {
 }
 
 type portalState struct {
-	x, y float64
-	age  float64
+	x, y, age, size float64
 }
 
 type bloodPop struct {
@@ -141,6 +145,9 @@ type playState struct {
 
 const playerBaseSpeed = 180.0
 const playerCollisionRadius = 16.0
+
+var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-8.5, 25}, {2.5, 24}, {8.5, 22}, {17.5, 20}, {22, 12}, {23.5, 7}, {21.5, -2}, {18.5, -7}}
+
 const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
 const zombieDeathDelay = .125
@@ -176,16 +183,45 @@ func (a *app) Update() error {
 		return nil
 	}
 	a.menuTime += 1.0 / 60.0
+	if a.titleCocking {
+		a.titleSoundElapsed += 1.0 / 60.0
+		if a.titleSoundStage == 1 && a.titleSoundElapsed >= 8.0/60.0 {
+			a.sound.Play("audio/sound/sfx/menu_shotgun_cock_2.ogg", .8)
+			a.titleSoundStage = 2
+		}
+		if a.titleSoundStage == 2 && a.titleSoundElapsed >= 16.0/60.0 {
+			a.sound.Play("audio/sound/sfx/menu_shotgun_cock_1.ogg", .8)
+			a.titleSoundStage = 0
+		}
+		if a.titleSoundElapsed >= 32.0/60.0 {
+			a.titleCocking = false
+			a.titleScreen = false
+			a.menuSpawnTime = 0
+		}
+	}
+	if !a.titleScreen && a.page == 0 && a.menuSpawnTime < .2 {
+		a.menuSpawnTime += 1.0 / 60.0
+		if a.menuSpawnTime > .2 {
+			a.menuSpawnTime = .2
+		}
+	}
 	if a.debug && inpututil.IsKeyJustPressed(ebiten.KeyF2) {
 		a.debugPanelVisible = !a.debugPanelVisible
 	}
 	if a.debug && a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
 	}
+	if a.menuClick != nil {
+		return a.updateMenuClick()
+	}
 	if a.titleScreen {
+		if a.titleCocking {
+			return nil
+		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-			a.titleScreen = false
-			a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+			a.titleCocking = true
+			a.titleSoundElapsed = 0
+			a.titleSoundStage = 1
 		}
 		return nil
 	}
@@ -255,6 +291,9 @@ func (a *app) Update() error {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) {
 		a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+		if a.page == 0 {
+			return a.beginMenuClick(a.menuSelection)
+		}
 		return a.activate()
 	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -263,7 +302,7 @@ func (a *app) Update() error {
 			if index := a.mainMenuHit(px, py); index >= 0 {
 				a.menuSelection = index
 				a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
-				return a.activate()
+				return a.beginMenuClick(index)
 			}
 		} else if a.page == 2 {
 			if mode := a.levelTabAt(px, py); mode >= 0 {
@@ -409,6 +448,7 @@ func (a *app) setCaptureState(state string) error {
 		a.titleScreen = true
 	case "main-menu":
 		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
+		a.menuSpawnTime, a.titleSoundStage = .2, 0
 	case "world-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 1, 0, 0, 0
 	case "level-select":
@@ -491,6 +531,10 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 		a.drawBackdrop(screen)
 		a.drawMainMenuBanner(screen)
 		for index, button := range mainMenuButtons {
+			if a.menuClick != nil && a.menuClick.index == index {
+				a.drawMenuClick(screen, button, *a.menuClick)
+				continue
+			}
 			a.drawMarqueeButton(screen, button, index == a.menuSelection)
 		}
 	} else if a.page == 1 {
@@ -498,6 +542,57 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	} else {
 		a.drawLevelSelect(screen)
 	}
+}
+
+func (a *app) beginMenuClick(index int) error {
+	if index < 0 || index >= len(mainMenuButtons) {
+		return nil
+	}
+	button := mainMenuButtons[index]
+	a.menuSelection = index
+	a.menuClick = &menuClickState{index: index, x: button.cx, y: button.cy, vx: -2, vy: -6}
+	return nil
+}
+
+func (a *app) updateMenuClick() error {
+	click := a.menuClick
+	if click == nil {
+		return nil
+	}
+	click.age += 1.0 / 60.0
+	click.x += click.vx
+	click.y += click.vy
+	click.vx *= .97
+	click.vy = (click.vy + 1.4) * .97
+	if click.y > logicalHeight+64 {
+		a.menuClick = nil
+		return a.activate()
+	}
+	return nil
+}
+
+func (a *app) drawMenuClick(screen *ebiten.Image, button menuButton, click menuClickState) {
+	if click.age < .125 {
+		if zombie, err := a.Texture(fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", button.zombie)); err == nil {
+			options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+			options.GeoM.Translate(-float64(zombie.Bounds().Dx())/2, -float64(zombie.Bounds().Dy())/2)
+			options.GeoM.Scale(.9, .9)
+			options.GeoM.Rotate(button.angle)
+			options.GeoM.Translate(click.x, click.y-8)
+			if click.age >= .04 {
+				options.ColorScale.Scale(1.5, .18, .18, 1)
+			}
+			a.drawImage(screen, zombie, options)
+		}
+	}
+	flash, err := a.Texture("Common0/Textures/Button_Screen_Flash")
+	if err != nil {
+		return
+	}
+	source := flash.SubImage(image.Rect(0, 0, 140, 70)).(*ebiten.Image)
+	moving := button
+	moving.cx, moving.cy = click.x, click.y
+	a.drawImage(screen, source, marqueeImageOptions(moving, .8, 70, 35))
 }
 
 func (a *app) drawWorldSelect(screen *ebiten.Image) {
@@ -560,15 +655,35 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 	phase := 2 * math.Pi * (a.menuTime * 28000 / 65536)
 	xOffset := math.Sin(phase+2*math.Pi*.5*28000/65536) * 1.5
 	yOffset := math.Sin(phase) * 1.5
-	for _, piece := range titleBarryPieces {
+	for index, piece := range titleBarryPieces {
 		part := texture.SubImage(piece.source).(*ebiten.Image)
+		cockX, cockY := a.titleCockingOffset(index)
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(piece.source.Dx())/2, -float64(piece.source.Dy())/2)
 		options.GeoM.Scale(.5, .66)
 		options.GeoM.Rotate(piece.angle)
-		options.GeoM.Translate(piece.x+xOffset, piece.y+yOffset)
+		options.GeoM.Translate(piece.x+xOffset+cockX, piece.y+yOffset+cockY)
 		a.drawImage(screen, part, options)
 	}
+}
+
+func (a *app) titleCockingOffset(index int) (float64, float64) {
+	if !a.titleCocking || index != 2 {
+		return 0, 0
+	}
+	ticks := a.titleSoundElapsed * 60
+	distance := 0.0
+	switch {
+	case ticks < 8:
+		distance = ticks / 8 * 10
+	case ticks < 16:
+		distance = 10
+	case ticks < 24:
+		distance = (1 - (ticks-16)/8) * 10
+	}
+	axisX := math.Sin(titleBarryPieces[1].angle)
+	axisY := math.Cos(titleBarryPieces[1].angle)
+	return -axisX * distance, -axisY * distance
 }
 
 func (a *app) drawBanner(screen *ebiten.Image, positionName, scaleName string, angle float64) {
@@ -789,6 +904,12 @@ type menuButton struct {
 	cx, cy, width, height, angle float64
 }
 
+type menuClickState struct {
+	index        int
+	age          float64
+	x, y, vx, vy float64
+}
+
 var mainMenuButtons = []menuButton{
 	{zombie: 3, labelRow: 8, action: 2, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
 	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
@@ -801,6 +922,7 @@ func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
 }
 
 func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selected bool) {
+	spawnScale := a.menuSpawnScale()
 	boardScale := 2.0 / 3.0
 	labelScale := 2.0 / 3.0
 	zombieScale := .65
@@ -809,6 +931,9 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 		labelScale = .8
 		zombieScale = .9
 	}
+	boardScale *= spawnScale
+	labelScale *= spawnScale
+	zombieScale *= spawnScale
 	zombie, err := a.Texture(fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", button.zombie))
 	if err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
@@ -836,6 +961,14 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 		return
 	}
 	a.drawImage(screen, labels.SubImage(textRect).(*ebiten.Image), marqueeImageOptions(button, labelScale, float64(textRect.Dx())/2, float64(textRect.Dy())/2))
+}
+
+func (a *app) menuSpawnScale() float64 {
+	scale := a.menuSpawnTime * 5
+	if scale > 1 {
+		return 1
+	}
+	return scale
 }
 
 func marqueeImageOptions(button menuButton, scale, offsetX, offsetY float64) *ebiten.DrawImageOptions {
@@ -1159,7 +1292,6 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	if a.play == nil || !a.play.hudVisible {
 		return
 	}
-	a.drawHUDLights(screen)
 	scoreX, scoreXOK := a.variables.FloatValue("HUD_SCORE_X_VAR")
 	if !scoreXOK {
 		scoreX = logicalWidth / 2
@@ -1520,21 +1652,17 @@ func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
 	if err != nil {
 		return
 	}
-	frame := int(math.Floor(portal.age * 8))
-	if portal.age >= 1.5 {
-		frame = 3 - int(math.Floor((portal.age-1.5)*8))
-	}
-	if frame < 0 {
-		frame = 0
-	} else if frame >= 4 {
-		frame = 3
-	}
+	frame := int(math.Floor(portal.age*10)) % 4
 	source := texture.SubImage(image.Rect(frame*128, 0, frame*128+128, 128)).(*ebiten.Image)
 	screenX := (portal.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (portal.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
+	renderSize := portal.size * .75
+	if renderSize <= 0 {
+		return
+	}
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-64, -64)
-	options.GeoM.Scale(.5, .5)
+	options.GeoM.Scale(renderSize/128*a.play.world.Zoom, renderSize/128*a.play.world.Zoom)
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
 }
@@ -1640,13 +1768,24 @@ func (a *app) drawWeaponFlare(screen *ebiten.Image, x, y, angle float64) {
 	if err != nil {
 		return
 	}
-	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+	cellWidth := texture.Bounds().Dx() / 2
+	cellHeight := texture.Bounds().Dy()
+	if cellWidth <= 0 || cellHeight <= 0 {
+		return
+	}
+	frame := 0
+	if a.play.flare <= .08 {
+		frame = 1
+	}
+	source := texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image)
+	flareX := x + 15*math.Cos(angle)
+	flareY := y - 10*math.Sin(angle)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Translate(-w/2, -h/2)
+	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
 	options.GeoM.Rotate(angle)
-	options.GeoM.Scale(.5, .5)
-	options.GeoM.Translate((x-a.play.world.CameraX)*a.play.world.Zoom+a.play.world.ViewportX, (y-a.play.world.CameraY)*a.play.world.Zoom+a.play.world.ViewportY)
-	a.drawImage(screen, texture, options)
+	options.GeoM.Scale(45/float64(cellWidth)*a.play.world.Zoom, 30/float64(cellHeight)*a.play.world.Zoom)
+	options.GeoM.Translate((flareX-a.play.world.CameraX)*a.play.world.Zoom+a.play.world.ViewportX, (flareY-a.play.world.CameraY)*a.play.world.Zoom+a.play.world.ViewportY)
+	a.drawImage(screen, source, options)
 }
 func (a *app) drawReticule(screen *ebiten.Image) {
 	texture, err := a.Texture("Common0/Textures/Reticule_SD")
@@ -2114,8 +2253,11 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		}
 		for step := 0; step < steps; step++ {
 			candidateX, candidateY := p.x+moveX/float64(steps), p.y+moveY/float64(steps)
-			pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
-			if hit {
+			for resolve := 0; resolve < 4; resolve++ {
+				pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
+				if !hit {
+					break
+				}
 				candidateX += pushX
 				candidateY += pushY
 			}
@@ -2124,19 +2266,51 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				candidateX += zombiePushX
 				candidateY += zombiePushY
 			}
+			for resolve := 0; resolve < 4; resolve++ {
+				pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
+				if !hit {
+					break
+				}
+				candidateX += pushX
+				candidateY += pushY
+			}
 			p.x, p.y = candidateX, candidateY
 		}
 		if mobile && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
 			p.angle, p.flipX = barryDirection(dx, dy)
 		}
 	}
-	if pushX, pushY, hit := p.zombieCollisionDisplacement(p.x, p.y, radius); hit {
+	for resolve := 0; resolve < 4; resolve++ {
+		pushX, pushY, hit := p.collisionDisplacement(p.x, p.y, radius, tileSize)
+		if !hit {
+			break
+		}
 		p.x += pushX
 		p.y += pushY
 	}
+	if pushX, pushY, hit := p.zombieCollisionDisplacement(p.x, p.y, radius); hit {
+		p.x += pushX
+		p.y += pushY
+		for resolve := 0; resolve < 4; resolve++ {
+			pushX, pushY, tileHit := p.collisionDisplacement(p.x, p.y, radius, tileSize)
+			if !tileHit {
+				break
+			}
+			p.x += pushX
+			p.y += pushY
+		}
+	}
 	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
-	p.x = math.Max(float64(tileSize)/2, math.Min(maxX-float64(tileSize)/2, p.x))
-	p.y = math.Max(float64(tileSize)/2, math.Min(maxY-float64(tileSize)/2, p.y))
+	if maxX < radius*2 {
+		p.x = maxX / 2
+	} else {
+		p.x = math.Max(radius, math.Min(maxX-radius, p.x))
+	}
+	if maxY < radius*2 {
+		p.y = maxY / 2
+	} else {
+		p.y = math.Max(radius, math.Min(maxY-radius, p.y))
+	}
 	p.time += 1.0 / 60.0
 	p.updateCamera()
 	return fired
@@ -2290,18 +2464,22 @@ func (p *playState) updateZombies() {
 		}
 		dx, dy := p.x-zombie.x, p.y-zombie.y
 		distance := math.Hypot(dx, dy)
-		collisionDistance := playerCollisionRadius + zombieCollisionRadius(*zombie)
+		zombieRadius := zombieCollisionRadius(*zombie)
+		collisionDistance := playerCollisionRadius + zombieRadius
 		if distance > collisionDistance {
 			step := math.Min(zombie.speed*dt, distance-collisionDistance)
 			if distance > 0 {
 				candidateX := zombie.x + dx/distance*step
 				candidateY := zombie.y + dy/distance*step
-				if !p.isSolid(candidateX, zombie.y) {
-					zombie.x = candidateX
+				for resolve := 0; resolve < 4; resolve++ {
+					pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, zombieRadius, p.tileSize)
+					if !hit {
+						break
+					}
+					candidateX += pushX
+					candidateY += pushY
 				}
-				if !p.isSolid(zombie.x, candidateY) {
-					zombie.y = candidateY
-				}
+				zombie.x, zombie.y = candidateX, candidateY
 			}
 		} else {
 			p.health = math.Max(0, p.health-dt*.08)
@@ -2315,6 +2493,7 @@ func (p *playState) updatePortals() {
 	active := p.portals[:0]
 	for _, portal := range p.portals {
 		portal.age += 1.0 / 60.0
+		portal.size += (140 - portal.size) * .1
 		if portal.age < 2.0 {
 			active = append(active, portal)
 		}
@@ -2379,9 +2558,9 @@ func (p *playState) fire(dx, dy float64) bool {
 		return false
 	}
 	dirX, dirY := dx/dist, dy/dist
-	const muzzleOffset = 24.0
-	bx := p.x + dirX*muzzleOffset
-	by := p.y + dirY*muzzleOffset
+	offsetX, offsetY, flareAngle, hasMuzzle := muzzleTransform(dirX, dirY)
+	bx := p.x + offsetX
+	by := p.y + offsetY
 	bvx := dirX * p.weapon.Speed
 	bvy := dirY * p.weapon.Speed
 	bAngle := math.Atan2(dirY, dirX) + math.Pi/2
@@ -2394,11 +2573,30 @@ func (p *playState) fire(dx, dy float64) bool {
 		angle: bAngle,
 	})
 	p.flash = 1.0 / 60.0
-	p.flare = 0.5
+	p.flare = 0
 	p.flareX, p.flareY = bx, by
-	p.flareAngle = math.Atan2(dirY, dirX)
+	p.flareAngle = flareAngle
+	if hasMuzzle {
+		p.flare = .16
+	}
 	p.shootCooldown = p.weapon.RateOfFire
 	return true
+}
+
+func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
+	column, flipX := barryDirection(dx, dy)
+	if column >= len(barryMuzzleOffsets) {
+		return 0, 0, 0, false
+	}
+	offset := barryMuzzleOffsets[column]
+	if flipX {
+		offset.x = -offset.x
+	}
+	direction := int(math.Round((math.Pi/2-math.Atan2(dy, dx))/(math.Pi/4))) % 8
+	if direction < 0 {
+		direction += 8
+	}
+	return offset.x, offset.y, math.Pi/2 - float64(direction)*math.Pi/4, true
 }
 
 func (p *playState) isSolid(x, y float64) bool {
@@ -2408,7 +2606,7 @@ func (p *playState) isSolid(x, y float64) bool {
 	}
 	tileX := int(math.Floor(x / float64(tileSize)))
 	tileY := int(math.Floor(y / float64(tileSize)))
-	return p.collisionValue(tileX, tileY) == 1
+	return playerCollisionBlocks(p.collisionValue(tileX, tileY))
 }
 func stickDeflection(x, y, baseX, baseY float64) (float64, float64) {
 	dx, dy := x-baseX, y-baseY
@@ -2472,7 +2670,7 @@ func (p *playState) collisionDisplacement(x, y, radius float64, tileSize int) (f
 	bestX, bestY, bestPen := 0.0, 0.0, math.Inf(1)
 	for tileY := minY; tileY <= maxY; tileY++ {
 		for tileX := minX; tileX <= maxX; tileX++ {
-			if p.collisionValue(tileX, tileY) != 1 {
+			if !playerCollisionBlocks(p.collisionValue(tileX, tileY)) {
 				continue
 			}
 			centerX := (float64(tileX) + .5) * float64(tileSize)
@@ -2483,13 +2681,24 @@ func (p *playState) collisionDisplacement(x, y, radius float64, tileSize int) (f
 				continue
 			}
 			if penX < penY && penX < bestPen {
-				bestX, bestY, bestPen = math.Copysign(penX, x-centerX), 0, penX
+				pushX := -penX
+				if x > centerX {
+					pushX = penX
+				}
+				bestX, bestY, bestPen = pushX, 0, penX
 			} else if penY < bestPen {
-				bestX, bestY, bestPen = 0, math.Copysign(penY, y-centerY), penY
+				pushY := -penY
+				if y > centerY {
+					pushY = penY
+				}
+				bestX, bestY, bestPen = 0, pushY, penY
 			}
 		}
 	}
 	return bestX, bestY, bestPen != math.Inf(1)
+}
+func playerCollisionBlocks(value uint32) bool {
+	return value == 1 || value == 2
 }
 func (p *playState) collisionValue(tileX, tileY int) uint32 {
 	if tileX < 0 || tileX >= p.world.Level.Width || tileY < 0 || tileY >= p.world.Level.Height {

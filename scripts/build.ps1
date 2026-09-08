@@ -1,5 +1,12 @@
-param([ValidateSet('windows','linux','darwin','wasm')][string]$Target = 'windows')
+param([ValidateSet('windows','linux','darwin','wasm','all')][string]$Target = 'all')
 $ErrorActionPreference = 'Stop'
+if ($Target -eq 'all') {
+    & $PSCommandPath -Target windows
+    if (-not $?) { throw 'Windows build failed' }
+    & $PSCommandPath -Target wasm
+    if (-not $?) { throw 'WASM build failed' }
+    return
+}
 $project = Split-Path -Parent $PSScriptRoot
 $bin = Join-Path $project 'bin'
 New-Item -ItemType Directory -Force -Path $bin | Out-Null

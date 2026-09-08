@@ -34,6 +34,6 @@ Captures are disposable PNGs named with their frame and state; the capture direc
 
 For a bounded background probe of a specific state, add `--capture-state=title`, `main-menu`, `world-select`, `level-select`, `play`, or `debug-viewer` with `--capture-frames=1`. For menu hover-state QA, add `--capture-selection=0` through `3` with `--capture-state=main-menu`.
 
-Build the browser host bundle with `.\scripts\build.ps1 -Target wasm`; serve `bin\web` over HTTP.
+Run `.\scripts\build.ps1` to build the Windows executable and browser host bundle; use `-Target wasm` for only the WASM bundle. Serve `bin\web` over HTTP.
 
 Original content, native libraries, and generated private caches are not part of this source tree. See `LEGAL_NOTICE.md` for the project boundary.
