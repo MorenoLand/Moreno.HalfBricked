@@ -77,6 +77,12 @@ type portalState struct {
 	age  float64
 }
 
+type bloodPop struct {
+	x, y    float64
+	variant int
+	age     float64
+}
+
 type zombieState struct {
 	x, y          float64
 	speed, health float64
@@ -85,6 +91,9 @@ type zombieState struct {
 	frame         float64
 	angle         int
 	flipX         bool
+	hitFlash      float64
+	dying         bool
+	deathAge      float64
 }
 
 type dialogueLine struct {
@@ -124,6 +133,7 @@ type playState struct {
 	lives                                                int
 	multiplier                                           int
 	portals                                              []portalState
+	bloodPops                                            []bloodPop
 	hudVisible                                           bool
 	dialogue                                             []dialogueLine
 	dialogueIndex                                        int
@@ -132,6 +142,8 @@ type playState struct {
 const playerBaseSpeed = 180.0
 const playerCollisionRadius = 16.0
 const playerCollisionStep = 4.0
+const zombieHitFlashDuration = .125
+const zombieDeathDelay = .125
 
 func newApp(root string, debug, mobile bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -310,37 +322,22 @@ func (a *app) Draw(screen *ebiten.Image) {
 	if a.play != nil && !a.mobile {
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
 	}
-	frontend := a.startupFrames > 0 || a.titleScreen || (a.view == nil && a.play == nil)
-	if frontend {
-		a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
-		a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
-		screen.Fill(colorDark)
-		if a.startupFrames > 0 {
-			a.drawStartup(screen)
-		} else if a.titleScreen {
-			a.drawTitle(screen)
-		} else {
-			a.drawMenu(screen)
-		}
-		a.frontendScaleX = 1
-		a.frontendScaleY = 1
+	a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
+	a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
+	screen.Fill(colorDark)
+	if a.startupFrames > 0 {
+		a.drawStartup(screen)
+	} else if a.titleScreen {
+		a.drawTitle(screen)
+	} else if a.view != nil {
+		a.view.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
+		a.view.Draw(screen)
+		a.drawDebugPanel(screen)
+	} else if a.play != nil {
+		a.play.world.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
+		a.drawPlay(screen)
 	} else {
-		a.frontendScaleX = 1
-		a.frontendScaleY = 1
-		if a.canvas == nil {
-			a.canvas = ebiten.NewImage(logicalWidth, logicalHeight)
-		}
-		a.canvas.Fill(colorDark)
-		if a.view != nil {
-			a.view.Draw(a.canvas)
-			a.drawDebugPanel(a.canvas)
-		} else {
-			a.drawPlay(a.canvas)
-		}
-		screen.Fill(colorDark)
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-		options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
-		screen.DrawImage(a.canvas, options)
+		a.drawMenu(screen)
 	}
 	if a.capture != nil {
 		if err := a.capture.Save(screen, a.captureState()); err != nil {
@@ -348,6 +345,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 			a.capture = nil
 		}
 	}
+	a.frontendScaleX = 1
+	a.frontendScaleY = 1
 }
 
 func (a *app) drawImage(screen, source *ebiten.Image, options *ebiten.DrawImageOptions) {
@@ -359,6 +358,20 @@ func (a *app) drawImage(screen, source *ebiten.Image, options *ebiten.DrawImageO
 	scaled.Filter = ebiten.FilterNearest
 	scaled.GeoM.Scale(a.frontendScaleX, a.frontendScaleY)
 	screen.DrawImage(source, &scaled)
+}
+func (a *app) renderScale() (float64, float64) {
+	scaleX, scaleY := a.frontendScaleX, a.frontendScaleY
+	if scaleX <= 0 {
+		scaleX = 1
+	}
+	if scaleY <= 0 {
+		scaleY = 1
+	}
+	return scaleX, scaleY
+}
+func (a *app) drawRect(screen *ebiten.Image, x, y, width, height float64, clr color.Color) {
+	scaleX, scaleY := a.renderScale()
+	ebitenutil.DrawRect(screen, x*scaleX, y*scaleY, width*scaleX, height*scaleY, clr)
 }
 
 func (a *app) captureState() string {
@@ -1097,6 +1110,11 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		for _, portal := range a.play.portals {
 			a.drawPortal(target, portal)
 		}
+		for _, pop := range a.play.bloodPops {
+			if pop.y <= a.play.y {
+				a.drawBloodPop(target, pop)
+			}
+		}
 		for _, zombie := range a.play.zombies {
 			if zombie.y <= a.play.y {
 				a.drawZombie(target, zombie)
@@ -1116,11 +1134,16 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 				a.drawZombie(target, zombie)
 			}
 		}
+		for _, pop := range a.play.bloodPops {
+			if pop.y > a.play.y {
+				a.drawBloodPop(target, pop)
+			}
+		}
 	})
 	a.drawPlayControls(screen)
 	a.drawGameHUD(screen)
 	if a.play.paused {
-		ebitenutil.DrawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
+		a.drawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 		a.text(screen, "PAUSED", 195, 115, 1.0)
 		a.text(screen, "RESUME", 212, 160, 0.5)
 		a.text(screen, "QUIT TO MENU", 192, 190, 0.5)
@@ -1136,6 +1159,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	if a.play == nil || !a.play.hudVisible {
 		return
 	}
+	a.drawHUDLights(screen)
 	scoreX, scoreXOK := a.variables.FloatValue("HUD_SCORE_X_VAR")
 	if !scoreXOK {
 		scoreX = logicalWidth / 2
@@ -1174,6 +1198,21 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	if a.play.lives > 0 {
 		livesText := fmt.Sprintf("x%d", a.play.lives)
 		a.text(screen, livesText, 410, 20, 22.0/32.0)
+	}
+}
+
+func (a *app) drawHUDLights(screen *ebiten.Image) {
+	texture, err := a.Texture("Common0/Textures/HUD_Lights_SD")
+	if err != nil {
+		return
+	}
+	records := [...]struct{ x, y, u, v, w, h int }{{20, 276, 16, 26, 16, 12}, {20, 288, 16, 26, 16, 12}, {20, 300, 0, 26, 16, 12}, {460, 280, 16, 42, 16, 14}, {460, 296, 0, 40, 16, 16}}
+	for _, record := range records {
+		source := texture.SubImage(image.Rect(record.u, record.v, record.u+record.w, record.v+record.h)).(*ebiten.Image)
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Translate(-float64(record.w)/2, -float64(record.h)/2)
+		options.GeoM.Translate(float64(record.x), float64(record.y))
+		a.drawImage(screen, source, options)
 	}
 }
 
@@ -1293,8 +1332,8 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 		return
 	}
 	x, y := a.debugPanelX, a.debugPanelY
-	ebitenutil.DrawRect(screen, x, y, debugPanelWidth, debugPanelHeight, color.RGBA{8, 10, 14, 235})
-	ebitenutil.DrawRect(screen, x, y, debugPanelWidth, 22, color.RGBA{38, 48, 60, 255})
+	a.drawRect(screen, x, y, debugPanelWidth, debugPanelHeight, color.RGBA{8, 10, 14, 235})
+	a.drawRect(screen, x, y, debugPanelWidth, 22, color.RGBA{38, 48, 60, 255})
 	a.text(screen, "F2 DEBUG", x+8, y+4, .32)
 	outputX, outputY := ebiten.CursorPosition()
 	logicalX, logicalY := a.pointer()
@@ -1426,9 +1465,12 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
 	}
-	const scale = .5
-	screenX := (zombie.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
-	screenY := (zombie.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
+	scale := a.play.world.Zoom
+	if scale <= 0 {
+		scale = 1
+	}
+	screenX := (zombie.x-a.play.world.CameraX)*scale + a.play.world.ViewportX
+	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
@@ -1437,6 +1479,38 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	} else {
 		options.GeoM.Scale(scale, scale)
 	}
+	if zombie.hitFlash > 0 {
+		options.ColorScale.Scale(1.5, .18, .18, 1)
+	}
+	options.GeoM.Translate(screenX, screenY)
+	a.drawImage(screen, source, options)
+}
+
+func (a *app) drawBloodPop(screen *ebiten.Image, pop bloodPop) {
+	if a.play == nil || pop.variant < 0 || pop.variant > 2 {
+		return
+	}
+	texture, err := a.Texture(fmt.Sprintf("Common0/Textures/ZombiePop_%d_SD", pop.variant))
+	if err != nil {
+		return
+	}
+	const frames = 4
+	cellWidth := texture.Bounds().Dx() / frames
+	cellHeight := texture.Bounds().Dy()
+	frame := int(math.Floor(pop.age * 8))
+	if cellWidth <= 0 || cellHeight <= 0 || frame < 0 || frame >= frames {
+		return
+	}
+	source := texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image)
+	zoom := a.play.world.Zoom
+	if zoom <= 0 {
+		zoom = 1
+	}
+	screenX := (pop.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
+	screenY := (pop.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
+	options.GeoM.Scale(zoom, zoom)
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
 }
@@ -1923,6 +1997,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.updateWaves()
 	p.updateZombies()
 	p.updatePortals()
+	p.updateBloodPops()
 
 	const dt = 1.0 / 60.0
 	activeBullets := p.bullets[:0]
@@ -1936,10 +2011,18 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		}
 		hit := false
 		for index := range p.zombies {
+			if p.zombies[index].health <= 0 {
+				continue
+			}
 			if !bulletHitsZombie(previousX, previousY, b.x, b.y, p.zombies[index]) {
 				continue
 			}
 			p.zombies[index].health -= 500
+			p.zombies[index].hitFlash = zombieHitFlashDuration
+			if p.zombies[index].health <= 0 {
+				p.zombies[index].dying = true
+				p.zombies[index].deathAge = 0
+			}
 			hit = true
 			break
 		}
@@ -1950,8 +2033,16 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.bullets = activeBullets
 	alive := p.zombies[:0]
 	for _, zombie := range p.zombies {
-		if zombie.health > 0 {
+		if zombie.dying {
+			if zombie.deathAge < zombieDeathDelay {
+				alive = append(alive, zombie)
+			} else {
+				p.bloodPops = append(p.bloodPops, bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3})
+			}
+		} else if zombie.health > 0 {
 			alive = append(alive, zombie)
+		} else {
+			p.bloodPops = append(p.bloodPops, bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3})
 		}
 	}
 	p.zombies = alive
@@ -2028,11 +2119,20 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				candidateX += pushX
 				candidateY += pushY
 			}
+			zombiePushX, zombiePushY, zombieHit := p.zombieCollisionDisplacement(candidateX, candidateY, radius)
+			if zombieHit {
+				candidateX += zombiePushX
+				candidateY += zombiePushY
+			}
 			p.x, p.y = candidateX, candidateY
 		}
 		if mobile && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
 			p.angle, p.flipX = barryDirection(dx, dy)
 		}
+	}
+	if pushX, pushY, hit := p.zombieCollisionDisplacement(p.x, p.y, radius); hit {
+		p.x += pushX
+		p.y += pushY
 	}
 	maxX, maxY := float64(p.world.Level.Width*tileSize), float64(p.world.Level.Height*tileSize)
 	p.x = math.Max(float64(tileSize)/2, math.Min(maxX-float64(tileSize)/2, p.x))
@@ -2183,10 +2283,16 @@ func (p *playState) updateZombies() {
 	const dt = 1.0 / 60.0
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
+		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
+		if zombie.dying {
+			zombie.deathAge += dt
+			continue
+		}
 		dx, dy := p.x-zombie.x, p.y-zombie.y
 		distance := math.Hypot(dx, dy)
-		if distance > 24 {
-			step := math.Min(zombie.speed*dt, distance-24)
+		collisionDistance := playerCollisionRadius + zombieCollisionRadius(*zombie)
+		if distance > collisionDistance {
+			step := math.Min(zombie.speed*dt, distance-collisionDistance)
 			if distance > 0 {
 				candidateX := zombie.x + dx/distance*step
 				candidateY := zombie.y + dy/distance*step
@@ -2214,6 +2320,54 @@ func (p *playState) updatePortals() {
 		}
 	}
 	p.portals = active
+}
+
+func (p *playState) updateBloodPops() {
+	active := p.bloodPops[:0]
+	for _, pop := range p.bloodPops {
+		pop.age += 1.0 / 60.0
+		if pop.age < .5 {
+			active = append(active, pop)
+		}
+	}
+	p.bloodPops = active
+}
+
+func zombieCollisionRadius(zombie zombieState) float64 {
+	radius := math.Max(zombie.size.X, zombie.size.Y) / 2
+	if radius <= 0 {
+		return 16
+	}
+	return radius
+}
+
+func (p *playState) zombieCollisionDisplacement(x, y, radius float64) (float64, float64, bool) {
+	bestX, bestY, bestPenetration := 0.0, 0.0, 0.0
+	for _, zombie := range p.zombies {
+		if zombie.dying {
+			continue
+		}
+		dx, dy := x-zombie.x, y-zombie.y
+		minimumDistance := radius + zombieCollisionRadius(zombie)
+		distance := math.Hypot(dx, dy)
+		if distance >= minimumDistance {
+			continue
+		}
+		if distance < .0001 {
+			dx, dy = x-p.x, y-p.y
+			distance = math.Hypot(dx, dy)
+			if distance < .0001 {
+				dx, dy, distance = 1, 0, 1
+			}
+		}
+		penetration := minimumDistance - distance
+		if penetration > bestPenetration {
+			bestX = dx / distance * penetration
+			bestY = dy / distance * penetration
+			bestPenetration = penetration
+		}
+	}
+	return bestX, bestY, bestPenetration > 0
 }
 
 func (p *playState) fire(dx, dy float64) bool {

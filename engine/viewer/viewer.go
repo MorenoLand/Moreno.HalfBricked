@@ -23,6 +23,7 @@ type Viewer struct {
 	Textures               TextureProvider
 	CameraX, CameraY, Zoom float64
 	ViewportX, ViewportY   float64
+	RenderScaleX, RenderScaleY float64
 	Layers                 map[formats.LayerKind]bool
 	Props, Grid, Debug     bool
 	dragging               bool
@@ -35,7 +36,7 @@ type Viewer struct {
 }
 
 func New(level formats.Level, tileSet formats.TileSet, atlas *ebiten.Image, textures TextureProvider) *Viewer {
-	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true, formats.LayerH: true}, Props: true}
+	viewer := &Viewer{Level: level, TileSet: tileSet, Atlas: atlas, Textures: textures, Zoom: .5, RenderScaleX: 1, RenderScaleY: 1, Layers: map[formats.LayerKind]bool{formats.LayerG: true, formats.LayerHB: true, formats.LayerD: true, formats.LayerH: true}, Props: true}
 	viewer.inputWidth, viewer.inputHeight = 480, 320
 	viewer.fit(480, 320)
 	return viewer
@@ -48,6 +49,24 @@ func (v *Viewer) SetInputSize(width, height int) {
 	if height > 0 {
 		v.inputHeight = height
 	}
+}
+func (v *Viewer) SetRenderScale(scaleX, scaleY float64) {
+	if scaleX > 0 {
+		v.RenderScaleX = scaleX
+	}
+	if scaleY > 0 {
+		v.RenderScaleY = scaleY
+	}
+}
+func (v *Viewer) renderScale() (float64, float64) {
+	scaleX, scaleY := v.RenderScaleX, v.RenderScaleY
+	if scaleX <= 0 {
+		scaleX = 1
+	}
+	if scaleY <= 0 {
+		scaleY = 1
+	}
+	return scaleX, scaleY
 }
 func (v *Viewer) pointer() (int, int) {
 	x, y := ebiten.CursorPosition()
@@ -140,9 +159,10 @@ func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Im
 		v.drawGrid(screen, tileSize)
 	}
 	if v.Debug {
-		ebitenutil.DrawRect(screen, 0, 0, 480, 38, color.RGBA{0, 0, 0, 185})
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%s %dx%d zoom %.2f tile %d,%d id %d layer %s", v.Level.Info.ID, v.Level.Width, v.Level.Height, v.Zoom, v.SelectedX, v.SelectedY, v.SelectedID, v.SelectedLayer), 4, 4)
-		ebitenutil.DebugPrintAt(screen, "1:G 2:D 3:H 4:HB 5:C P:props G:grid R:fit F1:debug", 4, 20)
+		scaleX, scaleY := v.renderScale()
+		ebitenutil.DrawRect(screen, 0, 0, 480*scaleX, 38*scaleY, color.RGBA{0, 0, 0, 185})
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%s %dx%d zoom %.2f tile %d,%d id %d layer %s", v.Level.Info.ID, v.Level.Width, v.Level.Height, v.Zoom, v.SelectedX, v.SelectedY, v.SelectedID, v.SelectedLayer), int(4*scaleX), int(4*scaleY))
+		ebitenutil.DebugPrintAt(screen, "1:G 2:D 3:H 4:HB 5:C P:props G:grid R:fit F1:debug", int(4*scaleX), int(20*scaleY))
 	}
 }
 func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize int) {
@@ -163,6 +183,11 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 			if !ok {
 				v.drawFallback(screen, x, y, tileSize, kind)
 				continue
+			}
+			scaleX, scaleY := v.renderScale()
+			for index := range tile {
+				tile[index].DstX *= float32(scaleX)
+				tile[index].DstY *= float32(scaleY)
 			}
 			base := uint16(len(vertices))
 			vertices = append(vertices, tile[:]...)
@@ -209,7 +234,8 @@ func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Ver
 }
 func (v *Viewer) drawFallback(screen *ebiten.Image, x, y, tileSize int, kind formats.LayerKind) {
 	colors := map[formats.LayerKind]color.Color{formats.LayerG: color.RGBA{46, 72, 48, 255}, formats.LayerD: color.RGBA{82, 70, 45, 255}, formats.LayerH: color.RGBA{70, 50, 90, 180}, formats.LayerHB: color.RGBA{50, 85, 100, 180}, formats.LayerC: color.RGBA{130, 45, 45, 180}}
-	ebitenutil.DrawRect(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX, (float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY, float64(tileSize)*v.Zoom, float64(tileSize)*v.Zoom, colors[kind])
+	scaleX, scaleY := v.renderScale()
+	ebitenutil.DrawRect(screen, ((float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX)*scaleX, ((float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY)*scaleY, float64(tileSize)*v.Zoom*scaleX, float64(tileSize)*v.Zoom*scaleY, colors[kind])
 }
 func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 	minX, minY, maxX, maxY := v.visibleBounds(tileSize)
@@ -222,12 +248,14 @@ func (v *Viewer) drawCollision(screen *ebiten.Image, tileSize int) {
 			left := (float64(x*tileSize)-v.CameraX)*v.Zoom + v.ViewportX
 			top := (float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY
 			size := float64(tileSize) * v.Zoom
+			scaleX, scaleY := v.renderScale()
+			left, top, sizeX, sizeY := left*scaleX, top*scaleY, size*scaleX, size*scaleY
 			marker := collisionColor((id + 1) & 0xffff)
-			ebitenutil.DrawRect(screen, left, top, size, size, color.RGBA{marker.R, marker.G, marker.B, 45})
-			ebitenutil.DrawLine(screen, left, top, left+size, top, marker)
-			ebitenutil.DrawLine(screen, left+size, top, left+size, top+size, marker)
-			ebitenutil.DrawLine(screen, left+size, top+size, left, top+size, marker)
-			ebitenutil.DrawLine(screen, left, top+size, left, top, marker)
+			ebitenutil.DrawRect(screen, left, top, sizeX, sizeY, color.RGBA{marker.R, marker.G, marker.B, 45})
+			ebitenutil.DrawLine(screen, left, top, left+sizeX, top, marker)
+			ebitenutil.DrawLine(screen, left+sizeX, top, left+sizeX, top+sizeY, marker)
+			ebitenutil.DrawLine(screen, left+sizeX, top+sizeY, left, top+sizeY, marker)
+			ebitenutil.DrawLine(screen, left, top+sizeY, left, top, marker)
 		}
 	}
 }
@@ -282,16 +310,27 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		destinationY0 := float32((prop.Y-prop.Height*float64(v.tileSize())-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
 		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
 		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
+		renderScaleX, renderScaleY := v.renderScale()
+		destinationX0 *= float32(renderScaleX)
+		destinationX1 *= float32(renderScaleX)
+		destinationY0 *= float32(renderScaleY)
+		destinationY1 *= float32(renderScaleY)
 		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
 		screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, texture, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
 	}
 }
 func (v *Viewer) drawGrid(screen *ebiten.Image, tileSize int) {
 	for x := 0; x <= v.Level.Width; x++ {
-		ebitenutil.DrawLine(screen, (float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX, -v.CameraY*v.Zoom+v.ViewportY, (float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX, (float64(v.Level.Height*tileSize)-v.CameraY)*v.Zoom+v.ViewportY, color.RGBA{255, 255, 255, 35})
+		scaleX, scaleY := v.renderScale()
+		x0, y0 := ((float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX)*scaleX, (-v.CameraY*v.Zoom+v.ViewportY)*scaleY
+		x1, y1 := ((float64(x*tileSize)-v.CameraX)*v.Zoom+v.ViewportX)*scaleX, ((float64(v.Level.Height*tileSize)-v.CameraY)*v.Zoom+v.ViewportY)*scaleY
+		ebitenutil.DrawLine(screen, x0, y0, x1, y1, color.RGBA{255, 255, 255, 35})
 	}
 	for y := 0; y <= v.Level.Height; y++ {
-		ebitenutil.DrawLine(screen, -v.CameraX*v.Zoom+v.ViewportX, (float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY, (float64(v.Level.Width*tileSize)-v.CameraX)*v.Zoom+v.ViewportX, (float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY, color.RGBA{255, 255, 255, 35})
+		scaleX, scaleY := v.renderScale()
+		x0, y0 := (-v.CameraX*v.Zoom+v.ViewportX)*scaleX, ((float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY)*scaleY
+		x1, y1 := ((float64(v.Level.Width*tileSize)-v.CameraX)*v.Zoom+v.ViewportX)*scaleX, ((float64(y*tileSize)-v.CameraY)*v.Zoom+v.ViewportY)*scaleY
+		ebitenutil.DrawLine(screen, x0, y0, x1, y1, color.RGBA{255, 255, 255, 35})
 	}
 }
 func (v *Viewer) fit(width, height int) {
