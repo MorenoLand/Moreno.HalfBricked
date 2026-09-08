@@ -32,7 +32,7 @@ go run . --assets=.\bin\data-cache --capture-dir=.\bin\captures --capture-every=
 
 Captures are disposable PNGs named with their frame and state; the capture directory is ignored by Git.
 
-For a bounded background probe of a specific state, add `--capture-state=title`, `main-menu`, `world-select`, `level-select`, `play`, or `debug-viewer` with `--capture-frames=1`.
+For a bounded background probe of a specific state, add `--capture-state=title`, `main-menu`, `world-select`, `level-select`, `play`, or `debug-viewer` with `--capture-frames=1`. For menu hover-state QA, add `--capture-selection=0` through `3` with `--capture-state=main-menu`.
 
 Build the browser host bundle with `.\scripts\build.ps1 -Target wasm`; serve `bin\web` over HTTP.
 
