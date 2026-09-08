@@ -604,7 +604,7 @@ func buttonTextRect(row int) (image.Rectangle, bool) {
 	case 0:
 		return image.Rect(0, 0, 128, 32), true
 	case 6:
-		return image.Rect(0, 96, 128, 112), true
+		return image.Rect(0, 92, 128, 114), true
 	case 8:
 		return image.Rect(0, 128, 128, 148), true
 	case 9:
@@ -658,7 +658,7 @@ type menuButton struct {
 
 var mainMenuButtons = []menuButton{
 	{zombie: 3, labelRow: 8, action: 2, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
-	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: -0.17},
+	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
 	{zombie: 3, labelRow: 6, action: 4, cx: 76, cy: 274, width: 128, height: 64, angle: -0.16},
 	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
 }
@@ -672,8 +672,8 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 	labelScale := 2.0 / 3.0
 	zombieScale := .65
 	if selected {
-		boardScale = 1
-		labelScale = 1
+		boardScale = .8
+		labelScale = .8
 		zombieScale = .9
 	}
 	zombie, err := a.Texture(fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", button.zombie))
@@ -690,12 +690,12 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 	}
 	if selected {
 		if flash, flashErr := a.Texture("Common0/Textures/Button_Screen_Flash"); flashErr == nil {
-			frame := 1 + int(a.menuTime*8)%2
-			boardImage = flash.SubImage(image.Rect(0, frame*64, 128, frame*64+64)).(*ebiten.Image)
+			frames := [...]image.Rectangle{image.Rect(0, 73, 140, 143), image.Rect(0, 145, 140, 215)}
+			boardImage = flash.SubImage(frames[int(a.menuTime*8)%len(frames)]).(*ebiten.Image)
 		}
 	}
 	if boardImage != nil {
-		screen.DrawImage(boardImage, marqueeImageOptions(button, boardScale, 64, 32))
+		screen.DrawImage(boardImage, marqueeImageOptions(button, boardScale, float64(boardImage.Bounds().Dx())/2, float64(boardImage.Bounds().Dy())/2))
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
 	textRect, ok := buttonTextRect(button.labelRow)
@@ -931,9 +931,9 @@ func (a *app) drawBackdrop(screen *ebiten.Image) {
 	if image, err := a.Texture("Frontend0/Textures/Portal_Menu_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Translate(float64(-image.Bounds().Dx())/2, float64(-image.Bounds().Dy())/2)
-		options.GeoM.Scale(1.45, 1.45)
+		options.GeoM.Scale(1.6875, 1.6875)
 		options.GeoM.Rotate(a.menuTime * .3)
-		options.GeoM.Translate(280, 150)
+		options.GeoM.Translate(336, 96)
 		screen.DrawImage(image, options)
 	}
 }
