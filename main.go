@@ -272,9 +272,6 @@ func (a *app) Draw(screen *ebiten.Image) {
 	}
 	screen.Fill(colorDark)
 	filter := ebiten.FilterNearest
-	if a.startupFrames > 0 || a.titleScreen || (a.view == nil && a.play == nil && a.page == 0) {
-		filter = ebiten.FilterLinear
-	}
 	options := &ebiten.DrawImageOptions{Filter: filter}
 	options.GeoM.Scale(float64(screen.Bounds().Dx())/logicalWidth, float64(screen.Bounds().Dy())/logicalHeight)
 	screen.DrawImage(a.canvas, options)
@@ -414,9 +411,9 @@ type titleBarryPiece struct {
 
 var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 176},
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 198, angle: math.Pi/2 - .25},
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 188, angle: math.Pi/2 - .25},
-	{source: image.Rect(409, 0, 512, 152), x: 85, y: 231, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25},
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: math.Pi/2 - .25},
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
