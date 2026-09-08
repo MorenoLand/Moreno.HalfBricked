@@ -29,9 +29,11 @@ type app struct {
 	levels        []formats.LevelInfo
 	variables     formats.FrontendVariables
 	page          int
+	menuSelection int
 	world         int
 	level         int
 	mode          int
+	weapon        formats.Weapon
 	debug         bool
 	mobile        bool
 	titleScreen   bool
@@ -81,6 +83,8 @@ type playState struct {
 	shootCooldown                                        float64
 	paused                                               bool
 	shouldQuit                                           bool
+	weapon                                               formats.Weapon
+	grenades                                             int
 	entryScript                                          formats.Script
 }
 
@@ -97,7 +101,15 @@ func newApp(root string, debug, mobile bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
+	weapons, err := pack.Weapons()
+	if err != nil {
+		return nil, err
+	}
+	weapon, ok := weapons.Find("PISTOL")
+	if !ok {
+		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
+	}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
@@ -178,7 +190,7 @@ func (a *app) Update() error {
 		px, py := a.pointer()
 		if a.page == 0 {
 			if index := a.mainMenuHit(px, py); index >= 0 {
-				a.world = mainMenuButtons[index].action
+				a.menuSelection = index
 				a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
 				return a.activate()
 			}
@@ -206,7 +218,7 @@ func (a *app) Update() error {
 	if a.page == 0 {
 		px, py := a.pointer()
 		if index := a.mainMenuHit(px, py); index >= 0 {
-			a.world = mainMenuButtons[index].action
+			a.menuSelection = index
 		}
 	} else if a.page == 2 {
 		px, py := a.pointer()
@@ -308,7 +320,7 @@ func (a *app) setCaptureState(state string) error {
 	case "title":
 		a.titleScreen = true
 	case "main-menu":
-		a.titleScreen, a.page, a.world, a.mode, a.level = false, 0, 0, 0, 0
+		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
 	case "world-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 1, 0, 0, 0
 	case "level-select":
@@ -345,8 +357,8 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	if a.page == 0 {
 		a.drawBackdrop(screen)
 		a.drawMainMenuBanner(screen)
-		for _, button := range mainMenuButtons {
-			a.drawMarqueeButton(screen, button, button.action == a.world)
+		for index, button := range mainMenuButtons {
+			a.drawMarqueeButton(screen, button, index == a.menuSelection)
 		}
 	} else if a.page == 1 {
 		a.drawWorldSelect(screen)
@@ -652,7 +664,7 @@ var mainMenuButtons = []menuButton{
 }
 
 func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
-	a.drawBanner(screen, "MAINMENU_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .15)
+	a.drawBanner(screen, "MAINMENU_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
 }
 
 func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selected bool) {
@@ -665,16 +677,13 @@ func (a *app) drawMarqueeButton(screen *ebiten.Image, button menuButton, selecte
 		screen.DrawImage(zombie, options)
 	}
 	board, err := a.Texture("Common0/Textures/Button_Screen")
+	if err == nil {
+		screen.DrawImage(board.SubImage(image.Rect(0, 0, 128, 64)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
+	}
 	if selected {
 		if flash, flashErr := a.Texture("Common0/Textures/Button_Screen_Flash"); flashErr == nil {
-			board = flash
-			err = nil
-			options := marqueeImageOptions(button, .75, 64, 32)
-			screen.DrawImage(board.SubImage(image.Rect(0, 128, 128, 192)).(*ebiten.Image), options)
+			screen.DrawImage(flash.SubImage(image.Rect(0, 128, 128, 192)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
 		}
-	}
-	if err == nil && !selected {
-		screen.DrawImage(board.SubImage(image.Rect(0, 0, 128, 64)).(*ebiten.Image), marqueeImageOptions(button, .75, 64, 32))
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
 	textRect, ok := buttonTextRect(button.labelRow)
@@ -820,8 +829,8 @@ func (a *app) cursor() int {
 }
 func (a *app) move(delta int) {
 	if a.page == 0 {
-		index := clamp(a.mainMenuIndex()+delta, 0, len(mainMenuButtons)-1)
-		a.world = mainMenuButtons[index].action
+		index := clamp(a.menuSelection+delta, 0, len(mainMenuButtons)-1)
+		a.menuSelection = index
 		return
 	}
 	if a.page == 1 {
@@ -831,16 +840,13 @@ func (a *app) move(delta int) {
 	a.level = clamp(a.level+delta, 0, len(a.filteredLevels())-1)
 }
 func (a *app) mainMenuIndex() int {
-	for index, button := range mainMenuButtons {
-		if button.action == a.world {
-			return index
-		}
-	}
-	return 1
+	return clamp(a.menuSelection, 0, len(mainMenuButtons)-1)
 }
 func (a *app) setCursor(index int) {
 	if a.page == 2 {
 		a.level = index
+	} else if a.page == 0 {
+		a.menuSelection = index
 	} else {
 		a.world = index
 	}
@@ -848,7 +854,7 @@ func (a *app) setCursor(index int) {
 func (a *app) activate() error {
 	switch a.page {
 	case 0:
-		switch a.world {
+		switch mainMenuButtons[a.menuSelection].action {
 		case 0:
 			a.mode, a.page, a.world, a.level = 0, 2, 0, 0
 		case 1:
@@ -1007,9 +1013,21 @@ func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle 
 		bodySheet = "Common0/Textures/Characters/barryrun_SD"
 	}
 	a.drawBarryPart(screen, bodySheet, x, y, scale, frame, angle, flipX)
-	if angle != 8 {
-		a.drawBarryPart(screen, "Common0/Textures/Characters/barrygun_01_SD", x, y, scale, frame, angle, flipX)
+	if a.play != nil && angle != 8 && a.play.weapon.TextureGun != "" {
+		a.drawBarryPart(screen, commonSDTexture(a.play.weapon.TextureGun), x, y, scale, frame, angle, flipX)
 	}
+}
+
+func commonSDTexture(path string) string {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	path = strings.TrimSuffix(path, filepath.Ext(path))
+	if !strings.HasSuffix(strings.ToLower(path), "_sd") {
+		path += "_SD"
+	}
+	if !strings.HasPrefix(strings.ToLower(path), "common0/") {
+		path = "Common0/" + path
+	}
+	return path
 }
 func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float64, frame, angle int, flipX bool) {
 	texture, err := a.Texture(name)
@@ -1044,7 +1062,10 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	if angle == 8 {
 		return
 	}
-	texture, err := a.Texture("Common0/Textures/Characters/barrygun_01_flash_SD")
+	if a.play == nil || a.play.weapon.TextureFlash == "" {
+		return
+	}
+	texture, err := a.Texture(commonSDTexture(a.play.weapon.TextureFlash))
 	if err != nil {
 		return
 	}
@@ -1100,6 +1121,7 @@ func (a *app) drawReticule(screen *ebiten.Image) {
 	screen.DrawImage(texture, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
+	a.drawGrenadeButton(screen)
 	if a.mobile {
 		if a.play.stick == 1 {
 			a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
@@ -1116,6 +1138,37 @@ func (a *app) drawPlayControls(screen *ebiten.Image) {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
 		options.GeoM.Translate(448, 8)
+		screen.DrawImage(image, options)
+	}
+}
+
+func (a *app) drawGrenadeButton(screen *ebiten.Image) {
+	if a.play == nil || a.play.grenades <= 0 {
+		return
+	}
+	size, ok := a.variables.Vec2Value("HUD_SECOND_BUTTON_SIZE_VAR")
+	if !ok {
+		size = formats.Vec2{X: 64, Y: 32}
+	}
+	x, y := 416.0, 208.0
+	if a.mobile && a.play.rightBaseX > 0 && a.play.rightBaseY > 0 {
+		x, y = a.play.rightBaseX, a.play.rightBaseY-48
+	}
+	if texture, err := a.Texture("Common0/Textures/SecondaryButton_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Translate(-32, -16)
+		options.GeoM.Scale(size.X/64, size.Y/32)
+		options.GeoM.Translate(x, y)
+		screen.DrawImage(texture.SubImage(image.Rect(0, 0, 64, 32)).(*ebiten.Image), options)
+	}
+	offset, ok := a.variables.Vec2Value("HUD_SECOND_ICON_OFFSET_VAR")
+	if !ok {
+		offset = formats.Vec2{X: -12, Y: 0}
+	}
+	if image, err := a.Texture("Common0/Textures/grenade_SD"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
+		options.GeoM.Translate(x+offset.X, y+offset.Y)
 		screen.DrawImage(image, options)
 	}
 }
@@ -1245,7 +1298,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius}
+	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon}
 	if a.mode == 0 {
 		script, err := a.pack.Script(entryScriptPath(level.Info))
 		if err != nil {
@@ -1443,25 +1496,26 @@ func (p *playState) fire(dx, dy float64) bool {
 	if dist < 0.0001 {
 		return false
 	}
+	if p.weapon.Speed <= 0 || p.weapon.Life <= 0 || p.weapon.RateOfFire <= 0 {
+		return false
+	}
 	dirX, dirY := dx/dist, dy/dist
 	const muzzleOffset = 24.0
-	const bulletSpeed = 600.0
-	const bulletLife = 0.75
 	bx := p.x + dirX*muzzleOffset
 	by := p.y + dirY*muzzleOffset
-	bvx := dirX * bulletSpeed
-	bvy := dirY * bulletSpeed
+	bvx := dirX * p.weapon.Speed
+	bvy := dirY * p.weapon.Speed
 	bAngle := math.Atan2(dirY, dirX) + math.Pi/2
 	p.bullets = append(p.bullets, bullet{
 		x:     bx,
 		y:     by,
 		vx:    bvx,
 		vy:    bvy,
-		life:  bulletLife,
+		life:  p.weapon.Life,
 		angle: bAngle,
 	})
 	p.flash = 0.08
-	p.shootCooldown = 0.25
+	p.shootCooldown = p.weapon.RateOfFire
 	return true
 }
 

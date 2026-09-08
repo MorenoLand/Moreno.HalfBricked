@@ -33,6 +33,9 @@ type Pack struct {
 	manifest  PackManifest
 	levels    map[string]formats.Level
 	variables formats.FrontendVariables
+	weapons   formats.WeaponCatalog
+	weaponErr error
+	weaponsOK bool
 }
 
 func NewPack(source AssetSource) (*Pack, error) {
@@ -107,6 +110,28 @@ func (p *Pack) Script(path string) (formats.Script, error) {
 		return formats.Script{}, fmt.Errorf("%s: %w", name, err)
 	}
 	return script, nil
+}
+func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
+	if p.weaponsOK {
+		return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr
+	}
+	p.weaponsOK = true
+	path, ok := p.SourcePath("Common0/Xml/Common0_Weapons.xml")
+	if !ok {
+		p.weaponErr = fmt.Errorf("weapon catalog not found")
+		return nil, p.weaponErr
+	}
+	r, err := p.source.Open(path)
+	if err != nil {
+		p.weaponErr = err
+		return nil, err
+	}
+	defer r.Close()
+	p.weapons, p.weaponErr = formats.ParseWeapons(r)
+	if p.weaponErr != nil {
+		p.weaponErr = fmt.Errorf("%s: %w", path, p.weaponErr)
+	}
+	return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr
 }
 func manifestPath(files map[string]string, wanted string) (string, bool) {
 	for key, path := range files {
