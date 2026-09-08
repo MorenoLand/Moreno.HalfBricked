@@ -111,6 +111,30 @@ func (p *Pack) Script(path string) (formats.Script, error) {
 	}
 	return script, nil
 }
+func (p *Pack) Conversation(world int, name string) (formats.Conversation, error) {
+	candidates := []string{fmt.Sprintf("Common0/Dialog/chat_%03d.xml", world), fmt.Sprintf("DLC1/Dialog/chat_%03d.xml", world)}
+	for _, candidate := range candidates {
+		path, ok := p.SourcePath(candidate)
+		if !ok {
+			continue
+		}
+		r, err := p.source.Open(path)
+		if err != nil {
+			return formats.Conversation{}, err
+		}
+		conversations, parseErr := formats.ParseDialog(r)
+		r.Close()
+		if parseErr != nil {
+			return formats.Conversation{}, fmt.Errorf("%s: %w", path, parseErr)
+		}
+		for _, conversation := range conversations {
+			if strings.EqualFold(conversation.Name, name) {
+				return conversation, nil
+			}
+		}
+	}
+	return formats.Conversation{}, fmt.Errorf("conversation %q for world %d not found", name, world)
+}
 func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
 	if p.weaponsOK {
 		return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr

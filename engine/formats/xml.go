@@ -37,6 +37,7 @@ type levelXMLData struct {
 	HB      string   `xml:"hb_tiles,attr"`
 	C       string   `xml:"c_tiles,attr"`
 	Props   propList `xml:"props"`
+	Waves   waveList `xml:"waves"`
 }
 type propList struct {
 	Props []propXML `xml:"prop"`
@@ -48,6 +49,31 @@ type propXML struct {
 	Scale    string  `xml:"scale,attr"`
 	UV1      string  `xml:"uv1,attr"`
 	UV2      string  `xml:"uv2,attr"`
+}
+type waveList struct {
+	Waves []waveXML `xml:"wave"`
+}
+type waveXML struct {
+	NextWave       string       `xml:"next_wave,attr"`
+	RunTime        string       `xml:"run_time,attr"`
+	EndWaveTime    string       `xml:"end_wave_time,attr"`
+	EndWaveZombies string       `xml:"end_wave_zombies,attr"`
+	Spawners       []spawnerXML `xml:"spawner"`
+}
+type spawnerXML struct {
+	DelayTime string         `xml:"delay_time,attr"`
+	Count     string         `xml:"count,attr"`
+	Index     string         `xml:"index,attr"`
+	Types     []spawnTypeXML `xml:"type"`
+}
+type spawnTypeXML struct {
+	Name      string `xml:"name,attr"`
+	Chance    string `xml:"chance,attr"`
+	Speed     string `xml:"speed,attr"`
+	Strength  string `xml:"strength,attr"`
+	Size      string `xml:"size,attr"`
+	TurnSpeed string `xml:"turnSpeed,attr"`
+	Texture   string `xml:"texture,attr"`
 }
 type tileDocument struct {
 	TileSets []tileXML `xml:"TileSet"`
@@ -165,8 +191,128 @@ func ParseLevel(root string, info LevelInfo) (Level, error) {
 		u2x, u2y := pair(p.UV2)
 		props = append(props, Prop{Texture: p.Texture, X: x, Y: y, Height: p.Height, ScaleX: sx, ScaleY: sy, UV1X: u1x, UV1Y: u1y, UV2X: u2x, UV2Y: u2y})
 	}
-	level := Level{Info: info, Width: d.Width, Height: d.Height, Tileset: d.Tileset, Layers: layers, Props: props}
+	waves, err := parseWaves(d.Waves)
+	if err != nil {
+		return Level{}, fmt.Errorf("%s waves: %w", info.ID, err)
+	}
+	level := Level{Info: info, Width: d.Width, Height: d.Height, Tileset: d.Tileset, Layers: layers, Props: props, Waves: waves}
 	return level, level.Validate()
+}
+
+func parseWaves(document waveList) ([]Wave, error) {
+	result := make([]Wave, 0, len(document.Waves))
+	for waveIndex, item := range document.Waves {
+		nextWave, err := parseXMLInt(item.NextWave, "next_wave", waveIndex)
+		if err != nil {
+			return nil, err
+		}
+		runTime, err := parseXMLFloat(item.RunTime, "run_time", waveIndex)
+		if err != nil {
+			return nil, err
+		}
+		endWaveTime, err := parseXMLFloat(item.EndWaveTime, "end_wave_time", waveIndex)
+		if err != nil {
+			return nil, err
+		}
+		endWaveZombies, err := parseXMLInt(item.EndWaveZombies, "end_wave_zombies", waveIndex)
+		if err != nil {
+			return nil, err
+		}
+		wave := Wave{NextWave: nextWave, RunTime: runTime, EndWaveTime: endWaveTime, EndWaveZombies: endWaveZombies, Spawners: make([]Spawner, 0, len(item.Spawners))}
+		for spawnerIndex, source := range item.Spawners {
+			delay, err := parseXMLFloat(source.DelayTime, "delay_time", spawnerIndex)
+			if err != nil {
+				return nil, err
+			}
+			count, err := parseXMLInt(source.Count, "count", spawnerIndex)
+			if err != nil {
+				return nil, err
+			}
+			index, err := parseXMLInt(source.Index, "index", spawnerIndex)
+			if err != nil {
+				return nil, err
+			}
+			spawner := Spawner{DelayTime: delay, Count: count, Index: index, Types: make([]SpawnType, 0, len(source.Types))}
+			for typeIndex, entry := range source.Types {
+				chance, err := parseXMLFloatDefault(entry.Chance, "chance", typeIndex, 1)
+				if err != nil {
+					return nil, err
+				}
+				strength, err := parseXMLFloat(entry.Strength, "strength", typeIndex)
+				if err != nil {
+					return nil, err
+				}
+				turnSpeed, err := parseXMLFloat(entry.TurnSpeed, "turnSpeed", typeIndex)
+				if err != nil {
+					return nil, err
+				}
+				speed, err := parseXMLVec2(entry.Speed, "speed", typeIndex)
+				if err != nil {
+					return nil, err
+				}
+				size, err := parseXMLVec2(entry.Size, "size", typeIndex)
+				if err != nil {
+					return nil, err
+				}
+				spawner.Types = append(spawner.Types, SpawnType{Name: entry.Name, Chance: chance, Speed: speed, Strength: strength, Size: size, TurnSpeed: turnSpeed, Texture: entry.Texture})
+			}
+			wave.Spawners = append(wave.Spawners, spawner)
+		}
+		result = append(result, wave)
+	}
+	return result, nil
+}
+
+func parseXMLInt(value, field string, index int) (int, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s %d %q: %w", field, index, value, err)
+	}
+	return parsed, nil
+}
+
+func parseXMLFloat(value, field string, index int) (float64, error) {
+	return parseXMLFloatDefault(value, field, index, 0)
+}
+
+func parseXMLFloatDefault(value, field string, index int, fallback float64) (float64, error) {
+	if strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s %d %q: %w", field, index, value, err)
+	}
+	return parsed, nil
+}
+
+func parseXMLVec2(value, field string, index int) (Vec2, error) {
+	if strings.TrimSpace(value) == "" {
+		return Vec2{}, nil
+	}
+	parts := strings.Split(value, ",")
+	if len(parts) == 1 {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		if err != nil {
+			return Vec2{}, fmt.Errorf("%s %d %q: %w", field, index, value, err)
+		}
+		return Vec2{X: parsed, Y: parsed}, nil
+	}
+	if len(parts) != 2 {
+		return Vec2{}, fmt.Errorf("%s %d %q: want one or two values", field, index, value)
+	}
+	x, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return Vec2{}, fmt.Errorf("%s %d x %q: %w", field, index, value, err)
+	}
+	y, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return Vec2{}, fmt.Errorf("%s %d y %q: %w", field, index, value, err)
+	}
+	return Vec2{X: x, Y: y}, nil
 }
 
 func ParseTileSets(root string) (map[string]TileSet, error) {

@@ -25,37 +25,41 @@ import (
 )
 
 type app struct {
-	pack           *content.Pack
-	levels         []formats.LevelInfo
-	variables      formats.FrontendVariables
-	page           int
-	menuSelection  int
-	world          int
-	level          int
-	mode           int
-	weapon         formats.Weapon
-	debug          bool
-	mobile         bool
-	titleScreen    bool
-	unlocked       map[string]bool
-	capture        *engine.Capture
-	captureLimit   int
-	sound          *engine.SoundSystem
-	images         map[string]*ebiten.Image
-	sources        map[string]image.Image
-	view           *viewer.Viewer
-	play           *playState
-	font           *ui.Font
-	computerFont   *ui.Font
-	startupFrames  int
-	menuTime       float64
-	canvas         *ebiten.Image
-	splash         *ebiten.Image
-	splashLoaded   bool
-	outputWidth    int
-	outputHeight   int
-	frontendScaleX float64
-	frontendScaleY float64
+	pack                                 *content.Pack
+	levels                               []formats.LevelInfo
+	variables                            formats.FrontendVariables
+	page                                 int
+	menuSelection                        int
+	world                                int
+	level                                int
+	mode                                 int
+	weapon                               formats.Weapon
+	debug                                bool
+	mobile                               bool
+	titleScreen                          bool
+	unlocked                             map[string]bool
+	capture                              *engine.Capture
+	captureLimit                         int
+	sound                                *engine.SoundSystem
+	images                               map[string]*ebiten.Image
+	sources                              map[string]image.Image
+	view                                 *viewer.Viewer
+	play                                 *playState
+	font                                 *ui.Font
+	computerFont                         *ui.Font
+	startupFrames                        int
+	menuTime                             float64
+	canvas                               *ebiten.Image
+	splash                               *ebiten.Image
+	splashLoaded                         bool
+	outputWidth                          int
+	outputHeight                         int
+	frontendScaleX                       float64
+	frontendScaleY                       float64
+	debugPanelVisible                    bool
+	debugPanelDragging                   bool
+	debugPanelX, debugPanelY             float64
+	debugPanelOffsetX, debugPanelOffsetY float64
 }
 
 const logicalWidth = 480
@@ -68,6 +72,26 @@ type bullet struct {
 	angle  float64
 }
 
+type portalState struct {
+	x, y float64
+	age  float64
+}
+
+type zombieState struct {
+	x, y          float64
+	speed, health float64
+	size          formats.Vec2
+	texture       string
+	frame         float64
+	angle         int
+	flipX         bool
+}
+
+type dialogueLine struct {
+	text  string
+	cameo int
+}
+
 type playState struct {
 	world                                                *viewer.Viewer
 	x, y                                                 float64
@@ -78,6 +102,8 @@ type playState struct {
 	tileSize                                             int
 	radius                                               float64
 	flash                                                float64
+	flare                                                float64
+	flareX, flareY, flareAngle                           float64
 	stick                                                int
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY     float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY float64
@@ -88,6 +114,19 @@ type playState struct {
 	weapon                                               formats.Weapon
 	grenades                                             int
 	entryScript                                          formats.Script
+	waveIndex                                            int
+	waveElapsed                                          float64
+	waveSpawned                                          []int
+	zombies                                              []zombieState
+	health                                               float64
+	maxHealth                                            float64
+	score                                                int
+	lives                                                int
+	multiplier                                           int
+	portals                                              []portalState
+	hudVisible                                           bool
+	dialogue                                             []dialogueLine
+	dialogueIndex                                        int
 }
 
 const playerBaseSpeed = 180.0
@@ -111,7 +150,7 @@ func newApp(root string, debug, mobile bool) (*app, error) {
 	if !ok {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
@@ -125,6 +164,12 @@ func (a *app) Update() error {
 		return nil
 	}
 	a.menuTime += 1.0 / 60.0
+	if a.debug && inpututil.IsKeyJustPressed(ebiten.KeyF2) {
+		a.debugPanelVisible = !a.debugPanelVisible
+	}
+	if a.debug && a.debugPanelVisible && a.updateDebugPanel() {
+		return nil
+	}
 	if a.titleScreen {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 			a.titleScreen = false
@@ -148,6 +193,18 @@ func (a *app) Update() error {
 				return nil
 			}
 			a.play.paused = true
+			return nil
+		}
+		if a.play.dialogueIndex < len(a.play.dialogue) {
+			a.play.updateWaves()
+			a.play.updateZombies()
+			a.play.updatePortals()
+			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+				a.play.dialogueIndex++
+				if a.play.dialogueIndex >= len(a.play.dialogue) {
+					a.play.hudVisible = true
+				}
+			}
 			return nil
 		}
 		x, y := a.pointer()
@@ -276,6 +333,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.canvas.Fill(colorDark)
 		if a.view != nil {
 			a.view.Draw(a.canvas)
+			a.drawDebugPanel(a.canvas)
 		} else {
 			a.drawPlay(a.canvas)
 		}
@@ -345,6 +403,51 @@ func (a *app) setCaptureState(state string) error {
 	case "play":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		return a.openPlay()
+	case "play-ready":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		return nil
+	case "play-fire":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.fire(1, 0)
+		return nil
+	case "play-combat":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet"}}
+		a.play.fire(1, 0)
+		return nil
+	case "play-portal":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		if len(a.play.world.Level.Waves) > 0 && len(a.play.world.Level.Waves[0].Spawners) > 0 {
+			points := a.play.spawnPoints(a.play.world.Level.Waves[0].Spawners[0].Index)
+			if len(points) > 0 {
+				playerX, playerY := a.play.x, a.play.y
+				a.play.x, a.play.y = points[0].X, points[0].Y
+				a.play.centerCamera()
+				a.play.x, a.play.y = playerX, playerY
+				a.play.spawnZombie(a.play.world.Level.Waves[0].Spawners[0], 0)
+			}
+		}
+		return nil
 	case "debug-viewer":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		return a.openViewer()
@@ -430,10 +533,10 @@ type titleBarryPiece struct {
 }
 
 var titleBarryPieces = []titleBarryPiece{
-	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190}, // Barry body
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},                             // Barry body
 	{source: image.Rect(342, 152, 512, 512), x: 164, y: 230, angle: math.Pi/2 - .25}, // shotgun
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 220, angle: math.Pi/2 - .25}, // grip/pump
-	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25}, // arm/hand
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 220, angle: math.Pi/2 - .25},   // grip/pump
+	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25},    // arm/hand
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
@@ -991,24 +1094,281 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	}
 	const scale = 1.0
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
+		for _, portal := range a.play.portals {
+			a.drawPortal(target, portal)
+		}
+		for _, zombie := range a.play.zombies {
+			if zombie.y <= a.play.y {
+				a.drawZombie(target, zombie)
+			}
+		}
 		a.drawBarryShadow(target, screenX, screenY, scale)
 		a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
+		if a.play.flare > 0 {
+			a.drawWeaponFlare(target, a.play.flareX, a.play.flareY, a.play.flareAngle)
+		}
 		a.drawBullets(target)
+		for _, zombie := range a.play.zombies {
+			if zombie.y > a.play.y {
+				a.drawZombie(target, zombie)
+			}
+		}
 	})
 	a.drawPlayControls(screen)
+	a.drawGameHUD(screen)
 	if a.play.paused {
 		ebitenutil.DrawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 		a.text(screen, "PAUSED", 195, 115, 1.0)
 		a.text(screen, "RESUME", 212, 160, 0.5)
 		a.text(screen, "QUIT TO MENU", 192, 190, 0.5)
 	}
-	if !a.mobile {
+	if !a.mobile && a.play.hudVisible {
 		a.drawReticule(screen)
 	}
+	a.drawDialogue(screen)
+	a.drawDebugPanel(screen)
 }
+
+func (a *app) drawGameHUD(screen *ebiten.Image) {
+	if a.play == nil || !a.play.hudVisible {
+		return
+	}
+	scoreX, scoreXOK := a.variables.FloatValue("HUD_SCORE_X_VAR")
+	if !scoreXOK {
+		scoreX = logicalWidth / 2
+	}
+	scoreY, scoreYOK := a.variables.FloatValue("HUD_SCORE_Y_VAR")
+	if !scoreYOK {
+		scoreY = 26
+	}
+	scoreScale := .75
+	if scoreSize, ok := a.variables.FloatValue("HUD_SCORE_SIZE_VAR"); ok && a.font != nil && a.font.LineHeight > 0 {
+		scoreScale = scoreSize / float64(a.font.LineHeight)
+	}
+	scoreText := fmt.Sprintf("%010d", a.play.score)
+	a.text(screen, scoreText, scoreX-a.fontTextWidth(scoreText, scoreScale)/2, scoreY, scoreScale)
+	multiplierX, multiplierXOK := a.variables.FloatValue("HUD_SCORE_MULTI_X_VAR")
+	if !multiplierXOK {
+		multiplierX = 305
+	}
+	multiplierY, multiplierYOK := a.variables.FloatValue("HUD_SCORE_MULTI_Y_VAR")
+	if !multiplierYOK {
+		multiplierY = 5
+	}
+	a.drawMultiplier(screen, multiplierX, multiplierY, a.play.multiplier)
+	waveX, waveXOK := a.variables.FloatValue("HUD_WAVE_TEXT_POS_X_VAR")
+	if !waveXOK {
+		waveX = 440
+	}
+	waveText := fmt.Sprintf("wave %d", a.play.waveIndex+1)
+	a.text(screen, waveText, waveX-a.fontTextWidth(waveText, .4), 5, .4)
+	if icon, err := a.Texture("Common0/Textures/LifeIcon"); err == nil {
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(394, 20)
+		a.drawImage(screen, icon, options)
+	}
+	if a.play.lives > 0 {
+		livesText := fmt.Sprintf("x%d", a.play.lives)
+		a.text(screen, livesText, 410, 20, 22.0/32.0)
+	}
+}
+
+func (a *app) drawMultiplier(screen *ebiten.Image, x, y float64, multiplier int) {
+	texture, err := a.Texture("Common0/Textures/MultiplyFont_SD")
+	if err != nil {
+		return
+	}
+	if multiplier < 0 {
+		multiplier = 0
+	}
+	if multiplier > 9 {
+		multiplier = 9
+	}
+	for index, glyph := range []int{10, multiplier} {
+		source := texture.SubImage(image.Rect(glyph*16, 0, glyph*16+16, 32)).(*ebiten.Image)
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Scale(.5, .5)
+		options.GeoM.Translate(x+float64(index*8), y)
+		a.drawImage(screen, source, options)
+	}
+}
+
+func (a *app) drawDialogue(screen *ebiten.Image) {
+	if a.play == nil || a.play.dialogueIndex >= len(a.play.dialogue) {
+		return
+	}
+	line := a.play.dialogue[a.play.dialogueIndex]
+	target := image.Rect(0, logicalHeight-65, logicalWidth, logicalHeight)
+	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
+		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), target)
+	}
+	textX := 12.0
+	if line.cameo >= 0 {
+		textX = 88
+		if cameo := a.dialogueCameo(line.cameo); cameo != "" {
+			a.drawTexture(screen, cameo, 28, logicalHeight-58, .45)
+		}
+	}
+	a.text(screen, a.wrapDialogue(line.text, logicalWidth-textX-12, .45), textX, logicalHeight-57, .45)
+}
+
+func (a *app) dialogueCameo(index int) string {
+	switch index {
+	case 0:
+		return "Common0/Textures/Cameos/barrycameo_SD"
+	case 1:
+		return "Common0/Textures/Cameos/professorbrainscameo_SD"
+	default:
+		return ""
+	}
+}
+
+func (a *app) wrapDialogue(value string, maxWidth, scale float64) string {
+	words := strings.Fields(value)
+	if len(words) == 0 || a.font == nil {
+		return value
+	}
+	var lines []string
+	line := ""
+	for _, word := range words {
+		candidate := word
+		if line != "" {
+			candidate = line + " " + word
+		}
+		if line != "" && a.fontTextWidth(candidate, scale) > maxWidth {
+			lines = append(lines, line)
+			line = word
+		} else {
+			line = candidate
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *app) fontTextWidth(value string, scale float64) float64 {
+	width := 0.0
+	for _, runeValue := range value {
+		if glyph, ok := a.font.Glyphs[runeValue]; ok {
+			width += float64(glyph.XAdvance) * scale
+		}
+	}
+	return width
+}
+
+const debugPanelWidth = 278
+const debugPanelHeight = 250
+
+func (a *app) updateDebugPanel() bool {
+	px, py := a.pointer()
+	panel := image.Rect(int(a.debugPanelX), int(a.debugPanelY), int(a.debugPanelX)+debugPanelWidth, int(a.debugPanelY)+debugPanelHeight)
+	if a.debugPanelDragging {
+		if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+			a.debugPanelDragging = false
+			return true
+		}
+		a.debugPanelX = clampFloat(float64(px)-a.debugPanelOffsetX, 0, logicalWidth-debugPanelWidth)
+		a.debugPanelY = clampFloat(float64(py)-a.debugPanelOffsetY, 0, logicalHeight-debugPanelHeight)
+		return true
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && image.Pt(px, py).In(panel) {
+		if py < panel.Min.Y+22 {
+			a.debugPanelDragging = true
+			a.debugPanelOffsetX = float64(px) - a.debugPanelX
+			a.debugPanelOffsetY = float64(py) - a.debugPanelY
+		}
+		return true
+	}
+	return false
+}
+
+func (a *app) drawDebugPanel(screen *ebiten.Image) {
+	if !a.debug || !a.debugPanelVisible || (a.play == nil && a.view == nil) {
+		return
+	}
+	x, y := a.debugPanelX, a.debugPanelY
+	ebitenutil.DrawRect(screen, x, y, debugPanelWidth, debugPanelHeight, color.RGBA{8, 10, 14, 235})
+	ebitenutil.DrawRect(screen, x, y, debugPanelWidth, 22, color.RGBA{38, 48, 60, 255})
+	a.text(screen, "F2 DEBUG", x+8, y+4, .32)
+	outputX, outputY := ebiten.CursorPosition()
+	logicalX, logicalY := a.pointer()
+	lines := []string{fmt.Sprintf("mouse out %d,%d logical %d,%d", outputX, outputY, logicalX, logicalY), fmt.Sprintf("fps %.1f tps %.1f", ebiten.ActualFPS(), ebiten.ActualTPS())}
+	active := a.view
+	if a.play != nil {
+		active = a.play.world
+		waveCount := 0
+		if a.play.world != nil {
+			waveCount = len(a.play.world.Level.Waves)
+		}
+		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals)), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
+	}
+	if active != nil {
+		tileSize := tileSizeFor(active.TileSet)
+		worldX := (float64(logicalX)-active.ViewportX)/active.Zoom + active.CameraX
+		worldY := (float64(logicalY)-active.ViewportY)/active.Zoom + active.CameraY
+		tileX, tileY := int(math.Floor(worldX/float64(tileSize))), int(math.Floor(worldY/float64(tileSize)))
+		lines = append(lines, fmt.Sprintf("world %.1f,%.1f tile %d,%d", worldX, worldY, tileX, tileY), fmt.Sprintf("camera %.1f,%.1f zoom %.2f", active.CameraX, active.CameraY, active.Zoom))
+		for _, kind := range []formats.LayerKind{formats.LayerG, formats.LayerD, formats.LayerHB, formats.LayerH, formats.LayerC} {
+			lines = append(lines, debugTileLine(active, kind, tileX, tileY))
+		}
+	}
+	for index, line := range lines {
+		a.text(screen, line, x+8, y+27+float64(index)*13, .3)
+	}
+}
+
+func debugTileLine(active *viewer.Viewer, kind formats.LayerKind, tileX, tileY int) string {
+	values := active.Level.Layers[kind]
+	if tileX < 0 || tileY < 0 || tileX >= active.Level.Width || tileY >= active.Level.Height || len(values) != active.Level.Width*active.Level.Height {
+		return fmt.Sprintf("%s out of bounds", strings.ToUpper(string(kind)))
+	}
+	raw := values[tileY*active.Level.Width+tileX]
+	if raw == math.MaxUint32 || int32(raw) < 0 {
+		return fmt.Sprintf("%s %08X empty", strings.ToUpper(string(kind)), raw)
+	}
+	accepted := "draw"
+	if (kind == formats.LayerD || kind == formats.LayerHB) && raw == 0 {
+		accepted = "skip-zero"
+	}
+	flip := ""
+	if raw&0x00010000 != 0 {
+		flip += "X"
+	}
+	if raw&0x00020000 != 0 {
+		flip += "Y"
+	}
+	if flip == "" {
+		flip = "-"
+	}
+	if kind == formats.LayerC {
+		return fmt.Sprintf("%s %08X runtime=%d %s", strings.ToUpper(string(kind)), raw, (raw+1)&0xffff, collisionLabel((raw+1)&0xffff))
+	}
+	return fmt.Sprintf("%s %08X id=%d f=%s %s", strings.ToUpper(string(kind)), raw, raw&0xffff, flip, accepted)
+}
+
+func collisionLabel(value uint32) string {
+	switch {
+	case value == 0:
+		return "walkable"
+	case value == 1:
+		return "solid"
+	case value == 2:
+		return "hazard"
+	case value >= 3 && value <= 9:
+		return "spawn"
+	case value >= 13 && value <= 16:
+		return "pickup"
+	default:
+		return "other"
+	}
+}
+
 func (a *app) drawBullets(screen *ebiten.Image) {
 	if a.play == nil || len(a.play.bullets) == 0 {
 		return
@@ -1048,6 +1408,63 @@ func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle 
 	}
 }
 
+func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
+	textureName := zombie.texture
+	if textureName == "" {
+		textureName = "cavezombie"
+	}
+	texture, err := a.Texture(commonSDTexture(textureName))
+	if err != nil {
+		return
+	}
+	angle := int(math.Round(float64(zombie.angle) * 4 / 8))
+	frame := int(math.Floor(zombie.frame)) % 4
+	if frame < 0 {
+		frame += 4
+	}
+	rect := barryCellRect(angle, frame, 5, 4, texture.Bounds().Dx(), texture.Bounds().Dy())
+	if rect.Dx() <= 0 || rect.Dy() <= 0 {
+		return
+	}
+	const scale = .5
+	screenX := (zombie.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
+	screenY := (zombie.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
+	source := texture.SubImage(rect).(*ebiten.Image)
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
+	if zombie.flipX {
+		options.GeoM.Scale(-scale, scale)
+	} else {
+		options.GeoM.Scale(scale, scale)
+	}
+	options.GeoM.Translate(screenX, screenY)
+	a.drawImage(screen, source, options)
+}
+
+func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
+	texture, err := a.Texture("Common0/Textures/portal_SD")
+	if err != nil {
+		return
+	}
+	frame := int(math.Floor(portal.age * 8))
+	if portal.age >= 1.5 {
+		frame = 3 - int(math.Floor((portal.age-1.5)*8))
+	}
+	if frame < 0 {
+		frame = 0
+	} else if frame >= 4 {
+		frame = 3
+	}
+	source := texture.SubImage(image.Rect(frame*128, 0, frame*128+128, 128)).(*ebiten.Image)
+	screenX := (portal.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
+	screenY := (portal.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-64, -64)
+	options.GeoM.Scale(.5, .5)
+	options.GeoM.Translate(screenX, screenY)
+	a.drawImage(screen, source, options)
+}
+
 func commonSDTexture(path string) string {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	path = strings.TrimSuffix(path, filepath.Ext(path))
@@ -1055,6 +1472,9 @@ func commonSDTexture(path string) string {
 		path += "_SD"
 	}
 	if !strings.HasPrefix(strings.ToLower(path), "common0/") {
+		if !strings.Contains(path, "/") {
+			path = "Characters/" + path
+		}
 		path = "Common0/" + path
 	}
 	return path
@@ -1129,13 +1549,29 @@ func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
 	}
 	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
 	// Draw an elliptical shadow at Barry's feet: scale narrower vertically, slightly below center.
-	const shadowScaleX = 0.45
-	const shadowScaleY = 0.20
+	const shadowScale = 0.5
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-w/2, -h/2)
-	options.GeoM.Scale(shadowScaleX*scale, shadowScaleY*scale)
-	options.GeoM.Translate(x, y+14*scale)
+	options.GeoM.Scale(shadowScale*scale, shadowScale*scale)
+	options.GeoM.Translate(x, y+26*scale)
 	options.ColorScale.ScaleAlpha(0.55)
+	a.drawImage(screen, texture, options)
+}
+
+func (a *app) drawWeaponFlare(screen *ebiten.Image, x, y, angle float64) {
+	if a.play == nil || a.play.weapon.TextureFlare == "" {
+		return
+	}
+	texture, err := a.Texture(commonSDTexture(a.play.weapon.TextureFlare))
+	if err != nil {
+		return
+	}
+	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-w/2, -h/2)
+	options.GeoM.Rotate(angle)
+	options.GeoM.Scale(.5, .5)
+	options.GeoM.Translate((x-a.play.world.CameraX)*a.play.world.Zoom+a.play.world.ViewportX, (y-a.play.world.CameraY)*a.play.world.Zoom+a.play.world.ViewportY)
 	a.drawImage(screen, texture, options)
 }
 func (a *app) drawReticule(screen *ebiten.Image) {
@@ -1151,6 +1587,9 @@ func (a *app) drawReticule(screen *ebiten.Image) {
 	a.drawImage(screen, texture, options)
 }
 func (a *app) drawPlayControls(screen *ebiten.Image) {
+	if a.play == nil || !a.play.hudVisible {
+		return
+	}
 	a.drawGrenadeButton(screen)
 	if a.mobile {
 		if a.play.stick == 1 {
@@ -1342,17 +1781,42 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon}
+	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true}
 	if a.mode == 0 {
 		script, err := a.pack.Script(entryScriptPath(level.Info))
 		if err != nil {
 			return err
 		}
 		play.entryScript = script
+		play.hudVisible = scriptHUDVisibleBeforeSpeech(script)
+		if name := firstSpeechName(script); name != "" {
+			if conversation, conversationErr := a.pack.Conversation(level.Info.WorldIndex, name); conversationErr == nil {
+				play.dialogue = conversationLines(conversation)
+			}
+		}
 	}
 	a.play = play
 	a.play.centerCamera()
 	return nil
+}
+
+func scriptHUDVisibleBeforeSpeech(script formats.Script) bool {
+	visible := true
+	for _, command := range script.Commands {
+		if strings.EqualFold(command.Name, "StartSpeech") {
+			break
+		}
+		if !strings.EqualFold(command.Name, "HUDSetVisible") || len(command.Args) == 0 {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(command.Args[0])) {
+		case "true", "1":
+			visible = true
+		case "false", "0":
+			visible = false
+		}
+	}
+	return visible
 }
 
 func entryScriptPath(info formats.LevelInfo) string {
@@ -1361,6 +1825,25 @@ func entryScriptPath(info formats.LevelInfo) string {
 		return ""
 	}
 	return parts[0] + "/Scripts/" + info.BaseFile + "_entry.script"
+}
+func firstSpeechName(script formats.Script) string {
+	for _, command := range script.Commands {
+		if strings.EqualFold(command.Name, "StartSpeech") && len(command.Args) > 0 {
+			return command.Args[0]
+		}
+	}
+	return ""
+}
+func conversationLines(conversation formats.Conversation) []dialogueLine {
+	var result []dialogueLine
+	for _, speech := range conversation.Speeches {
+		for _, text := range speech.Text {
+			if strings.TrimSpace(text) != "" {
+				result = append(result, dialogueLine{text: strings.ReplaceAll(text, "#", ""), cameo: speech.Cameo})
+			}
+		}
+	}
+	return result
 }
 func (a *app) selectedLevel() (formats.Level, formats.TileSet, *ebiten.Image, error) {
 	levels := a.filteredLevels()
@@ -1434,20 +1917,44 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		return false
 	}
 	p.flash = math.Max(0, p.flash-1.0/60.0)
+	p.flare = math.Max(0, p.flare-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	fired := false
+	p.updateWaves()
+	p.updateZombies()
+	p.updatePortals()
 
 	const dt = 1.0 / 60.0
 	activeBullets := p.bullets[:0]
 	for _, b := range p.bullets {
+		previousX, previousY := b.x, b.y
 		b.x += b.vx * dt
 		b.y += b.vy * dt
 		b.life -= dt
-		if b.life > 0 && !p.isSolid(b.x, b.y) {
+		if b.life <= 0 || p.isSolid(b.x, b.y) {
+			continue
+		}
+		hit := false
+		for index := range p.zombies {
+			if !bulletHitsZombie(previousX, previousY, b.x, b.y, p.zombies[index]) {
+				continue
+			}
+			p.zombies[index].health -= 500
+			hit = true
+			break
+		}
+		if !hit {
 			activeBullets = append(activeBullets, b)
 		}
 	}
 	p.bullets = activeBullets
+	alive := p.zombies[:0]
+	for _, zombie := range p.zombies {
+		if zombie.health > 0 {
+			alive = append(alive, zombie)
+		}
+	}
+	p.zombies = alive
 
 	if !mobile {
 		p.stick = 0
@@ -1535,6 +2042,180 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	return fired
 }
 
+func (p *playState) updateWaves() {
+	if p.world == nil || len(p.world.Level.Waves) == 0 || p.waveIndex >= len(p.world.Level.Waves) {
+		return
+	}
+	wave := p.world.Level.Waves[p.waveIndex]
+	if len(p.waveSpawned) != len(wave.Spawners) {
+		p.waveSpawned = make([]int, len(wave.Spawners))
+	}
+	p.waveElapsed += 1000.0 / 60.0
+	allSpawned := true
+	for index, spawner := range wave.Spawners {
+		if spawner.Index < 1 || spawner.Index > 6 || spawner.Count <= 0 || len(spawner.Types) == 0 {
+			continue
+		}
+		interval := (wave.RunTime - spawner.DelayTime) / float64(spawner.Count)
+		if interval <= 0 {
+			interval = 500
+		}
+		for p.waveSpawned[index] < spawner.Count && p.waveElapsed >= spawner.DelayTime+float64(p.waveSpawned[index])*interval {
+			p.spawnZombie(spawner, p.waveSpawned[index])
+			p.waveSpawned[index]++
+		}
+		if p.waveSpawned[index] < spawner.Count {
+			allSpawned = false
+		}
+	}
+	if allSpawned && p.waveElapsed >= wave.RunTime+wave.EndWaveTime {
+		next := p.waveIndex + 1
+		if wave.NextWave > 0 && wave.NextWave < len(p.world.Level.Waves) {
+			next = wave.NextWave
+		}
+		if next < len(p.world.Level.Waves) {
+			p.waveIndex = next
+			p.waveElapsed = 0
+			p.waveSpawned = nil
+		}
+	}
+}
+
+func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
+	points := p.spawnPoints(spawner.Index)
+	if len(points) == 0 {
+		return
+	}
+	entry, ok := chooseSpawnType(spawner.Types, ordinal)
+	if !ok || !strings.Contains(strings.ToLower(entry.Name), "zombie") {
+		return
+	}
+	speed := entry.Speed.X
+	if entry.Speed.Y > 0 {
+		speed = (entry.Speed.X + entry.Speed.Y) / 2
+	}
+	if speed <= 0 {
+		speed = 70
+	}
+	health := entry.Strength
+	if health <= 0 {
+		health = 100
+	}
+	texture := entry.Texture
+	if texture == "" {
+		texture = "cavezombie"
+	}
+	point := points[ordinal%len(points)]
+	portalFound := false
+	for index := range p.portals {
+		if p.portals[index].x != point.X || p.portals[index].y != point.Y {
+			continue
+		}
+		p.portals[index].age = 0
+		portalFound = true
+		break
+	}
+	if !portalFound {
+		p.portals = append(p.portals, portalState{x: point.X, y: point.Y})
+	}
+	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: entry.Size, texture: texture})
+}
+
+func bulletHitsZombie(previousX, previousY, x, y float64, zombie zombieState) bool {
+	left := math.Min(previousX, x) - 4
+	right := math.Max(previousX, x) + 4
+	top := math.Min(previousY, y) - 8
+	bottom := math.Max(previousY, y) + 8
+	halfWidth, halfHeight := zombie.size.X/2, zombie.size.Y/2
+	if halfWidth <= 0 {
+		halfWidth = 16
+	}
+	if halfHeight <= 0 {
+		halfHeight = 16
+	}
+	return zombie.x >= left-halfWidth && zombie.x <= right+halfWidth && zombie.y >= top-halfHeight && zombie.y <= bottom+halfHeight
+}
+
+func chooseSpawnType(types []formats.SpawnType, ordinal int) (formats.SpawnType, bool) {
+	total := 0.0
+	for _, entry := range types {
+		if entry.Chance > 0 {
+			total += entry.Chance
+		}
+	}
+	if total <= 0 {
+		return formats.SpawnType{}, false
+	}
+	value := math.Mod(float64(ordinal), total)
+	for _, entry := range types {
+		if entry.Chance <= 0 {
+			continue
+		}
+		if value < entry.Chance {
+			return entry, true
+		}
+		value -= entry.Chance
+	}
+	return types[len(types)-1], true
+}
+
+func (p *playState) spawnPoints(index int) []formats.Vec2 {
+	if p.world == nil {
+		return nil
+	}
+	layer := p.world.Level.Layers[formats.LayerC]
+	marker := uint32(index + 2)
+	points := make([]formats.Vec2, 0)
+	for y := 0; y < p.world.Level.Height; y++ {
+		for x := 0; x < p.world.Level.Width; x++ {
+			if layer[y*p.world.Level.Width+x] == marker {
+				points = append(points, formats.Vec2{X: float64(x*p.tileSize + p.tileSize/2), Y: float64(y*p.tileSize + p.tileSize/2)})
+			}
+		}
+	}
+	return points
+}
+
+func (p *playState) updateZombies() {
+	if p.world == nil {
+		return
+	}
+	const dt = 1.0 / 60.0
+	for index := range p.zombies {
+		zombie := &p.zombies[index]
+		dx, dy := p.x-zombie.x, p.y-zombie.y
+		distance := math.Hypot(dx, dy)
+		if distance > 24 {
+			step := math.Min(zombie.speed*dt, distance-24)
+			if distance > 0 {
+				candidateX := zombie.x + dx/distance*step
+				candidateY := zombie.y + dy/distance*step
+				if !p.isSolid(candidateX, zombie.y) {
+					zombie.x = candidateX
+				}
+				if !p.isSolid(zombie.x, candidateY) {
+					zombie.y = candidateY
+				}
+			}
+		} else {
+			p.health = math.Max(0, p.health-dt*.08)
+		}
+		zombie.angle, zombie.flipX = barryDirection(dx, dy)
+		zombie.frame += dt * 8
+	}
+}
+
+func (p *playState) updatePortals() {
+	active := p.portals[:0]
+	for _, portal := range p.portals {
+		portal.age += 1.0 / 60.0
+		if portal.age < 2.0 {
+			active = append(active, portal)
+		}
+	}
+	p.portals = active
+}
+
 func (p *playState) fire(dx, dy float64) bool {
 	dist := math.Hypot(dx, dy)
 	if dist < 0.0001 {
@@ -1558,7 +2239,10 @@ func (p *playState) fire(dx, dy float64) bool {
 		life:  p.weapon.Life,
 		angle: bAngle,
 	})
-	p.flash = 0.08
+	p.flash = 1.0 / 60.0
+	p.flare = 0.5
+	p.flareX, p.flareY = bx, by
+	p.flareAngle = math.Atan2(dirY, dirX)
 	p.shootCooldown = p.weapon.RateOfFire
 	return true
 }
@@ -1782,7 +2466,7 @@ func main() {
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
@@ -1798,6 +2482,9 @@ func main() {
 	if *captureState != "" {
 		if err := game.setCaptureState(*captureState); err != nil {
 			log.Fatal(err)
+		}
+		if game.debug {
+			game.debugPanelVisible = true
 		}
 	}
 	if *captureSelection >= 0 && *captureSelection < len(mainMenuButtons) {

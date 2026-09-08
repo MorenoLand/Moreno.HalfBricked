@@ -133,9 +133,6 @@ func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Im
 	if entities != nil {
 		entities(screen)
 	}
-	if v.Layers[formats.LayerH] {
-		v.drawLayer(screen, formats.LayerH, tileSize)
-	}
 	if v.Layers[formats.LayerC] {
 		v.drawCollision(screen, tileSize)
 	}
@@ -155,7 +152,7 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
 			id := v.Level.Layers[kind][y*v.Level.Width+x]
-			if id == math.MaxUint32 || int32(id) < 0 {
+			if id == math.MaxUint32 || int32(id) < 0 || ((kind == formats.LayerD || kind == formats.LayerHB) && id == 0) {
 				continue
 			}
 			if v.Atlas == nil {
@@ -175,7 +172,11 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	if len(vertices) == 0 {
 		return
 	}
-	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest, DisableMipmaps: true})
+	filter := ebiten.FilterNearest
+	if v.Zoom < 1 {
+		filter = ebiten.FilterLinear
+	}
+	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: filter, DisableMipmaps: true})
 }
 func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Vertex, bool) {
 	var vertices [4]ebiten.Vertex
@@ -187,10 +188,7 @@ func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Ver
 		return vertices, false
 	}
 	tileX, tileY := int(tileID)%cols, int(tileID)/cols
-	uvOffset := float32(0)
-	if v.Zoom < 1 {
-		uvOffset = float32(v.TileSet.UVOffset)
-	}
+	uvOffset := float32(v.TileSet.UVOffset)
 	sourceX0 := float32(tileX*tileSize) + uvOffset
 	sourceY0 := float32(tileY*tileSize) + uvOffset
 	sourceX1 := float32((tileX+1)*tileSize) - uvOffset
@@ -259,6 +257,9 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 			continue
 		}
 		texture, err := v.Textures.Texture(prop.Texture)
+		if err != nil {
+			texture, err = v.Textures.Texture(prop.Texture + "_SD")
+		}
 		if err != nil {
 			continue
 		}

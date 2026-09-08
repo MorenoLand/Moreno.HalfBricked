@@ -13,8 +13,8 @@ const (
 )
 
 var LayerKinds = []LayerKind{LayerG, LayerD, LayerH, LayerHB, LayerC}
-var RenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD, LayerH}
-var BaseRenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
+var RenderLayerKinds = []LayerKind{LayerG, LayerD, LayerHB}
+var BaseRenderLayerKinds = []LayerKind{LayerG, LayerD, LayerHB}
 
 type LevelInfo struct {
 	ID            string   `json:"id"`
@@ -34,6 +34,32 @@ type Level struct {
 	Tileset string                 `json:"tileset"`
 	Layers  map[LayerKind][]uint32 `json:"layers"`
 	Props   []Prop                 `json:"props"`
+	Waves   []Wave                 `json:"waves"`
+}
+
+type Wave struct {
+	NextWave       int       `json:"nextWave"`
+	RunTime        float64   `json:"runTime"`
+	EndWaveTime    float64   `json:"endWaveTime"`
+	EndWaveZombies int       `json:"endWaveZombies"`
+	Spawners       []Spawner `json:"spawners"`
+}
+
+type Spawner struct {
+	DelayTime float64     `json:"delayTime"`
+	Count     int         `json:"count"`
+	Index     int         `json:"index"`
+	Types     []SpawnType `json:"types"`
+}
+
+type SpawnType struct {
+	Name      string  `json:"name"`
+	Chance    float64 `json:"chance"`
+	Speed     Vec2    `json:"speed"`
+	Strength  float64 `json:"strength"`
+	Size      Vec2    `json:"size"`
+	TurnSpeed float64 `json:"turnSpeed"`
+	Texture   string  `json:"texture"`
 }
 
 type Prop struct {
