@@ -82,6 +82,7 @@ type bullet struct {
 
 type portalState struct {
 	x, y, age, size float64
+	cellX, cellY    int
 }
 
 type bloodPop struct {
@@ -1674,9 +1675,9 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	angle := int(math.Round(float64(zombie.angle) * float64(columns-1) / 8))
 	frame := int(math.Floor(zombie.frame)) % rows
 	if frame < 0 {
-		frame += 4
+		frame += rows
 	}
-	rect := barryCellRect(angle, frame, 5, 4, texture.Bounds().Dx(), texture.Bounds().Dy())
+	rect := barryCellRect(angle, frame, columns, rows, texture.Bounds().Dx(), texture.Bounds().Dy())
 	if rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
 	}
@@ -2485,18 +2486,7 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	if texture == "" {
 		texture = "cavezombie"
 	}
-	portalFound := false
-	for index := range p.portals {
-		if p.portals[index].x != point.X || p.portals[index].y != point.Y {
-			continue
-		}
-		p.portals[index].age = 0
-		portalFound = true
-		break
-	}
-	if !portalFound {
-		p.portals = append(p.portals, portalState{x: point.X, y: point.Y})
-	}
+	p.addPortal(point.X, point.Y)
 	if p.scriptEntities == nil {
 		p.scriptEntities = map[int]*scriptEntity{}
 	}
@@ -2507,6 +2497,33 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
 	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: entry.Size, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+}
+
+func (p *playState) addPortal(x, y float64) {
+	cellX, cellY := portalCell(x, y)
+	for index := range p.portals {
+		if p.portals[index].cellX != cellX || p.portals[index].cellY != cellY {
+			continue
+		}
+		p.portals[index].age = 0
+		return
+	}
+	p.portals = append(p.portals, portalState{x: x, y: y, cellX: cellX, cellY: cellY})
+}
+
+func portalCell(x, y float64) (int, int) {
+	cellX, cellY := int(x*0.015625), int(y*0.015625)
+	if cellX < 0 {
+		cellX = 0
+	} else if cellX > 0x22 {
+		cellX = 0x22
+	}
+	if cellY < 0 {
+		cellY = 0
+	} else if cellY > 0x12 {
+		cellY = 0x12
+	}
+	return cellX, cellY
 }
 
 func bulletHitsZombie(previousX, previousY, x, y float64, zombie zombieState) bool {

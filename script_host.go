@@ -366,7 +366,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		h.play.portals = append(h.play.portals, portalState{x: x, y: y})
+		h.play.addPortal(x, y)
 		return scripting.CallResult{}, nil
 	case "CreateEntity":
 		return h.createEntity(args)
