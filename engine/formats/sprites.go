@@ -19,8 +19,9 @@ type SpriteAnimation struct {
 }
 
 type SpriteDefinition struct {
-	Name       string
-	Animations map[string]SpriteAnimation
+	Name           string
+	Animations     map[string]SpriteAnimation
+	AnimationOrder []string
 }
 
 type SpriteCatalog map[string]SpriteDefinition
@@ -86,7 +87,11 @@ func ParseSprites(reader io.Reader) (SpriteCatalog, error) {
 			if err != nil {
 				return nil, err
 			}
-			definition.Animations[strings.ToLower(animName)] = SpriteAnimation{Name: animName, Texture: texture, Frames: frames, Angles: angles, FPS: fps, Loop: loop, AnimLength: animLength}
+			animationKey := strings.ToLower(animName)
+			if _, exists := definition.Animations[animationKey]; !exists {
+				definition.AnimationOrder = append(definition.AnimationOrder, animationKey)
+			}
+			definition.Animations[animationKey] = SpriteAnimation{Name: animName, Texture: texture, Frames: frames, Angles: angles, FPS: fps, Loop: loop, AnimLength: animLength}
 		}
 		result[key] = definition
 	}
@@ -100,6 +105,14 @@ func (catalog SpriteCatalog) Find(name string) (SpriteDefinition, bool) {
 
 func (definition SpriteDefinition) Animation(name string) (SpriteAnimation, bool) {
 	animation, ok := definition.Animations[strings.ToLower(strings.TrimSpace(name))]
+	return animation, ok
+}
+
+func (definition SpriteDefinition) AnimationByIndex(index int) (SpriteAnimation, bool) {
+	if index < 0 || index >= len(definition.AnimationOrder) {
+		return SpriteAnimation{}, false
+	}
+	animation, ok := definition.Animations[definition.AnimationOrder[index]]
 	return animation, ok
 }
 

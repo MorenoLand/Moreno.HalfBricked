@@ -25,4 +25,7 @@ func TestParseSpritesKeepsAnimationMetadata(t *testing.T) {
 	if animation, ok := rex.Animation("rage"); !ok || animation.Frames != 2 || animation.Angles != 2 {
 		t.Fatalf("unexpected rage animation: %+v", animation)
 	}
+	if animation, ok := rex.AnimationByIndex(1); !ok || animation.Name != "Rage" {
+		t.Fatalf("unexpected animation order: %+v", animation)
+	}
 }

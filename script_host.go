@@ -33,6 +33,7 @@ type scriptEntity struct {
 	scaleX, scaleY, alpha   float64
 	texture                 string
 	flipY                   bool
+	angle                   int
 	animation, frame        int
 	targetX, targetY, speed float64
 	walking                 bool
@@ -411,6 +412,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, err
 		}
 		entity.rotation = rotation
+		entity.angle, _ = barryDirection(math.Cos(rotation*math.Pi/180), math.Sin(rotation*math.Pi/180))
 		if entity.kind == "zombie" {
 			if zombie := h.findZombie(entity.id); zombie != nil {
 				zombie.angle, zombie.flipX = barryDirection(math.Cos(rotation*math.Pi/180), math.Sin(rotation*math.Pi/180))
@@ -945,6 +947,7 @@ func (h *playScriptHost) entityProperty(name string, args []scripting.Value) (sc
 	case "SetAnimation":
 		entity.animation, err = scriptID(args, 1)
 		entity.playing = true
+		entity.frame, entity.frameTime = 0, 0
 	case "SetFrame":
 		entity.frame, err = scriptID(args, 1)
 		entity.frameTime = 0
@@ -1075,10 +1078,19 @@ func (p *playState) updateScriptEntities() {
 		if entity == nil || !entity.playing || entity.kind == "pickup" {
 			continue
 		}
+		fps, frames := 8.0, 4
+		if animation, ok := findSpriteAnimationByIndex(p.sprites, entity.texture, entity.animation); ok {
+			if animation.FPS > 0 {
+				fps = animation.FPS
+			}
+			if animation.Frames > 0 {
+				frames = animation.Frames
+			}
+		}
 		entity.frameTime += 1.0 / 60.0
-		for entity.frameTime >= 1.0/8.0 {
-			entity.frameTime -= 1.0 / 8.0
-			entity.frame = (entity.frame + 1) % 4
+		for entity.frameTime >= 1.0/fps {
+			entity.frameTime -= 1.0 / fps
+			entity.frame = (entity.frame + 1) % frames
 		}
 	}
 }
@@ -1166,6 +1178,10 @@ func (a *app) spriteAnimation(name, preferred string) (formats.SpriteAnimation, 
 	return findSpriteAnimation(a.sprites, name, preferred)
 }
 
+func (a *app) spriteAnimationByIndex(name string, index int) (formats.SpriteAnimation, bool) {
+	return findSpriteAnimationByIndex(a.sprites, name, index)
+}
+
 func findSpriteAnimation(catalog formats.SpriteCatalog, name, preferred string) (formats.SpriteAnimation, bool) {
 	candidates := []string{name}
 	if !strings.Contains(name, "/") {
@@ -1198,6 +1214,23 @@ func findSpriteAnimation(catalog formats.SpriteCatalog, name, preferred string) 
 	return formats.SpriteAnimation{}, false
 }
 
+func findSpriteAnimationByIndex(catalog formats.SpriteCatalog, name string, index int) (formats.SpriteAnimation, bool) {
+	candidates := []string{name}
+	if !strings.Contains(name, "/") {
+		candidates = append(candidates, "Characters/"+name)
+	}
+	for _, candidate := range candidates {
+		definition, ok := catalog.Find(candidate)
+		if !ok {
+			continue
+		}
+		if animation, ok := definition.AnimationByIndex(index); ok {
+			return animation, true
+		}
+	}
+	return findSpriteAnimation(catalog, name, "")
+}
+
 func (p *playState) spriteFPS(name, preferred string) float64 {
 	if animation, ok := findSpriteAnimation(p.sprites, name, preferred); ok && animation.FPS > 0 {
 		return animation.FPS
@@ -1206,7 +1239,7 @@ func (p *playState) spriteFPS(name, preferred string) float64 {
 }
 
 func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
-	animation, hasAnimation := a.spriteAnimation(entity.texture, "")
+	animation, hasAnimation := a.spriteAnimationByIndex(entity.texture, entity.animation)
 	texturePath := commonSDTexture(entity.texture)
 	columns, rows := 5, 4
 	if hasAnimation {
@@ -1222,7 +1255,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if err != nil {
 		return
 	}
-	col, frame := entity.animation, entity.frame
+	col, frame := entity.angle, entity.frame
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0
 	}
