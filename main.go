@@ -253,10 +253,10 @@ func (a *app) Update() error {
 			a.menuSpawnTime = .2
 		}
 	}
-	if a.debug && inpututil.IsKeyJustPressed(ebiten.KeyF2) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF2) {
 		a.debugPanelVisible = !a.debugPanelVisible
 	}
-	if a.debug && a.debugPanelVisible && a.updateDebugPanel() {
+	if a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
 	}
 	if a.menuClick != nil {
@@ -1527,7 +1527,7 @@ func (a *app) updateDebugPanel() bool {
 }
 
 func (a *app) drawDebugPanel(screen *ebiten.Image) {
-	if !a.debug || !a.debugPanelVisible || (a.play == nil && a.view == nil) {
+	if !a.debugPanelVisible || (a.play == nil && a.view == nil) {
 		return
 	}
 	x, y := a.debugPanelX, a.debugPanelY
