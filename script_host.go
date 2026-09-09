@@ -800,7 +800,7 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "zombie", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "cavezombie", speed: speed}
-	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: size, Y: size}, texture: "cavezombie", scriptID: id, alpha: 1})
+	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: size, Y: size}, texture: "cavezombie", scriptID: id, alpha: 1, fps: h.play.spriteFPS("cavezombie", "")})
 	return scriptValues(id), nil
 }
 
@@ -1162,12 +1162,66 @@ func (a *app) drawScriptEntities(screen *ebiten.Image, behind bool) {
 	}
 }
 
+func (a *app) spriteAnimation(name, preferred string) (formats.SpriteAnimation, bool) {
+	return findSpriteAnimation(a.sprites, name, preferred)
+}
+
+func findSpriteAnimation(catalog formats.SpriteCatalog, name, preferred string) (formats.SpriteAnimation, bool) {
+	candidates := []string{name}
+	if !strings.Contains(name, "/") {
+		candidates = append(candidates, "Characters/"+name)
+	}
+	for _, candidate := range candidates {
+		definition, ok := catalog.Find(candidate)
+		if !ok {
+			continue
+		}
+		if preferred != "" {
+			if animation, ok := definition.Animation(preferred); ok {
+				return animation, true
+			}
+		}
+		for _, fallback := range []string{"Idle", "Run", "Death"} {
+			if animation, ok := definition.Animation(fallback); ok {
+				return animation, true
+			}
+		}
+		keys := make([]string, 0, len(definition.Animations))
+		for key := range definition.Animations {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			return definition.Animations[keys[0]], true
+		}
+	}
+	return formats.SpriteAnimation{}, false
+}
+
+func (p *playState) spriteFPS(name, preferred string) float64 {
+	if animation, ok := findSpriteAnimation(p.sprites, name, preferred); ok && animation.FPS > 0 {
+		return animation.FPS
+	}
+	return 8
+}
+
 func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
-	texture, err := a.Texture(commonSDTexture(entity.texture))
+	animation, hasAnimation := a.spriteAnimation(entity.texture, "")
+	texturePath := commonSDTexture(entity.texture)
+	columns, rows := 5, 4
+	if hasAnimation {
+		texturePath = animation.Texture
+		if animation.Angles > 0 {
+			columns = animation.Angles
+		}
+		if animation.Frames > 0 {
+			rows = animation.Frames
+		}
+	}
+	texture, err := a.Texture(texturePath)
 	if err != nil {
 		return
 	}
-	columns, rows := 5, 4
 	col, frame := entity.animation, entity.frame
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0

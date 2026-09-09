@@ -37,6 +37,9 @@ type Pack struct {
 	weapons   formats.WeaponCatalog
 	weaponErr error
 	weaponsOK bool
+	sprites   formats.SpriteCatalog
+	spriteErr error
+	spritesOK bool
 }
 
 func NewPack(source AssetSource) (*Pack, error) {
@@ -185,6 +188,28 @@ func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
 		p.weaponErr = fmt.Errorf("%s: %w", path, p.weaponErr)
 	}
 	return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr
+}
+func (p *Pack) Sprites() (formats.SpriteCatalog, error) {
+	if p.spritesOK {
+		return p.sprites, p.spriteErr
+	}
+	p.spritesOK = true
+	path, ok := p.SourcePath("Common0/Xml/Common0_Sprites_SD.xml")
+	if !ok {
+		p.spriteErr = fmt.Errorf("sprite catalog not found")
+		return nil, p.spriteErr
+	}
+	r, err := p.source.Open(path)
+	if err != nil {
+		p.spriteErr = err
+		return nil, err
+	}
+	defer r.Close()
+	p.sprites, p.spriteErr = formats.ParseSprites(r)
+	if p.spriteErr != nil {
+		p.spriteErr = fmt.Errorf("%s: %w", path, p.spriteErr)
+	}
+	return p.sprites, p.spriteErr
 }
 func manifestPath(files map[string]string, wanted string) (string, bool) {
 	for key, path := range files {

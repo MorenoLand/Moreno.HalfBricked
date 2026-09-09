@@ -40,6 +40,7 @@ type app struct {
 	titleScreen                          bool
 	unlocked                             map[string]bool
 	weapons                              formats.WeaponCatalog
+	sprites                              formats.SpriteCatalog
 	capture                              *engine.Capture
 	captureLimit                         int
 	sound                                *engine.SoundSystem
@@ -94,12 +95,14 @@ type zombieState struct {
 	speed, health float64
 	size          formats.Vec2
 	texture       string
+	animation     string
 	frame         float64
 	angle         int
 	flipX         bool
 	flipY         bool
 	scriptID      int
 	alpha         float64
+	fps           float64
 	hitFlash      float64
 	dying         bool
 	deathAge      float64
@@ -131,6 +134,7 @@ type playState struct {
 	shouldQuit                                             bool
 	weapon                                                 formats.Weapon
 	weapons                                                formats.WeaponCatalog
+	sprites                                                formats.SpriteCatalog
 	grenades                                               int
 	moveControl                                            bool
 	shootControl                                           bool
@@ -204,11 +208,15 @@ func newApp(root string, debug, mobile bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
+	sprites, err := pack.Sprites()
+	if err != nil {
+		return nil, err
+	}
 	weapon, ok := weapons.Find("PISTOL")
 	if !ok {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
@@ -1647,12 +1655,24 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if textureName == "" {
 		textureName = "cavezombie"
 	}
-	texture, err := a.Texture(commonSDTexture(textureName))
+	animation, hasAnimation := a.spriteAnimation(textureName, zombie.animation)
+	texturePath := commonSDTexture(textureName)
+	columns, rows := 5, 4
+	if hasAnimation {
+		texturePath = animation.Texture
+		if animation.Angles > 0 {
+			columns = animation.Angles
+		}
+		if animation.Frames > 0 {
+			rows = animation.Frames
+		}
+	}
+	texture, err := a.Texture(texturePath)
 	if err != nil {
 		return
 	}
-	angle := int(math.Round(float64(zombie.angle) * 4 / 8))
-	frame := int(math.Floor(zombie.frame)) % 4
+	angle := int(math.Round(float64(zombie.angle) * float64(columns-1) / 8))
+	frame := int(math.Floor(zombie.frame)) % rows
 	if frame < 0 {
 		frame += 4
 	}
@@ -2089,7 +2109,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1}
+	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1}
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2486,7 +2506,7 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	id := p.scriptNextEntity
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: entry.Size, texture: texture, scriptID: id, alpha: 1})
+	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: entry.Size, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
 }
 
 func bulletHitsZombie(previousX, previousY, x, y float64, zombie zombieState) bool {
@@ -2596,7 +2616,11 @@ func (p *playState) updateZombies() {
 			entity.x, entity.y = zombie.x, zombie.y
 		}
 		zombie.angle, zombie.flipX = barryDirection(dx, dy)
-		zombie.frame += dt * 8
+		fps := zombie.fps
+		if fps <= 0 {
+			fps = 8
+		}
+		zombie.frame += dt * fps
 	}
 }
 
