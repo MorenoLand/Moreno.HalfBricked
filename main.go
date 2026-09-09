@@ -450,13 +450,11 @@ func (a *app) Draw(screen *ebiten.Image) {
 }
 
 func (a *app) drawImage(screen, source *ebiten.Image, options *ebiten.DrawImageOptions) {
-	if a.frontendScaleX == 1 && a.frontendScaleY == 1 {
-		screen.DrawImage(source, options)
-		return
-	}
 	scaled := *options
 	scaled.Filter = ebiten.FilterNearest
-	scaled.GeoM.Scale(a.frontendScaleX, a.frontendScaleY)
+	if a.frontendScaleX != 1 || a.frontendScaleY != 1 {
+		scaled.GeoM.Scale(a.frontendScaleX, a.frontendScaleY)
+	}
 	screen.DrawImage(source, &scaled)
 }
 func (a *app) renderScale() (float64, float64) {
