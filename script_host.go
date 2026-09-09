@@ -171,7 +171,22 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
+		offsetX, offsetY := 0.0, 0.0
+		if len(args) > 1 {
+			offsetX, err = scriptNumber(args, 1)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
+		if len(args) > 2 {
+			offsetY, err = scriptNumber(args, 2)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
 		h.play.scriptCameraFollow = follow != 0
+		h.play.scriptCameraFollowID = int(follow)
+		h.play.scriptCameraFollowOffsetX, h.play.scriptCameraFollowOffsetY = offsetX, offsetY
 		return scripting.CallResult{}, nil
 	case "GetDelta":
 		return scriptValues(1.0 / 60.0), nil

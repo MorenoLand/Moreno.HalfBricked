@@ -168,6 +168,8 @@ type playState struct {
 	scriptZombieTargetX, scriptZombieTargetY               float64
 	scriptHasZombieTarget                                  bool
 	scriptCameraFollow                                     bool
+	scriptCameraFollowID                                   int
+	scriptCameraFollowOffsetX, scriptCameraFollowOffsetY   float64
 	scriptAimX, scriptAimY                                 float64
 	scriptHasAim                                           bool
 	scriptLastCallback                                     string
@@ -2812,8 +2814,20 @@ func (p *playState) updateCamera() {
 	worldHeight := float64(p.world.Level.Height * tileSize)
 	maxX := math.Max(0, worldWidth-float64(logicalWidth)/zoom)
 	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
-	targetX := math.Max(0, math.Min(maxX, p.x-float64(logicalWidth)/(2*zoom)))
-	targetY := math.Max(0, math.Min(maxY, p.y-float64(logicalHeight)/(2*zoom)))
+	targetX, targetY := p.x, p.y
+	offsetX, offsetY := 0.0, 0.0
+	if p.scriptCameraFollow {
+		offsetX, offsetY = p.scriptCameraFollowOffsetX, p.scriptCameraFollowOffsetY
+	}
+	if p.scriptCameraFollow && p.scriptCameraFollowID > 1 {
+		entity := p.scriptEntities[p.scriptCameraFollowID]
+		if entity == nil {
+			return
+		}
+		targetX, targetY = entity.x, entity.y
+	}
+	targetX = math.Max(0, math.Min(maxX, targetX+offsetX-float64(logicalWidth)/(2*zoom)))
+	targetY = math.Max(0, math.Min(maxY, targetY+offsetY-float64(logicalHeight)/(2*zoom)))
 	p.world.CameraX = math.Max(0, math.Min(maxX, p.world.CameraX+(targetX-p.world.CameraX)*0.15))
 	p.world.CameraY = math.Max(0, math.Min(maxY, p.world.CameraY+(targetY-p.world.CameraY)*0.15))
 	p.world.ViewportX, p.world.ViewportY = 0, 0
