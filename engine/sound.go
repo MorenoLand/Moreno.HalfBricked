@@ -63,6 +63,17 @@ func (s *SoundSystem) Play(path string, volume float64) {
 	player.Play()
 }
 
+func (s *SoundSystem) MusicEnabled(enabled bool) {
+	if s == nil || s.music == nil {
+		return
+	}
+	if enabled {
+		s.music.Play()
+	} else {
+		s.music.Pause()
+	}
+}
+
 func (s *SoundSystem) Close() error {
 	if s == nil || s.music == nil {
 		return nil

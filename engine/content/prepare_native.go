@@ -21,7 +21,9 @@ func PrepareAssets(root string) (string, error) {
 	}
 	output := filepath.Join("bin", "data-cache")
 	if _, err := os.Stat(filepath.Join(output, "pack.json")); err == nil {
-		return output, nil
+		if _, err := os.Stat(filepath.Join(root, "assets", "World0", "Levels", "lab.xml")); err != nil || hasScriptLevelCache(output) {
+			return output, nil
+		}
 	}
 	if err := Import(root, output); err != nil {
 		return "", err

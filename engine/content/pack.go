@@ -14,6 +14,7 @@ type PackManifest struct {
 	SchemaVersion int                        `json:"schemaVersion"`
 	SourceVersion string                     `json:"sourceVersion"`
 	Levels        []formats.LevelInfo        `json:"levels"`
+	ScriptLevels  map[string]string          `json:"scriptLevels,omitempty"`
 	TileSets      map[string]formats.TileSet `json:"tileSets"`
 	Textures      map[string]string          `json:"textures"`
 	Files         map[string]string          `json:"files"`
@@ -85,6 +86,18 @@ func (p *Pack) Load(id string) (formats.Level, error) {
 	p.levels[id] = level
 	return level, nil
 }
+func (p *Pack) LoadScriptLevel(name string, world int) (formats.Level, error) {
+	for _, info := range p.manifest.Levels {
+		if strings.EqualFold(info.ID, name) || strings.EqualFold(info.BaseFile, name) {
+			return p.Load(info.ID)
+		}
+	}
+	key := fmt.Sprintf("%s:%d", strings.ToLower(strings.TrimSpace(name)), world)
+	if id, ok := p.manifest.ScriptLevels[key]; ok {
+		return p.Load(id)
+	}
+	return p.Load(name)
+}
 func (p *Pack) TexturePath(name string) (string, bool) {
 	pathName := strings.ToLower(strings.TrimSuffix(filepath.ToSlash(name), filepath.Ext(name)))
 	if path, ok := p.manifest.Textures[pathName]; ok {
@@ -110,6 +123,22 @@ func (p *Pack) Script(path string) (formats.Script, error) {
 		return formats.Script{}, fmt.Errorf("%s: %w", name, err)
 	}
 	return script, nil
+}
+func (p *Pack) ScriptSource(path string) (string, error) {
+	name, ok := manifestPath(p.manifest.Files, path)
+	if !ok {
+		return "", fmt.Errorf("script %q not found", path)
+	}
+	r, err := p.source.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	source, err := io.ReadAll(r)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	return string(source), nil
 }
 func (p *Pack) Conversation(world int, name string) (formats.Conversation, error) {
 	candidates := []string{fmt.Sprintf("Common0/Dialog/chat_%03d.xml", world), fmt.Sprintf("DLC1/Dialog/chat_%03d.xml", world)}

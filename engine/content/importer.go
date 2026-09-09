@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
@@ -33,7 +34,7 @@ func Import(referenceRoot, outputRoot string) error {
 	if err := os.MkdirAll(filepath.Join(outputRoot, "levels"), 0755); err != nil {
 		return err
 	}
-	manifest := PackManifest{SchemaVersion: 1, SourceVersion: "reference-1.2.1", Levels: levels, TileSets: tilesets, Textures: map[string]string{}, Files: map[string]string{}}
+	manifest := PackManifest{SchemaVersion: 1, SourceVersion: "reference-1.2.1", Levels: levels, ScriptLevels: map[string]string{}, TileSets: tilesets, Textures: map[string]string{}, Files: map[string]string{}}
 	for _, info := range levels {
 		level, err := formats.ParseLevel(referenceRoot, info)
 		if err != nil {
@@ -48,6 +49,9 @@ func Import(referenceRoot, outputRoot string) error {
 			return err
 		}
 	}
+	if err := importScriptLevels(referenceRoot, outputRoot, &manifest, levels); err != nil {
+		return err
+	}
 	if err := importAssets(referenceRoot, outputRoot, &manifest); err != nil {
 		return err
 	}
@@ -56,6 +60,58 @@ func Import(referenceRoot, outputRoot string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(outputRoot, "pack.json"), data, 0644)
+}
+
+func importScriptLevels(root, output string, manifest *PackManifest, catalog []formats.LevelInfo) error {
+	existing := make(map[string]bool, len(catalog))
+	for _, info := range catalog {
+		existing[strings.ToLower(info.BaseFile)] = true
+	}
+	var paths []string
+	if err := filepath.WalkDir(filepath.Join(root, "assets"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.EqualFold(filepath.Base(filepath.Dir(path)), "Levels") && strings.EqualFold(filepath.Ext(path), ".xml") {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		rel, err := filepath.Rel(filepath.Join(root, "assets"), path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if existing[strings.ToLower(base)] {
+			continue
+		}
+		packageName := strings.ToLower(filepath.Base(filepath.Dir(filepath.Dir(path))))
+		world, _ := strconv.Atoi(strings.TrimPrefix(packageName, "world"))
+		id := packageName + "_" + strings.ToLower(base)
+		key := strings.ToLower(base) + ":" + strconv.Itoa(world)
+		if _, exists := manifest.ScriptLevels[key]; exists {
+			continue
+		}
+		info := formats.LevelInfo{ID: id, DisplayName: base, BaseFile: base, WorldIndex: world, SourceXML: rel}
+		level, err := formats.ParseLevel(root, info)
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(level, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(output, "levels", id+".json"), data, 0644); err != nil {
+			return err
+		}
+		manifest.ScriptLevels[key] = id
+	}
+	return nil
 }
 
 func importAssets(root, out string, manifest *PackManifest) error {

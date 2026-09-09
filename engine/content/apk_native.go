@@ -20,7 +20,7 @@ func prepareAPK(apkPath string) (string, error) {
 		return "", fmt.Errorf("hash APK %q: %w", apkPath, err)
 	}
 	if _, err := os.Stat(filepath.Join(output, "pack.json")); err == nil {
-		if data, readErr := os.ReadFile(marker); readErr == nil && strings.TrimSpace(string(data)) == hash {
+		if data, readErr := os.ReadFile(marker); readErr == nil && strings.TrimSpace(string(data)) == hash && hasScriptLevelCache(output) {
 			return output, nil
 		}
 	}
@@ -42,6 +42,11 @@ func prepareAPK(apkPath string) (string, error) {
 		return "", err
 	}
 	return output, nil
+}
+
+func hasScriptLevelCache(root string) bool {
+	_, err := os.Stat(filepath.Join(root, "levels", "world0_lab.json"))
+	return err == nil
 }
 
 func extractAPKAssets(apkPath, stage string) error {
