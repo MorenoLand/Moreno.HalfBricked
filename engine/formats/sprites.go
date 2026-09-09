@@ -1,6 +1,7 @@
 package formats
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -47,7 +48,12 @@ type spriteAnimXML struct {
 
 func ParseSprites(reader io.Reader) (SpriteCatalog, error) {
 	var document spriteXML
-	if err := xml.NewDecoder(reader).Decode(&document); err != nil {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	data = stripSpriteComments(data)
+	if err := xml.Unmarshal(data, &document); err != nil {
 		return nil, err
 	}
 	result := make(SpriteCatalog, len(document.Sprites))
@@ -96,6 +102,21 @@ func ParseSprites(reader io.Reader) (SpriteCatalog, error) {
 		result[key] = definition
 	}
 	return result, nil
+}
+
+func stripSpriteComments(data []byte) []byte {
+	for {
+		start := bytes.Index(data, []byte("<!--"))
+		if start < 0 {
+			return data
+		}
+		relativeEnd := bytes.Index(data[start+4:], []byte("-->"))
+		if relativeEnd < 0 {
+			return data[:start]
+		}
+		end := start + 4 + relativeEnd + 3
+		data = append(data[:start], data[end:]...)
+	}
 }
 
 func (catalog SpriteCatalog) Find(name string) (SpriteDefinition, bool) {

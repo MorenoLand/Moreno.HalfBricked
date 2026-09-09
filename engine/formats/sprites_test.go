@@ -29,3 +29,13 @@ func TestParseSpritesKeepsAnimationMetadata(t *testing.T) {
 		t.Fatalf("unexpected animation order: %+v", animation)
 	}
 }
+
+func TestParseSpritesAcceptsReferenceCommentSeparators(t *testing.T) {
+	catalog, err := ParseSprites(strings.NewReader(`<Sprites><!-- ------------------------------------------- PLAYER ---------------------------------------------------------- --><Sprite name="characters/gangster"><Anim name="Idle" texture="Textures/Characters/gangster_SD" numFrames="4" numAngles="5" fps="8" loop="1"/></Sprite></Sprites>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := catalog.Find("characters/gangster"); !ok {
+		t.Fatal("gangster definition missing")
+	}
+}
