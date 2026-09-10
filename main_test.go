@@ -18,3 +18,20 @@ func TestPortalCellMatchesNativeBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
+	for _, test := range []struct {
+		angle int
+		dx    float64
+		dy    float64
+	}{
+		{0, 0, 1},
+		{4, 1, 0},
+		{8, 0, -1},
+	} {
+		dx, dy := barryAimDirection(test.angle, false)
+		if dx < test.dx-.001 || dx > test.dx+.001 || dy < test.dy-.001 || dy > test.dy+.001 {
+			t.Fatalf("barryAimDirection(%d)=(%.3f,%.3f), want (%.3f,%.3f)", test.angle, dx, dy, test.dx, test.dy)
+		}
+	}
+}

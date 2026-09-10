@@ -78,6 +78,11 @@ type bullet struct {
 	vx, vy float64
 	life   float64
 	angle  float64
+	kind   string
+}
+
+type explosionState struct {
+	x, y, age float64
 }
 
 type portalState struct {
@@ -145,6 +150,8 @@ type playState struct {
 	scriptThumbStickFree                                   [2]bool
 	scriptThumbStickX, scriptThumbStickY                   [2]float64
 	scriptSecondaryEnabled                                 bool
+	secondaryButtonDown, secondaryButtonJustPressed        bool
+	secondaryPointerDown                                   bool
 	scriptCollideZombies                                   bool
 	scriptRuntime                                          *scripting.Runtime
 	scriptWaitRemaining                                    float64
@@ -184,6 +191,7 @@ type playState struct {
 	multiplier                                             int
 	portals                                                []portalState
 	bloodPops                                              []bloodPop
+	explosions                                             []explosionState
 	hudVisible                                             bool
 	dialogue                                               []dialogueLine
 	dialogueIndex                                          int
@@ -285,6 +293,10 @@ func (a *app) Update() error {
 		return nil
 	}
 	if a.play != nil {
+		pointerX, pointerY := a.pointer()
+		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryPointerDown = a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {
 				a.play.paused = false
@@ -543,6 +555,38 @@ func (a *app) setCaptureState(state string) error {
 		a.play.hudVisible = true
 		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet", alpha: 1}}
 		a.play.fire(1, 0)
+		return nil
+	case "play-grenade":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.grenades = 1
+		a.play.zombies = []zombieState{{x: a.play.x, y: a.play.y + 140, speed: 0, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", alpha: 1}}
+		a.play.fireSecondary(0, 1)
+		return nil
+	case "play-pickup":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x + 64, Y: a.play.y})
+		return nil
+	case "play-secondary":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.grenades = 1
 		return nil
 	case "play-portal":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
@@ -1335,6 +1379,9 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 			}
 		}
 		a.drawScriptEntities(target, false)
+		for _, explosion := range a.play.explosions {
+			a.drawExplosion(target, explosion)
+		}
 	})
 	a.drawScriptFade(screen)
 	a.drawPlayControls(screen)
@@ -1616,22 +1663,52 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 	if a.play == nil || len(a.play.bullets) == 0 {
 		return
 	}
-	bulletImg, err := a.Texture("Common0/Textures/bullet_SD")
-	if err != nil {
-		return
-	}
-	texW, texH := float64(bulletImg.Bounds().Dx()), float64(bulletImg.Bounds().Dy())
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.bullets {
+		textureName := "Common0/Textures/bullet_SD"
+		scale := zoom
+		if b.kind == "grenade" {
+			textureName = "Common0/Textures/grenade_SD"
+			scale *= 2
+		}
+		bulletImg, err := a.Texture(textureName)
+		if err != nil {
+			continue
+		}
+		texW, texH := float64(bulletImg.Bounds().Dx()), float64(bulletImg.Bounds().Dy())
 		sx := (b.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 		sy := (b.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-texW/2, -texH/2)
 		options.GeoM.Rotate(b.angle)
-		options.GeoM.Scale(zoom, zoom)
+		options.GeoM.Scale(scale, scale)
 		options.GeoM.Translate(sx, sy)
 		a.drawImage(screen, bulletImg, options)
 	}
+}
+func (a *app) drawExplosion(screen *ebiten.Image, explosion explosionState) {
+	texture, err := a.Texture("Common0/Textures/explosion2_SD")
+	if err != nil {
+		return
+	}
+	const frames = 4
+	cellWidth := texture.Bounds().Dx() / frames
+	cellHeight := texture.Bounds().Dy()
+	frame := int(explosion.age / .05)
+	if cellWidth <= 0 || cellHeight <= 0 || frame < 0 || frame >= frames {
+		return
+	}
+	zoom := a.play.world.Zoom
+	if zoom <= 0 {
+		zoom = 1
+	}
+	screenX := (explosion.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
+	screenY := (explosion.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
+	options.GeoM.Scale(zoom, zoom)
+	options.GeoM.Translate(screenX, screenY)
+	a.drawImage(screen, texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image), options)
 }
 func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle {
 	x0 := int(math.Round(float64(col) * float64(texW) / float64(numCols)))
@@ -1970,6 +2047,13 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 		a.drawImage(screen, image, options)
 	}
 }
+func (p *playState) secondaryButtonContains(x, y float64) bool {
+	buttonX, buttonY := 416.0, 208.0
+	if p.rightBaseX > 0 && p.rightBaseY > 0 {
+		buttonX, buttonY = p.rightBaseX, p.rightBaseY-48
+	}
+	return x >= buttonX-32 && x <= buttonX+32 && y >= buttonY-16 && y <= buttonY+16
+}
 func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflectX, deflectY float64) {
 	if image, err := a.Texture("Common0/Textures/Analog_Back_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
@@ -2226,6 +2310,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.updateZombies()
 	p.updatePortals()
 	p.updateBloodPops()
+	p.updateExplosions()
 	p.updatePickups()
 
 	const dt = 1.0 / 60.0
@@ -2236,6 +2321,9 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		b.y += b.vy * dt
 		b.life -= dt
 		if b.life <= 0 || p.isSolid(b.x, b.y) {
+			if b.kind == "grenade" {
+				p.detonateGrenade(b.x, b.y)
+			}
 			continue
 		}
 		hit := false
@@ -2245,6 +2333,11 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			}
 			if !bulletHitsZombie(previousX, previousY, b.x, b.y, p.zombies[index]) {
 				continue
+			}
+			if b.kind == "grenade" {
+				p.detonateGrenade(b.x, b.y)
+				hit = true
+				break
 			}
 			p.zombies[index].health -= 500
 			p.zombies[index].hitFlash = zombieHitFlashDuration
@@ -2282,7 +2375,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	} else if !pointerDown {
 		p.stick = 0
 		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
-	} else if p.stick == 0 && pointerJustPressed && !inPauseBtn {
+	} else if p.stick == 0 && pointerJustPressed && !inPauseBtn && !p.secondaryPointerDown {
 		if pointerX < logicalWidth/2 {
 			p.stick = 1
 			p.leftBaseX, p.leftBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
@@ -2319,7 +2412,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			fired = p.fire(p.rightDeflectX, p.rightDeflectY)
 		}
 	}
-	if !mobile {
+	if !mobile && p.shootControl && !p.secondaryPointerDown {
 		worldX := (float64(pointerX)-p.world.ViewportX)/p.world.Zoom + p.world.CameraX
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		aimDX := worldX - p.x
@@ -2327,10 +2420,14 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		if math.Hypot(aimDX, aimDY) > .001 {
 			p.angle, p.flipX = barryDirection(aimDX, aimDY)
 		}
-		firing := (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn
+		firing := (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn && !p.secondaryPointerDown
 		if p.shootControl && firing && p.shootCooldown <= 0 {
 			fired = p.fire(aimDX, aimDY)
 		}
+	}
+	if p.shootControl && p.grenades > 0 && p.secondaryButtonJustPressed && p.shootCooldown <= 0 {
+		dx, dy := barryAimDirection(p.angle, p.flipX)
+		fired = p.fireSecondary(dx, dy)
 	}
 	if !p.moveControl {
 		dx, dy = 0, 0
@@ -2607,8 +2704,12 @@ func (p *playState) updateZombies() {
 		distance := math.Hypot(dx, dy)
 		zombieRadius := zombieCollisionRadius(*zombie)
 		collisionDistance := playerCollisionRadius + zombieRadius
-		if distance > collisionDistance {
-			step := math.Min(zombie.speed*dt, distance-collisionDistance)
+		speed := zombie.speed
+		if entity != nil && entity.walking {
+			speed = entity.speed
+		}
+		if distance > collisionDistance && speed > 0 {
+			step := math.Min(speed*dt, distance-collisionDistance)
 			if distance > 0 {
 				candidateX := zombie.x + dx/distance*step
 				candidateY := zombie.y + dy/distance*step
@@ -2662,6 +2763,16 @@ func (p *playState) updateBloodPops() {
 		}
 	}
 	p.bloodPops = active
+}
+func (p *playState) updateExplosions() {
+	active := p.explosions[:0]
+	for _, explosion := range p.explosions {
+		explosion.age += 1.0 / 60.0
+		if explosion.age < .2 {
+			active = append(active, explosion)
+		}
+	}
+	p.explosions = active
 }
 
 func zombieCollisionRadius(zombie zombieState) float64 {
@@ -2737,6 +2848,37 @@ func (p *playState) fire(dx, dy float64) bool {
 	p.shootCooldown = p.weapon.RateOfFire
 	return true
 }
+func (p *playState) fireSecondary(dx, dy float64) bool {
+	weapon, ok := p.weapons.Find("GRENADE")
+	if !ok || p.grenades <= 0 || weapon.Speed <= 0 || weapon.Life <= 0 || weapon.RateOfFire <= 0 {
+		return false
+	}
+	dist := math.Hypot(dx, dy)
+	if dist < .0001 {
+		return false
+	}
+	dirX, dirY := dx/dist, dy/dist
+	p.bullets = append(p.bullets, bullet{x: p.x, y: p.y, vx: dirX * weapon.Speed, vy: dirY * weapon.Speed, life: weapon.Life, angle: math.Atan2(dirY, dirX) + math.Pi/2, kind: "grenade"})
+	p.grenades--
+	p.shootCooldown = weapon.RateOfFire
+	return true
+}
+func (p *playState) detonateGrenade(x, y float64) {
+	p.explosions = append(p.explosions, explosionState{x: x, y: y})
+	const radius = 64.0
+	for index := range p.zombies {
+		zombie := &p.zombies[index]
+		if zombie.health <= 0 || zombie.dying || math.Hypot(zombie.x-x, zombie.y-y) > radius+zombieCollisionRadius(*zombie) {
+			continue
+		}
+		zombie.health -= 500
+		zombie.hitFlash = zombieHitFlashDuration
+		if zombie.health <= 0 {
+			zombie.dying = true
+			zombie.deathAge = 0
+		}
+	}
+}
 
 func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
 	column, flipX := barryDirection(dx, dy)
@@ -2786,6 +2928,19 @@ func barryDirection(dx, dy float64) (int, bool) {
 		col = 8
 	}
 	return col, flipX
+}
+func barryAimDirection(angle int, flipX bool) (float64, float64) {
+	if angle < 0 {
+		angle = 0
+	} else if angle > 8 {
+		angle = 8
+	}
+	radians := float64(4-angle) * math.Pi / 8
+	dx, dy := math.Cos(radians), math.Sin(radians)
+	if flipX {
+		dx = -dx
+	}
+	return dx, dy
 }
 func (p *playState) centerCamera() {
 	tileSize := p.tileSize

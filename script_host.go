@@ -679,7 +679,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptSecondaryEnabled = enabled
 		return scripting.CallResult{}, err
 	case "IsSecondaryButtonDown":
-		return scriptValues(ebiten.IsKeyPressed(ebiten.KeyQ)), nil
+		return scriptValues(h.play.secondaryButtonDown), nil
 	case "SetAllowThumbsticksDuringScripts":
 		allowed, err := scriptBool(args, 0)
 		h.play.scriptAllowThumbsticks = allowed
@@ -750,12 +750,38 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		zombie.deathAge = 0
 		return scripting.CallResult{}, nil
 	case "FireGun":
-		if len(args) > 1 {
-			return scripting.CallResult{}, fmt.Errorf("FireGun secondary behavior is unresolved")
+		primary := true
+		if len(args) > 0 {
+			value, err := scriptBool(args, 0)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+			primary = value
 		}
-		dx, dy := math.Cos(float64(h.play.angle)*math.Pi/4), math.Sin(float64(h.play.angle)*math.Pi/4)
+		secondary := false
+		if len(args) > 1 {
+			primarySlot, err := scriptBool(args, 1)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+			secondary = !primarySlot
+		}
+		if !primary {
+			return scripting.CallResult{}, nil
+		}
+		dx, dy := barryAimDirection(h.play.angle, h.play.flipX)
 		if h.play.scriptHasAim {
 			dx, dy = h.play.scriptAimX-h.play.x, h.play.scriptAimY-h.play.y
+		}
+		if secondary {
+			if h.play.fireSecondary(dx, dy) {
+				if weapon, ok := h.play.weapons.Find("GRENADE"); ok {
+					if path := h.app.scriptSoundPath(weapon.SFXShoot); path != "" {
+						h.app.sound.Play(path, .8)
+					}
+				}
+			}
+			return scripting.CallResult{}, nil
 		}
 		if h.play.fire(dx, dy) {
 			if path := h.app.scriptSoundPath(h.play.weapon.SFXShoot); path != "" {
@@ -804,15 +830,12 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 	if err != nil {
 		return scripting.CallResult{}, err
 	}
-	speed := 70.0
+	speed := -1.0
 	if len(args) > 3 {
 		speed, err = scriptNumber(args, 3)
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-	}
-	if speed <= 0 {
-		speed = 70
 	}
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
@@ -1266,6 +1289,12 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 			rows = animation.Frames
 		}
 	}
+	if entity.kind == "pickup" {
+		columns, rows = 1, 1
+		if strings.EqualFold(entity.texture, "p_grenade") {
+			texturePath, columns = "Common0/Textures/Weapons_Secondary_SD", 8
+		}
+	}
 	texture, err := a.Texture(texturePath)
 	if err != nil {
 		return
@@ -1273,6 +1302,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	col, frame := entity.angle, entity.frame
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0
+		if strings.EqualFold(entity.texture, "p_grenade") {
+			columns = 8
+		}
 	}
 	if col < 0 {
 		col = 0
