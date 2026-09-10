@@ -113,6 +113,7 @@ type zombieState struct {
 	fps           float64
 	hitFlash      float64
 	invulnerable  bool
+	spawnAway     bool
 	dying         bool
 	deathAge      float64
 }
@@ -662,6 +663,25 @@ func (a *app) setCaptureState(state string) error {
 				a.play.spawnZombie(a.play.world.Level.Waves[0].Spawners[0], 0)
 			}
 		}
+		return nil
+	case "play-zombie-portal":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		id := a.play.scriptNextEntity
+		a.play.scriptNextEntity++
+		zombieX, zombieY := a.play.x+120, a.play.y
+		a.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "girlzombie", x: zombieX, y: zombieY, scaleX: 1, scaleY: 1, alpha: 1, texture: "girlzombiesheet", speed: 60}
+		a.play.zombies = []zombieState{{x: zombieX, y: zombieY, speed: 60, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", scriptID: id, alpha: 1, fps: a.play.spriteFPS("girlzombiesheet", "")}}
+		host := &playScriptHost{app: a, play: a.play}
+		if _, err := host.Call("WalkZombieTo", []scripting.Value{id, a.play.x, a.play.y, 20}); err != nil {
+			return err
+		}
+		a.play.addPortal(a.play.x, a.play.y)
 		return nil
 	case "debug-viewer":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
@@ -1663,6 +1683,12 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 				break
 			}
 			lines = append(lines, fmt.Sprintf("portal%d %.1f,%.1f age %.2f size %.1f frame %d timer %.0f", index, portal.x, portal.y, portal.age, portal.size, portal.frame, portal.animationTimer))
+		}
+		if len(a.play.zombies) > 0 {
+			zombie := a.play.zombies[0]
+			entity := a.play.scriptEntities[zombie.scriptID]
+			walking := entity != nil && entity.walking
+			lines = append(lines, fmt.Sprintf("zombie0 %.1f,%.1f health %.0f walk %t away %t", zombie.x, zombie.y, zombie.health, walking, zombie.spawnAway))
 		}
 		if a.play.scriptRuntime != nil {
 			lines = append(lines, fmt.Sprintf("script status %d line %d last %s", a.play.scriptRuntime.Status(), a.play.scriptRuntime.CurrentLine(), a.play.scriptLastCallback), fmt.Sprintf("wait %.1f active %t starts %d", a.play.scriptWaitRemaining, a.play.scriptWaitActive, a.play.scriptWaitStarts))
@@ -2769,6 +2795,9 @@ func (p *playState) updateZombies() {
 			zombie.deathAge += dt
 			continue
 		}
+		if zombie.spawnAway || zombie.health <= 0 {
+			continue
+		}
 		targetX, targetY := p.x, p.y
 		var entity *scriptEntity
 		if zombie.scriptID != 0 {
@@ -2784,11 +2813,14 @@ func (p *playState) updateZombies() {
 		zombieRadius := zombieCollisionRadius(*zombie)
 		collisionDistance := playerCollisionRadius + zombieRadius
 		speed := zombie.speed
+		stopDistance := collisionDistance
 		if entity != nil && entity.walking {
-			speed = entity.speed
+			stopDistance = entity.targetRange
 		}
-		if distance > collisionDistance && speed > 0 {
-			step := math.Min(speed*dt, distance-collisionDistance)
+		if entity != nil && entity.walking && distance <= stopDistance {
+			entity.walking = false
+		} else if distance > stopDistance && speed > 0 {
+			step := math.Min(speed*dt, distance-stopDistance)
 			if distance > 0 {
 				candidateX := zombie.x + dx/distance*step
 				candidateY := zombie.y + dy/distance*step
@@ -2802,12 +2834,8 @@ func (p *playState) updateZombies() {
 				}
 				zombie.x, zombie.y = candidateX, candidateY
 			}
-		} else {
-			if entity != nil && entity.walking {
-				entity.walking = false
-			} else {
-				p.health = math.Max(0, p.health-dt*.08)
-			}
+		} else if entity == nil || !entity.walking {
+			p.health = math.Max(0, p.health-dt*.08)
 		}
 		if entity != nil {
 			entity.x, entity.y = zombie.x, zombie.y
@@ -2884,6 +2912,9 @@ func (p *playState) zombieCollisionDisplacement(x, y, radius float64) (float64, 
 	}
 	bestX, bestY, bestPenetration := 0.0, 0.0, 0.0
 	for _, zombie := range p.zombies {
+		if zombie.spawnAway {
+			continue
+		}
 		if zombie.dying {
 			continue
 		}
@@ -3253,7 +3284,7 @@ func main() {
 	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, play-level:<manifest-id>, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()

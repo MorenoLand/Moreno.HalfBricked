@@ -37,6 +37,7 @@ type scriptEntity struct {
 	rotationSet             bool
 	animation, frame        int
 	targetX, targetY, speed float64
+	targetRange             float64
 	walking                 bool
 	playing                 bool
 	frameTime               float64
@@ -318,7 +319,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		speed, err := scriptNumber(args, 3)
+		rangeCheck, err := scriptNumber(args, 3)
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
@@ -326,7 +327,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if entity == nil {
 			return scripting.CallResult{}, fmt.Errorf("entity %d not found", id)
 		}
-		entity.targetX, entity.targetY, entity.speed, entity.walking = x, y, speed, true
+		entity.targetX, entity.targetY, entity.targetRange, entity.walking = x, y, math.Abs(rangeCheck), true
 		return scripting.CallResult{}, nil
 	case "SpawnAwayZombie":
 		id, err := scriptID(args, 0)
@@ -338,6 +339,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, fmt.Errorf("entity %d not found", id)
 		}
 		entity.walking = false
+		if zombie := h.findZombie(id); zombie != nil {
+			zombie.health = 0
+			zombie.spawnAway = true
+			zombie.dying = false
+		}
 		return scripting.CallResult{}, nil
 	case "SetZombieTarget":
 		x, err := scriptNumber(args, 0)

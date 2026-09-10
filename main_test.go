@@ -1,9 +1,12 @@
 package main
 
 import (
+	"math"
 	"testing"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 )
 
 func TestPortalCellMatchesNativeBounds(t *testing.T) {
@@ -54,6 +57,42 @@ func TestPortalUsesNativeAnimationTimer(t *testing.T) {
 	play.updatePortals()
 	if play.portals[0].frame != 1 || play.portals[0].animationTimer != 100 {
 		t.Fatalf("portal after native frame advance = frame %d timer %.1f, want frame 1 timer 100", play.portals[0].frame, play.portals[0].animationTimer)
+	}
+}
+
+func TestWalkZombieToUsesNativeArrivalRange(t *testing.T) {
+	play := &playState{
+		world:          &viewer.Viewer{Level: formats.Level{Width: 1, Height: 1, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {math.MaxUint32}}}},
+		x:              0,
+		y:              0,
+		scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie", speed: 60}},
+		zombies:        []zombieState{{x: 85, y: 0, speed: 60, health: 100, size: formats.Vec2{X: 32, Y: 32}, scriptID: 7}},
+	}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("WalkZombieTo", []scripting.Value{7, 100, 0, 20}); err != nil {
+		t.Fatal(err)
+	}
+	entity := play.scriptEntities[7]
+	if entity.targetRange != 20 || !entity.walking {
+		t.Fatalf("WalkZombieTo state = range %.1f walking %t, want range 20 walking true", entity.targetRange, entity.walking)
+	}
+	play.updateZombies()
+	if entity.walking {
+		t.Fatal("WalkZombieTo remained active inside native arrival range")
+	}
+	if play.zombies[0].x != 85 || play.zombies[0].y != 0 {
+		t.Fatalf("zombie moved inside native arrival range to (%.1f,%.1f), want unchanged (85,0)", play.zombies[0].x, play.zombies[0].y)
+	}
+}
+
+func TestSpawnAwayZombieUsesNativeAwayState(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 7, health: 100}}, scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie", walking: true}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SpawnAwayZombie", []scripting.Value{7}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.zombies[0].spawnAway || play.zombies[0].health != 0 || play.zombies[0].dying || play.scriptEntities[7].walking {
+		t.Fatalf("SpawnAwayZombie state = %#v, want away health0 non-dying and not walking", play.zombies[0])
 	}
 }
 
