@@ -593,6 +593,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		return nil
@@ -601,6 +602,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.fire(1, 0)
@@ -610,16 +612,34 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet", alpha: 1}}
 		a.play.fire(1, 0)
 		return nil
+	case "play-zombie-death":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		id := a.play.scriptNextEntity
+		a.play.scriptNextEntity++
+		a.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "girlzombie", x: a.play.x + 96, y: a.play.y, scaleX: 1, scaleY: 1, alpha: 1, texture: "girlzombiesheet"}
+		a.play.zombies = []zombieState{{x: a.play.x + 96, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", scriptID: id, alpha: 1, fps: a.play.spriteFPS("girlzombiesheet", "")}}
+		host := &playScriptHost{app: a, play: a.play}
+		_, err := host.Call("KillZombie", []scripting.Value{id})
+		return err
 	case "play-grenade":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
@@ -632,6 +652,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
@@ -642,6 +663,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
@@ -652,6 +674,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
@@ -669,6 +692,7 @@ func (a *app) setCaptureState(state string) error {
 		if err := a.openPlay(); err != nil {
 			return err
 		}
+		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
@@ -3284,7 +3308,7 @@ func main() {
 	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
