@@ -87,8 +87,9 @@ type explosionState struct {
 }
 
 type portalState struct {
-	x, y, age, size float64
-	cellX, cellY    int
+	x, y, age, size     float64
+	cellX, cellY, frame int
+	animationTimer      float64
 }
 
 type bloodPop struct {
@@ -646,19 +647,18 @@ func (a *app) setCaptureState(state string) error {
 		a.play.grenades = 1
 		return nil
 	case "play-portal":
-		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
 			return err
 		}
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
 		if len(a.play.world.Level.Waves) > 0 && len(a.play.world.Level.Waves[0].Spawners) > 0 {
 			points := a.play.spawnPoints(a.play.world.Level.Waves[0].Spawners[0].Index)
 			if len(points) > 0 {
-				playerX, playerY := a.play.x, a.play.y
 				a.play.x, a.play.y = points[0].X, points[0].Y
 				a.play.centerCamera()
-				a.play.x, a.play.y = playerX, playerY
 				a.play.spawnZombie(a.play.world.Level.Waves[0].Spawners[0], 0)
 			}
 		}
@@ -1658,6 +1658,12 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 			waveCount = len(a.play.world.Level.Waves)
 		}
 		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals)), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
+		for index, portal := range a.play.portals {
+			if index >= 3 {
+				break
+			}
+			lines = append(lines, fmt.Sprintf("portal%d %.1f,%.1f age %.2f size %.1f frame %d timer %.0f", index, portal.x, portal.y, portal.age, portal.size, portal.frame, portal.animationTimer))
+		}
 		if a.play.scriptRuntime != nil {
 			lines = append(lines, fmt.Sprintf("script status %d line %d last %s", a.play.scriptRuntime.Status(), a.play.scriptRuntime.CurrentLine(), a.play.scriptLastCallback), fmt.Sprintf("wait %.1f active %t starts %d", a.play.scriptWaitRemaining, a.play.scriptWaitActive, a.play.scriptWaitStarts))
 		}
@@ -1890,7 +1896,10 @@ func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
 	if err != nil {
 		return
 	}
-	frame := int(math.Floor(portal.age*10)) % 4
+	frame := portal.frame % 4
+	if frame < 0 {
+		frame += 4
+	}
 	source := texture.SubImage(image.Rect(frame*128, 0, frame*128+128, 128)).(*ebiten.Image)
 	screenX := (portal.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (portal.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
@@ -2675,7 +2684,7 @@ func (p *playState) addPortal(x, y float64) {
 		p.portals[index].age = 0
 		return
 	}
-	p.portals = append(p.portals, portalState{x: x, y: y, cellX: cellX, cellY: cellY})
+	p.portals = append(p.portals, portalState{x: x, y: y, cellX: cellX, cellY: cellY, animationTimer: 100})
 }
 
 func portalCell(x, y float64) (int, int) {
@@ -2815,11 +2824,25 @@ func (p *playState) updateZombies() {
 }
 
 func (p *playState) updatePortals() {
+	const portalLifetime = 2.0
+	const portalCloseRemaining = -0.6
+	const portalRemoveRemaining = -1.0
 	active := p.portals[:0]
 	for _, portal := range p.portals {
 		portal.age += 1.0 / 60.0
-		portal.size += (140 - portal.size) * .1
-		if portal.age < 2.0 {
+		if portal.animationTimer < 1 {
+			portal.frame = (portal.frame + 1) % 4
+			portal.animationTimer = 100
+		} else {
+			portal.animationTimer = math.Trunc(portal.animationTimer - 1000.0/60.0)
+		}
+		remaining := portalLifetime - portal.age
+		targetSize := 140.0
+		if remaining < portalCloseRemaining {
+			targetSize = 0
+		}
+		portal.size += (targetSize - portal.size) * .1
+		if remaining >= portalRemoveRemaining {
 			active = append(active, portal)
 		}
 	}

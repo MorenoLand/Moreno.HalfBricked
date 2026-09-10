@@ -23,6 +23,40 @@ func TestPortalCellMatchesNativeBounds(t *testing.T) {
 	}
 }
 
+func TestPortalUsesNativeCloseAndRemovalCadence(t *testing.T) {
+	play := &playState{portals: []portalState{{age: 2.0, size: 140, animationTimer: 100}}}
+	for frame := 0; frame < 36; frame++ {
+		play.updatePortals()
+	}
+	if len(play.portals) != 1 || play.portals[0].size != 140 {
+		t.Fatalf("portal at close threshold = count %d size %.3f, want count 1 size 140", len(play.portals), play.portals[0].size)
+	}
+	play.updatePortals()
+	if len(play.portals) != 1 || play.portals[0].size >= 140 {
+		t.Fatalf("portal after native close start = count %d size %.3f, want count 1 and shrinking size", len(play.portals), play.portals[0].size)
+	}
+	for len(play.portals) > 0 {
+		play.updatePortals()
+	}
+	if len(play.portals) != 0 {
+		t.Fatalf("portal slice after removal = %#v, want empty", play.portals)
+	}
+}
+
+func TestPortalUsesNativeAnimationTimer(t *testing.T) {
+	play := &playState{portals: []portalState{{animationTimer: 100}}}
+	for frame := 0; frame < 6; frame++ {
+		play.updatePortals()
+	}
+	if play.portals[0].frame != 0 || play.portals[0].animationTimer != -1 {
+		t.Fatalf("portal after six native timer ticks = frame %d timer %.1f, want frame 0 timer -1", play.portals[0].frame, play.portals[0].animationTimer)
+	}
+	play.updatePortals()
+	if play.portals[0].frame != 1 || play.portals[0].animationTimer != 100 {
+		t.Fatalf("portal after native frame advance = frame %d timer %.1f, want frame 1 timer 100", play.portals[0].frame, play.portals[0].animationTimer)
+	}
+}
+
 func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
 	for _, test := range []struct {
 		angle int
