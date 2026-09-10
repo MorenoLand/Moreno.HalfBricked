@@ -75,3 +75,28 @@ func TestSetEntityRotationPreservesScriptFacing(t *testing.T) {
 		t.Fatalf("zombie rotation state = angle:%d flipX:%t, want angle:4 flipX:true", got.angle, got.flipX)
 	}
 }
+
+func TestMakeZombieInvulnerableSetsDamageGate(t *testing.T) {
+	play := &playState{
+		zombies:        []zombieState{{scriptID: 7, health: 100}},
+		scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie"}},
+	}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("MakeZombieInvulnerable", []scripting.Value{7, true}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.zombies[0].invulnerable {
+		t.Fatal("zombie invulnerability was not enabled")
+	}
+}
+
+func TestInvulnerableZombieIgnoresGrenadeDamage(t *testing.T) {
+	play := &playState{zombies: []zombieState{{x: 0, y: 0, health: 100, invulnerable: true}, {x: 64, y: 0, health: 100}}}
+	play.detonateGrenade(0, 0)
+	if got := play.zombies[0].health; got != 100 {
+		t.Fatalf("invulnerable zombie health = %.1f, want 100", got)
+	}
+	if got := play.zombies[1].health; got >= 100 {
+		t.Fatalf("normal zombie health = %.1f, want damage", got)
+	}
+}

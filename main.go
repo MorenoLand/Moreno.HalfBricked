@@ -110,6 +110,7 @@ type zombieState struct {
 	alpha         float64
 	fps           float64
 	hitFlash      float64
+	invulnerable  bool
 	dying         bool
 	deathAge      float64
 }
@@ -511,9 +512,50 @@ func (a *app) captureState() string {
 	}
 }
 
+func (a *app) selectCaptureLevel(id string) error {
+	var target formats.LevelInfo
+	found := false
+	for _, item := range a.levels {
+		if strings.EqualFold(item.ID, strings.TrimSpace(id)) {
+			target, found = item, true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("capture level %q not found", id)
+	}
+	a.mode = 0
+	if hasLevelFlag(target, "SURVIVAL") {
+		a.mode = 1
+	}
+	a.world = -1
+	for index, world := range a.worlds() {
+		if world == target.WorldIndex {
+			a.world = index
+			break
+		}
+	}
+	if a.world < 0 {
+		return fmt.Errorf("capture level %q has no world entry", id)
+	}
+	a.level = -1
+	for index, item := range a.filteredLevels() {
+		if strings.EqualFold(item.ID, target.ID) {
+			a.level = index
+			break
+		}
+	}
+	if a.level < 0 {
+		return fmt.Errorf("capture level %q is not in the selected mode", id)
+	}
+	a.titleScreen, a.page = false, 2
+	return nil
+}
+
 func (a *app) setCaptureState(state string) error {
 	a.startupFrames = 0
-	switch strings.ToLower(strings.TrimSpace(state)) {
+	normalized := strings.TrimSpace(state)
+	switch strings.ToLower(normalized) {
 	case "loading":
 		a.startupFrames = 45
 		a.titleScreen = true
@@ -610,6 +652,13 @@ func (a *app) setCaptureState(state string) error {
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		return a.openViewer()
 	default:
+		const prefix = "play-level:"
+		if strings.HasPrefix(strings.ToLower(normalized), prefix) {
+			if err := a.selectCaptureLevel(normalized[len(prefix):]); err != nil {
+				return err
+			}
+			return a.openPlay()
+		}
 		return fmt.Errorf("unknown capture state %q", state)
 	}
 	return nil
@@ -1595,7 +1644,7 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 		}
 		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals)), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
 		if a.play.scriptRuntime != nil {
-			lines = append(lines, fmt.Sprintf("script status %d line %d last %s", a.play.scriptRuntime.Status(), a.play.scriptRuntime.CurrentLine(), a.play.scriptLastCallback))
+			lines = append(lines, fmt.Sprintf("script status %d line %d last %s", a.play.scriptRuntime.Status(), a.play.scriptRuntime.CurrentLine(), a.play.scriptLastCallback), fmt.Sprintf("wait %.1f active %t starts %d", a.play.scriptWaitRemaining, a.play.scriptWaitActive, a.play.scriptWaitStarts))
 		}
 	}
 	if active != nil {
@@ -2341,6 +2390,10 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				hit = true
 				break
 			}
+			if p.zombies[index].invulnerable {
+				hit = true
+				break
+			}
 			p.zombies[index].health -= 500
 			p.zombies[index].hitFlash = zombieHitFlashDuration
 			if p.zombies[index].health <= 0 {
@@ -2875,6 +2928,9 @@ func (p *playState) detonateGrenade(x, y float64) {
 		if zombie.health <= 0 || zombie.dying || math.Hypot(zombie.x-x, zombie.y-y) > radius+zombieCollisionRadius(*zombie) {
 			continue
 		}
+		if zombie.invulnerable {
+			continue
+		}
 		zombie.health -= 500
 		zombie.hitFlash = zombieHitFlashDuration
 		if zombie.health <= 0 {
@@ -3158,7 +3214,7 @@ func main() {
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()

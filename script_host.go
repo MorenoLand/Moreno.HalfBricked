@@ -751,6 +751,21 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		zombie.dying = true
 		zombie.deathAge = 0
 		return scripting.CallResult{}, nil
+	case "MakeZombieInvulnerable":
+		id, err := scriptID(args, 0)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		value, err := scriptBool(args, 1)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		zombie := h.findZombie(id)
+		if zombie == nil {
+			return scripting.CallResult{}, fmt.Errorf("zombie %d not found", id)
+		}
+		zombie.invulnerable = value
+		return scripting.CallResult{}, nil
 	case "FireGun":
 		primary := true
 		if len(args) > 0 {
