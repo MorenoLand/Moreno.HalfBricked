@@ -1222,7 +1222,9 @@ func (p *playState) collectPickup(name string) {
 	name = strings.ToUpper(strings.TrimSpace(name))
 	switch name {
 	case "P_GRENADE":
-		p.grenades++
+		if weapon, ok := p.weapons.Find("GRENADE"); ok {
+			p.grenades += weapon.Ammo
+		}
 	case "P_HEALTH":
 		p.health = p.maxHealth
 	default:

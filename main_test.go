@@ -96,6 +96,17 @@ func TestSpawnAwayZombieUsesNativeAwayState(t *testing.T) {
 	}
 }
 
+func TestGrenadePickupUsesConfiguredAmmo(t *testing.T) {
+	play := &playState{x: 0, y: 0, weapons: formats.WeaponCatalog{{GunType: "GRENADE", Ammo: 5}}, scriptEntities: map[int]*scriptEntity{3: {id: 3, kind: "pickup", texture: "p_grenade", x: 0, y: 0}}}
+	play.updatePickups()
+	if play.grenades != 5 {
+		t.Fatalf("grenade inventory = %d, want configured ammo 5", play.grenades)
+	}
+	if _, ok := play.scriptEntities[3]; ok {
+		t.Fatal("collected grenade pickup remained in script entities")
+	}
+}
+
 func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
 	for _, test := range []struct {
 		angle int
