@@ -100,3 +100,14 @@ func TestInvulnerableZombieIgnoresGrenadeDamage(t *testing.T) {
 		t.Fatalf("normal zombie health = %.1f, want damage", got)
 	}
 }
+
+func TestGetPlatformMatchesNativeValue(t *testing.T) {
+	host := &playScriptHost{play: &playState{}}
+	result, err := host.Call("GetPlatform", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Values) != 1 || result.Values[0] != 5 {
+		t.Fatalf("GetPlatform() = %#v, want numeric 5", result.Values)
+	}
+}

@@ -621,10 +621,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 	case "SetTask":
 		return scripting.CallResult{}, nil
 	case "GetPlatform":
-		if h.app.mobile {
-			return scriptValues("android"), nil
-		}
-		return scriptValues("windows"), nil
+		return scriptValues(5), nil
 	case "ResetExternal":
 		h.play.scriptText1, h.play.scriptText2, h.play.scriptTextVisible = "", "", false
 		return scripting.CallResult{}, nil
