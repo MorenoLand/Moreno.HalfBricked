@@ -161,6 +161,7 @@ type playState struct {
 	scriptWaitStarts                                       int
 	scriptWalking                                          bool
 	scriptWalkX, scriptWalkY                               float64
+	scriptWalkRange                                        float64
 	scriptLevelToLoad                                      string
 	scriptNextEntity                                       int
 	scriptEntities                                         map[int]*scriptEntity

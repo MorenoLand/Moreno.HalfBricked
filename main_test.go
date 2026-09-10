@@ -134,3 +134,21 @@ func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
 		t.Fatalf("regular DrawText2 state = y %.1f size %.1f, want y 149 size 24", play.scriptText2Y, play.scriptText2Size)
 	}
 }
+
+func TestWalkPlayerToUsesNativeRangeCheck(t *testing.T) {
+	play := &playState{x: 70, y: 0, scriptEntities: map[int]*scriptEntity{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("WalkPlayerTo", []scripting.Value{100, 0, 32}); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptWalkRange != 32 || !play.scriptWalking {
+		t.Fatalf("WalkPlayerTo state = range %.1f walking %t, want range 32 walking true", play.scriptWalkRange, play.scriptWalking)
+	}
+	play.updateScriptWalk()
+	if play.scriptWalking {
+		t.Fatal("WalkPlayerTo remained active inside native range check")
+	}
+	if play.x != 70 || play.y != 0 {
+		t.Fatalf("WalkPlayerTo moved player inside range to (%.1f,%.1f), want unchanged (70,0)", play.x, play.y)
+	}
+}

@@ -262,7 +262,16 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
+		rangeCheck := 2.0
+		if len(args) == 3 {
+			rangeCheck, err = scriptNumber(args, 2)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+			rangeCheck = math.Abs(rangeCheck)
+		}
 		h.play.scriptWalkX, h.play.scriptWalkY, h.play.scriptWalking = x, y, true
+		h.play.scriptWalkRange = rangeCheck
 		return scripting.CallResult{}, nil
 	case "IsPlayerWalking":
 		if h.play.scriptWalking {
@@ -1132,6 +1141,14 @@ func (p *playState) updateScriptWalk() {
 	}
 	dx, dy := p.scriptWalkX-p.x, p.scriptWalkY-p.y
 	distance := math.Hypot(dx, dy)
+	rangeCheck := p.scriptWalkRange
+	if rangeCheck <= 0 {
+		rangeCheck = 2
+	}
+	if distance <= rangeCheck {
+		p.scriptWalking = false
+		return
+	}
 	step := playerBaseSpeed / 60
 	if distance <= step {
 		p.x, p.y, p.scriptWalking = p.scriptWalkX, p.scriptWalkY, false
