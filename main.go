@@ -1942,14 +1942,16 @@ func (a *app) drawWeaponFlare(screen *ebiten.Image, x, y, angle float64) {
 	if err != nil {
 		return
 	}
-	cellWidth := texture.Bounds().Dx() / 2
+	const frames = 4
+	cellWidth := texture.Bounds().Dx() / frames
 	cellHeight := texture.Bounds().Dy()
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
 	}
-	frame := 0
-	if a.play.flare <= .08 {
-		frame = 1
+	phase := math.Mod(math.Max(0, a.play.flare)*2, 1)
+	frame := int(math.Floor(phase * frames))
+	if frame >= frames {
+		frame = frames - 1
 	}
 	source := texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image)
 	flareX := x + 15*math.Cos(angle)
