@@ -37,6 +37,7 @@ type app struct {
 	weapon                               formats.Weapon
 	debug                                bool
 	mobile                               bool
+	silent                               bool
 	titleScreen                          bool
 	unlocked                             map[string]bool
 	weapons                              formats.WeaponCatalog
@@ -166,6 +167,7 @@ type playState struct {
 	scriptTextures                                         map[int]*scriptTexture
 	scriptText1, scriptText2                               string
 	scriptText1X, scriptText1Y, scriptText2X, scriptText2Y float64
+	scriptText1Size, scriptText2Size                       float64
 	scriptTextVisible                                      bool
 	scriptAlpha                                            float64
 	scriptFadeRemaining                                    float64
@@ -207,7 +209,7 @@ const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
 const zombieDeathDelay = .125
 
-func newApp(root string, debug, mobile bool) (*app, error) {
+func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
 	if err != nil {
 		return nil, err
@@ -228,10 +230,22 @@ func newApp(root string, debug, mobile bool) (*app, error) {
 	if !ok {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: engine.NewSoundSystem(pack), images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	var sound *engine.SoundSystem
+	if silent {
+		sound = engine.NewSilentSoundSystem(pack)
+	} else {
+		sound = engine.NewSoundSystem(pack)
+	}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
+}
+func (a *app) playSound(path string, volume float64) {
+	if a == nil || a.silent || a.sound == nil {
+		return
+	}
+	a.sound.Play(path, volume)
 }
 func (a *app) Update() error {
 	if a.capture != nil && a.captureLimit > 0 && a.capture.Frames() >= uint64(a.captureLimit) {
@@ -245,11 +259,11 @@ func (a *app) Update() error {
 	if a.titleCocking {
 		a.titleSoundElapsed += 1.0 / 60.0
 		if a.titleSoundStage == 1 && a.titleSoundElapsed >= 8.0/60.0 {
-			a.sound.Play("audio/sound/sfx/menu_shotgun_cock_2.ogg", .8)
+			a.playSound("audio/sound/sfx/menu_shotgun_cock_2.ogg", .8)
 			a.titleSoundStage = 2
 		}
 		if a.titleSoundStage == 2 && a.titleSoundElapsed >= 16.0/60.0 {
-			a.sound.Play("audio/sound/sfx/menu_shotgun_cock_1.ogg", .8)
+			a.playSound("audio/sound/sfx/menu_shotgun_cock_1.ogg", .8)
 			a.titleSoundStage = 0
 		}
 		if a.titleSoundElapsed >= 32.0/60.0 {
@@ -331,7 +345,7 @@ func (a *app) Update() error {
 		}
 		if a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile) {
 			if path := a.scriptSoundPath(a.play.weapon.SFXShoot); path != "" {
-				a.sound.Play(path, .8)
+				a.playSound(path, .8)
 			}
 		}
 		if a.play.shouldQuit {
@@ -351,22 +365,22 @@ func (a *app) Update() error {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyDown) {
 		a.move(1)
-		a.sound.Play("audio/sound/sfx/menu_move.ogg", .7)
+		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
 		a.move(-1)
-		a.sound.Play("audio/sound/sfx/menu_move.ogg", .7)
+		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
 	if a.page == 2 && inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
 		a.move(-1)
-		a.sound.Play("audio/sound/sfx/menu_move.ogg", .7)
+		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
 	if a.page == 2 && inpututil.IsKeyJustPressed(ebiten.KeyRight) {
 		a.move(1)
-		a.sound.Play("audio/sound/sfx/menu_move.ogg", .7)
+		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) {
-		a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 		if a.page == 0 {
 			return a.beginMenuClick(a.menuSelection)
 		}
@@ -377,18 +391,18 @@ func (a *app) Update() error {
 		if a.page == 0 {
 			if index := a.mainMenuHit(px, py); index >= 0 {
 				a.menuSelection = index
-				a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 				return a.beginMenuClick(index)
 			}
 		} else if a.page == 2 {
 			if mode := a.levelTabAt(px, py); mode >= 0 {
 				a.mode = mode
 				a.level = 0
-				a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 			} else if index := a.levelHit(px, py); index >= 0 {
 				a.level = index
 				if a.levelUnlocked(a.filteredLevels()[index]) {
-					a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+					a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 					return a.activate()
 				}
 			}
@@ -396,7 +410,7 @@ func (a *app) Update() error {
 			index := (py - 96) / 28
 			if index >= 0 && index < len(a.items()) {
 				a.setCursor(index)
-				a.sound.Play("audio/sound/sfx/menu_select.ogg", .8)
+				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 				return a.activate()
 			}
 		}
@@ -3212,13 +3226,14 @@ func main() {
 	assets := flag.String("assets", "data", "generated cache, content directory, or APK")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
+	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
 	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
-	game, err := newApp(*assets, *debug, *mobile)
+	game, err := newApp(*assets, *debug, *mobile, *silent)
 	if err != nil {
 		log.Fatal(err)
 	}

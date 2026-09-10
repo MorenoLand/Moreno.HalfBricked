@@ -111,3 +111,26 @@ func TestGetPlatformMatchesNativeValue(t *testing.T) {
 		t.Fatalf("GetPlatform() = %#v, want numeric 5", result.Values)
 	}
 }
+
+func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
+	play := &playState{}
+	host := &playScriptHost{play: play}
+	if _, err := host.drawScriptText([]scripting.Value{240, 20, "large"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptText1Y != 136 || play.scriptText1Size != 30 {
+		t.Fatalf("default DrawText1 state = y %.1f size %.1f, want y 136 size 30", play.scriptText1Y, play.scriptText1Size)
+	}
+	if _, err := host.drawScriptText([]scripting.Value{240, 123, "large", true, true}, false); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptText1Y != 123 || play.scriptText1Size != 30 {
+		t.Fatalf("large flagged DrawText1 state = y %.1f size %.1f, want y 123 size 30", play.scriptText1Y, play.scriptText1Size)
+	}
+	if _, err := host.drawScriptText([]scripting.Value{240, 149, "small", false}, true); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptText2Y != 149 || play.scriptText2Size != 24 {
+		t.Fatalf("regular DrawText2 state = y %.1f size %.1f, want y 149 size 24", play.scriptText2Y, play.scriptText2Size)
+	}
+}

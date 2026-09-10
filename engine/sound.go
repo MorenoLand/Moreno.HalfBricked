@@ -20,6 +20,14 @@ type SoundSystem struct {
 }
 
 func NewSoundSystem(source SoundSource) *SoundSystem {
+	return newSoundSystem(source, true)
+}
+
+func NewSilentSoundSystem(source SoundSource) *SoundSystem {
+	return newSoundSystem(source, false)
+}
+
+func newSoundSystem(source SoundSource, musicEnabled bool) *SoundSystem {
 	system := &SoundSystem{source: source, cache: map[string][]byte{}}
 	if source == nil {
 		return system
@@ -39,7 +47,9 @@ func NewSoundSystem(source SoundSource) *SoundSystem {
 		return system
 	}
 	system.music.SetVolume(.35)
-	system.music.Play()
+	if musicEnabled {
+		system.music.Play()
+	}
 	return system
 }
 

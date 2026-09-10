@@ -97,12 +97,14 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			}
 		}
 		if path := h.app.scriptSoundPath(name); path != "" {
-			h.app.sound.Play(path, volume)
+			h.app.playSound(path, volume)
 		}
 		return scripting.CallResult{}, nil
 	case "MusicEnabled":
 		enabled, err := scriptBool(args, 0)
-		h.app.sound.MusicEnabled(enabled)
+		if !h.app.silent {
+			h.app.sound.MusicEnabled(enabled)
+		}
 		return scripting.CallResult{}, err
 	case "HUDSetVisible":
 		visible, err := scriptBool(args, 0)
@@ -791,7 +793,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			if h.play.fireSecondary(dx, dy) {
 				if weapon, ok := h.play.weapons.Find("GRENADE"); ok {
 					if path := h.app.scriptSoundPath(weapon.SFXShoot); path != "" {
-						h.app.sound.Play(path, .8)
+						h.app.playSound(path, .8)
 					}
 				}
 			}
@@ -799,7 +801,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		}
 		if h.play.fire(dx, dy) {
 			if path := h.app.scriptSoundPath(h.play.weapon.SFXShoot); path != "" {
-				h.app.sound.Play(path, .8)
+				h.app.playSound(path, .8)
 			}
 		}
 		return scripting.CallResult{}, nil
@@ -1061,10 +1063,33 @@ func (h *playScriptHost) drawScriptText(args []scripting.Value, second bool) (sc
 	if err != nil {
 		return scripting.CallResult{}, err
 	}
+	large := len(args) == 3
+	if len(args) >= 4 {
+		large, err = scriptBool(args, 3)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+	}
+	keepY := false
+	if len(args) == 5 {
+		keepY, err = scriptBool(args, 4)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+	}
+	size := 24.0
+	if large {
+		size = 30
+		if !keepY {
+			y = 136
+		}
+	}
 	if second {
 		h.play.scriptText2, h.play.scriptText2X, h.play.scriptText2Y = text, x, y
+		h.play.scriptText2Size = size
 	} else {
 		h.play.scriptText1, h.play.scriptText1X, h.play.scriptText1Y = text, x, y
+		h.play.scriptText1Size = size
 	}
 	h.play.scriptTextVisible = true
 	return scripting.CallResult{}, nil
@@ -1434,16 +1459,27 @@ func (a *app) drawScriptText(screen *ebiten.Image) {
 		return
 	}
 	for _, item := range []struct {
-		value string
-		x, y  float64
+		value      string
+		x, y, size float64
 	}{
-		{a.play.scriptText1, a.play.scriptText1X, a.play.scriptText1Y},
-		{a.play.scriptText2, a.play.scriptText2X, a.play.scriptText2Y},
+		{a.play.scriptText1, a.play.scriptText1X, a.play.scriptText1Y, a.play.scriptText1Size},
+		{a.play.scriptText2, a.play.scriptText2X, a.play.scriptText2Y, a.play.scriptText2Size},
 	} {
 		if item.value == "" {
 			continue
 		}
+		size := item.size
+		if size <= 0 {
+			size = 24
+		}
 		scale := .5
+		if a.font != nil && a.font.LineHeight > 0 {
+			scale = size / float64(a.font.LineHeight)
+		}
+		width := a.fontTextWidth(item.value, scale)
+		if width > 450 {
+			scale *= 450 / width
+		}
 		a.text(screen, item.value, item.x-a.fontTextWidth(item.value, scale)/2, item.y, scale)
 	}
 }
