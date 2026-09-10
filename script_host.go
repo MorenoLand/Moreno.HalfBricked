@@ -1365,7 +1365,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if entity.kind == "pickup" {
 		columns, rows = 1, 1
 		if strings.EqualFold(entity.texture, "p_grenade") {
-			texturePath, columns = "Common0/Textures/Weapons_Secondary_SD", 8
+			texturePath = "Common0/Textures/grenade_SD"
 		}
 	}
 	texture, err := a.Texture(texturePath)
@@ -1379,9 +1379,6 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0
-		if strings.EqualFold(entity.texture, "p_grenade") {
-			columns = 8
-		}
 	}
 	if col < 0 {
 		col = 0
