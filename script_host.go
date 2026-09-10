@@ -32,8 +32,9 @@ type scriptEntity struct {
 	rotation                float64
 	scaleX, scaleY, alpha   float64
 	texture                 string
-	flipY                   bool
+	flipX, flipY            bool
 	angle                   int
+	rotationSet             bool
 	animation, frame        int
 	targetX, targetY, speed float64
 	walking                 bool
@@ -427,7 +428,8 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, err
 		}
 		entity.rotation = rotation
-		entity.angle, _ = barryDirection(math.Cos(rotation*math.Pi/180), math.Sin(rotation*math.Pi/180))
+		entity.angle, entity.flipX = barryDirection(math.Cos(rotation*math.Pi/180), math.Sin(rotation*math.Pi/180))
+		entity.rotationSet = true
 		if entity.kind == "zombie" {
 			if zombie := h.findZombie(entity.id); zombie != nil {
 				zombie.angle, zombie.flipX = barryDirection(math.Cos(rotation*math.Pi/180), math.Sin(rotation*math.Pi/180))
@@ -1310,7 +1312,11 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if err != nil {
 		return
 	}
-	col, frame := entity.angle, entity.frame
+	angle := clamp(entity.angle, 0, 8)
+	col, frame := 0, entity.frame
+	if columns > 1 {
+		col = int(math.Round(float64(angle) * float64(columns-1) / 8))
+	}
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0
 		if strings.EqualFold(entity.texture, "p_grenade") {
@@ -1349,7 +1355,11 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if entity.flipY {
 		scaleY = -scaleY
 	}
-	options.GeoM.Scale(scaleX, scaleY)
+	if entity.flipX {
+		options.GeoM.Scale(-scaleX, scaleY)
+	} else {
+		options.GeoM.Scale(scaleX, scaleY)
+	}
 	if entity.alpha < 1 {
 		options.ColorScale.ScaleAlpha(float32(math.Max(0, entity.alpha)))
 	}

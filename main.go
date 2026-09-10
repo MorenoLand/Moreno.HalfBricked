@@ -2733,7 +2733,9 @@ func (p *playState) updateZombies() {
 		if entity != nil {
 			entity.x, entity.y = zombie.x, zombie.y
 		}
-		zombie.angle, zombie.flipX = barryDirection(dx, dy)
+		if entity == nil || !entity.rotationSet {
+			zombie.angle, zombie.flipX = barryDirection(dx, dy)
+		}
 		fps := zombie.fps
 		if fps <= 0 {
 			fps = 8

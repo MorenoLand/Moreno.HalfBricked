@@ -57,3 +57,21 @@ func TestSetZombieTextureUsesLoadedNumericSlot(t *testing.T) {
 		t.Fatalf("script entity texture = %q, want loaded slot texture", got)
 	}
 }
+
+func TestSetEntityRotationPreservesScriptFacing(t *testing.T) {
+	play := &playState{
+		zombies:        []zombieState{{scriptID: 7}},
+		scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie"}},
+	}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetEntityRotation", []scripting.Value{7, 180}); err != nil {
+		t.Fatal(err)
+	}
+	entity := play.scriptEntities[7]
+	if !entity.rotationSet || entity.angle != 4 || !entity.flipX {
+		t.Fatalf("script rotation state = set:%t angle:%d flipX:%t, want set:true angle:4 flipX:true", entity.rotationSet, entity.angle, entity.flipX)
+	}
+	if got := play.zombies[0]; got.angle != 4 || !got.flipX {
+		t.Fatalf("zombie rotation state = angle:%d flipX:%t, want angle:4 flipX:true", got.angle, got.flipX)
+	}
+}
