@@ -658,6 +658,17 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x + 64, Y: a.play.y})
 		return nil
+	case "play-pickup-collected":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x, Y: a.play.y})
+		return nil
 	case "play-secondary":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
@@ -3308,7 +3319,7 @@ func main() {
 	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
