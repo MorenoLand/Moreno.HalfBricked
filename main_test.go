@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
+)
 
 func TestPortalCellMatchesNativeBounds(t *testing.T) {
 	for _, test := range []struct {
@@ -33,5 +37,23 @@ func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
 		if dx < test.dx-.001 || dx > test.dx+.001 || dy < test.dy-.001 || dy > test.dy+.001 {
 			t.Fatalf("barryAimDirection(%d)=(%.3f,%.3f), want (%.3f,%.3f)", test.angle, dx, dy, test.dx, test.dy)
 		}
+	}
+}
+
+func TestSetZombieTextureUsesLoadedNumericSlot(t *testing.T) {
+	play := &playState{
+		zombies:        []zombieState{{scriptID: 7, texture: "zombie"}},
+		scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie", texture: "zombie"}},
+		scriptTextures: map[int]*scriptTexture{2: {id: 2, name: "Characters/professoridle"}},
+	}
+	host := &playScriptHost{play: play}
+	if _, err := host.zombieProperty("SetZombieTexture", []scripting.Value{7, 2}); err != nil {
+		t.Fatal(err)
+	}
+	if got := play.zombies[0].texture; got != "Characters/professoridle" {
+		t.Fatalf("zombie texture = %q, want loaded slot texture", got)
+	}
+	if got := play.scriptEntities[7].texture; got != "Characters/professoridle" {
+		t.Fatalf("script entity texture = %q, want loaded slot texture", got)
 	}
 }

@@ -1018,7 +1018,18 @@ func (h *playScriptHost) zombieProperty(name string, args []scripting.Value) (sc
 	case "SetZombieAnimTime":
 		zombie.frame, err = scriptNumber(args, 1)
 	case "SetZombieTexture":
-		zombie.texture, err = scriptString(args, 1)
+		if len(args) > 1 {
+			var textureID int
+			textureID, err = scriptID(args, 1)
+			if err == nil {
+				if texture := h.play.scriptTextures[textureID]; texture != nil && texture.name != "" {
+					zombie.texture = texture.name
+					if entity := h.play.scriptEntities[id]; entity != nil {
+						entity.texture = texture.name
+					}
+				}
+			}
+		}
 	}
 	return scripting.CallResult{}, err
 }
