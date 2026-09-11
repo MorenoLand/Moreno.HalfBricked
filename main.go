@@ -643,6 +643,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
+		a.play.angle, a.play.flipX = barryDirection(1, 0)
 		a.play.fire(1, 0)
 		return nil
 	case "play-combat":
@@ -654,6 +655,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet", alpha: 1}}
+		a.play.angle, a.play.flipX = barryDirection(1, 0)
 		a.play.fire(1, 0)
 		return nil
 	case "play-zombie-death":
