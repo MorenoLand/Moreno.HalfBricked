@@ -228,6 +228,7 @@ const portalOpenRotationSpeed = 1.2
 const portalRotationLerp = .05
 const zombieRenderAnchor = .35
 const nativeZombieDefaultRenderSize = 48.0
+const playerRenderAnchor = 25.0
 
 func nativeZombieRenderSize(size float64) float64 {
 	if size > 0 {
@@ -1845,13 +1846,14 @@ func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle
 	return image.Rect(x0, y0, x1, y1)
 }
 func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int, flipX bool) {
+	renderY := y - playerRenderAnchor*scale
 	bodySheet := "Common0/Textures/Characters/barryidle_SD"
 	if a.play != nil && a.play.moving {
 		bodySheet = "Common0/Textures/Characters/barryrun_SD"
 	}
-	a.drawBarryPart(screen, bodySheet, x, y, scale, frame, angle, flipX)
+	a.drawBarryPart(screen, bodySheet, x, renderY, scale, frame, angle, flipX)
 	if a.play != nil && angle != 8 && a.play.weapon.TextureGun != "" {
-		a.drawBarryPart(screen, commonSDTexture(a.play.weapon.TextureGun), x, y, scale, frame, angle, flipX)
+		a.drawBarryPart(screen, commonSDTexture(a.play.weapon.TextureGun), x, renderY, scale, frame, angle, flipX)
 	}
 }
 

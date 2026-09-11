@@ -230,6 +230,12 @@ func TestZombieRenderAnchorUsesNativeFactor(t *testing.T) {
 	}
 }
 
+func TestPlayerRenderAnchorUsesNativeOffset(t *testing.T) {
+	if playerRenderAnchor != 25 {
+		t.Fatalf("player render anchor = %.1f, want native 25", playerRenderAnchor)
+	}
+}
+
 func TestScriptAnimationStopsOnNonLoopingXMLAnimation(t *testing.T) {
 	play := &playState{
 		sprites:        formats.SpriteCatalog{"test": {Name: "test", Animations: map[string]formats.SpriteAnimation{"idle": {Name: "Idle", Frames: 2, FPS: 60, Loop: false}}, AnimationOrder: []string{"idle"}}},
