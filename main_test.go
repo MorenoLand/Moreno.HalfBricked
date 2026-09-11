@@ -193,6 +193,19 @@ func TestSpawnZombieUsesNativeSpriteIndex(t *testing.T) {
 	}
 }
 
+func TestScriptAnimationStopsOnNonLoopingXMLAnimation(t *testing.T) {
+	play := &playState{
+		sprites:        formats.SpriteCatalog{"test": {Name: "test", Animations: map[string]formats.SpriteAnimation{"idle": {Name: "Idle", Frames: 2, FPS: 60, Loop: false}}, AnimationOrder: []string{"idle"}}},
+		scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "sprite", texture: "test", playing: true}},
+	}
+	play.updateScriptEntities()
+	play.updateScriptEntities()
+	entity := play.scriptEntities[1]
+	if entity.frame != 1 || entity.playing {
+		t.Fatalf("non-looping animation = frame %d playing %t, want frame 1 playing false", entity.frame, entity.playing)
+	}
+}
+
 func TestSetEntityRotationPreservesScriptFacing(t *testing.T) {
 	play := &playState{
 		zombies:        []zombieState{{scriptID: 7}},

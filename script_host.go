@@ -1319,6 +1319,7 @@ func (p *playState) updateScriptEntities() {
 			continue
 		}
 		fps, frames := 8.0, 4
+		loop := true
 		if animation, ok := findSpriteAnimationByIndex(p.sprites, entity.texture, entity.animation); ok {
 			if animation.FPS > 0 {
 				fps = animation.FPS
@@ -1326,11 +1327,22 @@ func (p *playState) updateScriptEntities() {
 			if animation.Frames > 0 {
 				frames = animation.Frames
 			}
+			loop = animation.Loop
 		}
 		entity.frameTime += 1.0 / 60.0
 		for entity.frameTime >= 1.0/fps {
 			entity.frameTime -= 1.0 / fps
-			entity.frame = (entity.frame + 1) % frames
+			if entity.frame+1 >= frames {
+				entity.frame = frames - 1
+				if !loop {
+					entity.frameTime = 0
+					entity.playing = false
+					break
+				}
+				entity.frame = 0
+			} else {
+				entity.frame++
+			}
 		}
 	}
 }
