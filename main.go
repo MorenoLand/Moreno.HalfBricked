@@ -1075,7 +1075,7 @@ func buttonTextRect(row int) (image.Rectangle, bool) {
 	case 0:
 		return image.Rect(0, 0, 128, 32), true
 	case 6:
-		return image.Rect(0, 92, 128, 114), true
+		return image.Rect(0, 96, 128, 112), true
 	case 8:
 		return image.Rect(0, 128, 128, 148), true
 	case 9:

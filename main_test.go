@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image"
 	"math"
 	"testing"
 
@@ -23,6 +24,13 @@ func TestPortalCellMatchesNativeBounds(t *testing.T) {
 		if gotX != test.wantX || gotY != test.wantY {
 			t.Fatalf("portalCell(%.1f,%.1f)=(%d,%d), want (%d,%d)", test.x, test.y, gotX, gotY, test.wantX, test.wantY)
 		}
+	}
+}
+
+func TestButtonTextRectsUseNativeAtlasRows(t *testing.T) {
+	got, ok := buttonTextRect(6)
+	if !ok || got != image.Rect(0, 96, 128, 112) {
+		t.Fatalf("quit text rect = %v, want (0,96)-(128,112)", got)
 	}
 }
 
