@@ -215,6 +215,12 @@ func TestSpawnZombieUsesNativeDefaultRenderSize(t *testing.T) {
 	}
 }
 
+func TestZombieRenderAnchorUsesNativeFactor(t *testing.T) {
+	if zombieRenderAnchor != .35 {
+		t.Fatalf("zombie render anchor = %.2f, want native .35", zombieRenderAnchor)
+	}
+}
+
 func TestScriptAnimationStopsOnNonLoopingXMLAnimation(t *testing.T) {
 	play := &playState{
 		sprites:        formats.SpriteCatalog{"test": {Name: "test", Animations: map[string]formats.SpriteAnimation{"idle": {Name: "Idle", Frames: 2, FPS: 60, Loop: false}}, AnimationOrder: []string{"idle"}}},

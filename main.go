@@ -226,6 +226,7 @@ const zombieDeathDelay = .1
 const portalRotationUnitsPerSecond = 65338.0
 const portalOpenRotationSpeed = 1.2
 const portalRotationLerp = .05
+const zombieRenderAnchor = .35
 
 func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -1884,7 +1885,11 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		scale = 1
 	}
 	screenX := (zombie.x-a.play.world.CameraX)*scale + a.play.world.ViewportX
-	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY
+	renderHeight := zombie.size.Y
+	if renderHeight <= 0 {
+		renderHeight = 48
+	}
+	screenY := (zombie.y-renderHeight*zombieRenderAnchor-a.play.world.CameraY)*scale + a.play.world.ViewportY
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
