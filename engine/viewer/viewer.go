@@ -336,10 +336,7 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 			sourceX0, sourceY0 = float64(column*cellWidth), float64(row*cellHeight)
 			sourceX1, sourceY1 = sourceX0+float64(cellWidth), sourceY0+float64(cellHeight)
 		}
-		if sourceX1 <= sourceX0 || sourceY1 <= sourceY0 {
-			sourceX0, sourceY0 = 0, 0
-			sourceX1, sourceY1 = float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
-		}
+		sourceX0, sourceY0, sourceX1, sourceY1 = propSourceBounds(sourceX0, sourceY0, sourceX1, sourceY1, float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy()))
 		worldWidth := scaleX * float64(v.tileSize())
 		worldHeight := scaleY * float64(v.tileSize())
 		destinationX0 := float32((prop.x-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
@@ -354,6 +351,12 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		vertices := []ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: float32(sourceX0), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: float32(sourceX1), SrcY: float32(sourceY0), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: float32(sourceX0), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: float32(sourceX1), SrcY: float32(sourceY1), ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
 		screen.DrawTriangles(vertices, []uint16{0, 1, 2, 1, 3, 2}, texture, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest})
 	}
+}
+func propSourceBounds(sourceX0, sourceY0, sourceX1, sourceY1, textureWidth, textureHeight float64) (float64, float64, float64, float64) {
+	if sourceX1 == sourceX0 || sourceY1 == sourceY0 {
+		return 0, 0, textureWidth, textureHeight
+	}
+	return sourceX0, sourceY0, sourceX1, sourceY1
 }
 func (v *Viewer) drawGrid(screen *ebiten.Image, tileSize int) {
 	for x := 0; x <= v.Level.Width; x++ {
