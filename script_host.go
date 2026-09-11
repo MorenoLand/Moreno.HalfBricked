@@ -263,7 +263,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		rangeCheck := 2.0
+		rangeCheck := 4.0
 		if len(args) == 3 {
 			rangeCheck, err = scriptNumber(args, 2)
 			if err != nil {
@@ -643,7 +643,29 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptText1, h.play.scriptText2, h.play.scriptTextVisible = "", "", false
 		return scripting.CallResult{}, nil
 	case "CameraShake":
-		return scripting.CallResult{}, fmt.Errorf("CameraShake is not implemented")
+		x, err := scriptNumber(args, 0)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		y, err := scriptNumber(args, 1)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		amount, err := scriptNumber(args, 2)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		duration := 1.0
+		if len(args) == 4 {
+			duration, err = scriptNumber(args, 3)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
+		h.play.shakeX, h.play.shakeY = x, y
+		h.play.shakeAmount, h.play.shakeDuration = amount, duration
+		h.play.shakeActive = true
+		return scriptValues(1), nil
 	case "AimControlActive":
 		if h.play.shootControl {
 			return scriptValues(true), nil
@@ -761,6 +783,9 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			}
 			return scripting.CallResult{}, fmt.Errorf("zombie %d not found", id)
 		}
+		if zombie.health <= 0 {
+			return scripting.CallResult{}, nil
+		}
 		zombie.health = 0
 		zombie.dying = true
 		zombie.deathAge = 0
@@ -839,6 +864,60 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.world.Zoom = zoom
 		h.play.setScriptCamera(x, y)
 		return scripting.CallResult{}, nil
+	case "AddRobotBossZombie":
+		x, err := scriptNumber(args, 0)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		y, err := scriptNumber(args, 1)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		if h.play.scriptEntities == nil {
+			h.play.scriptEntities = map[int]*scriptEntity{}
+		}
+		if h.play.scriptNextEntity <= 0 {
+			h.play.scriptNextEntity = 1
+		}
+		id := h.play.scriptNextEntity
+		h.play.scriptNextEntity++
+		const size, health = 70.0, 40000.0
+		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_robot", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "bigboss", speed: -1}
+		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: -1, health: health, size: formats.Vec2{X: size, Y: size}, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", "")})
+		return scriptValues(id), nil
+	case "SetRobotRage":
+		rage, err := scriptBool(args, 0)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		for index := range h.play.zombies {
+			entity := h.play.scriptEntities[h.play.zombies[index].scriptID]
+			if entity != nil && entity.entityType == "boss_robot" {
+				h.play.zombies[index].bossRage = rage
+			}
+		}
+		return scripting.CallResult{}, nil
+	case "AddWesternBossZombie":
+		x, err := scriptNumber(args, 0)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		y, err := scriptNumber(args, 1)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		if h.play.scriptEntities == nil {
+			h.play.scriptEntities = map[int]*scriptEntity{}
+		}
+		if h.play.scriptNextEntity <= 0 {
+			h.play.scriptNextEntity = 1
+		}
+		id := h.play.scriptNextEntity
+		h.play.scriptNextEntity++
+		const size, health = 60.0, 40000.0
+		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_west", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "maddog", speed: 0}
+		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", "")})
+		return scriptValues(id), nil
 	case "SpawnZombiesAroundPlayer":
 		return scripting.CallResult{}, fmt.Errorf("SpawnZombiesAroundPlayer call shape is unresolved")
 	case "TriggerTutorial":
@@ -1149,7 +1228,7 @@ func (p *playState) updateScriptWalk() {
 	distance := math.Hypot(dx, dy)
 	rangeCheck := p.scriptWalkRange
 	if rangeCheck <= 0 {
-		rangeCheck = 2
+		rangeCheck = 4
 	}
 	if distance <= rangeCheck {
 		p.scriptWalking = false

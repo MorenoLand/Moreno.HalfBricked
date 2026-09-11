@@ -113,6 +113,7 @@ type zombieState struct {
 	fps           float64
 	hitFlash      float64
 	invulnerable  bool
+	bossRage      bool
 	spawnAway     bool
 	dying         bool
 	deathAge      float64
@@ -183,6 +184,8 @@ type playState struct {
 	scriptCameraFollow                                     bool
 	scriptCameraFollowID                                   int
 	scriptCameraFollowOffsetX, scriptCameraFollowOffsetY   float64
+	shakeX, shakeY, shakeAmount, shakeDuration             float64
+	shakeActive                                            bool
 	scriptAimX, scriptAimY                                 float64
 	scriptHasAim                                           bool
 	scriptLastCallback                                     string
@@ -360,7 +363,7 @@ func (a *app) Update() error {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if a.page == 2 {
-			a.page = 0
+			a.leaveLevelSelect()
 		} else if a.page > 0 {
 			a.page--
 		}
@@ -398,7 +401,15 @@ func (a *app) Update() error {
 				return a.beginMenuClick(index)
 			}
 		} else if a.page == 2 {
-			if mode := a.levelTabAt(px, py); mode >= 0 {
+			if action := a.levelActionAt(px, py); action == "back" {
+				a.leaveLevelSelect()
+			} else if action == "play" {
+				levels := a.filteredLevels()
+				if a.level >= 0 && a.level < len(levels) && a.levelUnlocked(levels[a.level]) {
+					a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+					return a.activate()
+				}
+			} else if mode := a.levelTabAt(px, py); mode >= 0 {
 				a.mode = mode
 				a.level = 0
 				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
@@ -437,6 +448,7 @@ func (a *app) Update() error {
 	}
 	return nil
 }
+func (a *app) leaveLevelSelect() { a.page, a.level = 0, 0 }
 func (a *app) mainMenuHit(x, y int) int {
 	for i, button := range mainMenuButtons {
 		dx, dy := float64(x)-button.cx, float64(y)-button.cy
@@ -1302,6 +1314,21 @@ func (a *app) levelTabAt(x, y int) int {
 	}
 	return 1
 }
+func (a *app) levelActionAt(x, y int) string {
+	if shopActionHit(a.variables, "SHOPFRONT_PLAY_ICON_POS_VAR", "SHOPFRONT_PLAY_ICON_WIDTH_VAR", "SHOPFRONT_PLAY_ICON_HEIGHT_VAR", x, y) {
+		return "play"
+	}
+	if shopActionHit(a.variables, "SHOPFRONT_BACK_ICON_NO_GLOBAL_POS_VAR", "SHOPFRONT_BACK_ICON_WIDTH_VAR", "SHOPFRONT_BACK_ICON_HEIGHT_VAR", x, y) {
+		return "back"
+	}
+	return ""
+}
+func shopActionHit(variables formats.FrontendVariables, positionName, widthName, heightName string, x, y int) bool {
+	position, positionOK := variables.Vec2Value(positionName)
+	width, widthOK := variables.FloatValue(widthName)
+	height, heightOK := variables.FloatValue(heightName)
+	return positionOK && widthOK && heightOK && math.Abs(float64(x)-position.X) <= width/2 && math.Abs(float64(y)-position.Y) <= height/2
+}
 func (a *app) levelUnlocked(item formats.LevelInfo) bool { return a.unlocked[item.ID] }
 func hasLevelFlag(item formats.LevelInfo, wanted string) bool {
 	for _, flag := range item.Flags {
@@ -1462,7 +1489,10 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	if a.play.moving {
 		frame = int(a.play.time*10) % 4
 	}
-	const scale = 1.0
+	scale := a.play.world.Zoom
+	if scale <= 0 {
+		scale = 1
+	}
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
 		for _, portal := range a.play.portals {
 			a.drawPortal(target, portal)
@@ -1865,6 +1895,9 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		textureName = "cavezombie"
 	}
 	animation, hasAnimation := a.spriteAnimation(textureName, zombie.animation)
+	if zombie.bossRage {
+		animation, hasAnimation = a.spriteAnimation(textureName, "Rage")
+	}
 	texturePath := commonSDTexture(textureName)
 	columns, rows := 5, 4
 	if hasAnimation {

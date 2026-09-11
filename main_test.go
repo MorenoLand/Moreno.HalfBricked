@@ -107,6 +107,35 @@ func TestGrenadePickupUsesConfiguredAmmo(t *testing.T) {
 	}
 }
 
+func TestLevelActionHitboxesUseXMLVariables(t *testing.T) {
+	variables := formats.FrontendVariables{
+		"SHOPFRONT_PLAY_ICON_POS_VAR":           {Kind: "Vec2", Vec2: formats.Vec2{X: 415, Y: 210}},
+		"SHOPFRONT_PLAY_ICON_WIDTH_VAR":         {Kind: "Float", Float: 84},
+		"SHOPFRONT_PLAY_ICON_HEIGHT_VAR":        {Kind: "Float", Float: 28},
+		"SHOPFRONT_BACK_ICON_NO_GLOBAL_POS_VAR": {Kind: "Vec2", Vec2: formats.Vec2{X: 415, Y: 266}},
+		"SHOPFRONT_BACK_ICON_WIDTH_VAR":         {Kind: "Float", Float: 84},
+		"SHOPFRONT_BACK_ICON_HEIGHT_VAR":        {Kind: "Float", Float: 28},
+	}
+	game := &app{variables: variables}
+	if got := game.levelActionAt(415, 210); got != "play" {
+		t.Fatalf("play hit = %q, want play", got)
+	}
+	if got := game.levelActionAt(415, 266); got != "back" {
+		t.Fatalf("back hit = %q, want back", got)
+	}
+	if got := game.levelActionAt(415, 240); got != "" {
+		t.Fatalf("gap hit = %q, want empty", got)
+	}
+}
+
+func TestLevelSelectBackReturnsToMainMenu(t *testing.T) {
+	game := &app{page: 2, level: 4}
+	game.leaveLevelSelect()
+	if game.page != 0 || game.level != 0 {
+		t.Fatalf("level-select back state = page %d level %d, want page 0 level 0", game.page, game.level)
+	}
+}
+
 func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
 	for _, test := range []struct {
 		angle int
@@ -234,5 +263,107 @@ func TestWalkPlayerToUsesNativeRangeCheck(t *testing.T) {
 	}
 	if play.x != 70 || play.y != 0 {
 		t.Fatalf("WalkPlayerTo moved player inside range to (%.1f,%.1f), want unchanged (70,0)", play.x, play.y)
+	}
+}
+
+func TestWalkPlayerToUsesNativeDefaultRangeCheck(t *testing.T) {
+	play := &playState{scriptEntities: map[int]*scriptEntity{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("WalkPlayerTo", []scripting.Value{100, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptWalkRange != 4 || !play.scriptWalking {
+		t.Fatalf("WalkPlayerTo default state = range %.1f walking %t, want range 4 walking true", play.scriptWalkRange, play.scriptWalking)
+	}
+}
+
+func TestKillZombieIgnoresNonPositiveHealth(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 7, health: 0, dying: true, deathAge: .25}}, scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie"}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("KillZombie", []scripting.Value{7}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.zombies[0].dying || play.zombies[0].deathAge != .25 {
+		t.Fatalf("KillZombie reset dead state = %#v", play.zombies[0])
+	}
+}
+
+func TestCameraShakeStoresNativeCallbackArguments(t *testing.T) {
+	play := &playState{}
+	host := &playScriptHost{play: play}
+	if result, err := host.Call("CameraShake", []scripting.Value{12, 24, 1.5}); err != nil {
+		t.Fatal(err)
+	} else if len(result.Values) != 1 || result.Values[0] != 1 {
+		t.Fatalf("CameraShake result = %#v, want 1", result.Values)
+	}
+	if play.shakeX != 12 || play.shakeY != 24 || play.shakeAmount != 1.5 || play.shakeDuration != 1 || !play.shakeActive {
+		t.Fatalf("CameraShake state = %#v", play)
+	}
+	if _, err := host.Call("CameraShake", []scripting.Value{12, 24, 1.5, 2.2}); err != nil {
+		t.Fatal(err)
+	}
+	if play.shakeDuration != 2.2 {
+		t.Fatalf("CameraShake duration = %.1f, want 2.2", play.shakeDuration)
+	}
+}
+
+func TestAddRobotBossZombieUsesNativeSpawnState(t *testing.T) {
+	play := &playState{scriptEntities: map[int]*scriptEntity{}, scriptNextEntity: 1}
+	host := &playScriptHost{play: play}
+	result, err := host.Call("AddRobotBossZombie", []scripting.Value{120, 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Values) != 1 || result.Values[0] != 1 {
+		t.Fatalf("AddRobotBossZombie result = %#v, want handle 1", result.Values)
+	}
+	if len(play.zombies) != 1 {
+		t.Fatalf("zombie count = %d, want 1", len(play.zombies))
+	}
+	zombie := play.zombies[0]
+	if zombie.texture != "bigboss" || zombie.size.X != 70 || zombie.size.Y != 70 || zombie.health != 40000 || zombie.speed != -1 || zombie.scriptID != 1 {
+		t.Fatalf("boss state = %#v", zombie)
+	}
+	if entity := play.scriptEntities[1]; entity == nil || entity.entityType != "boss_robot" || entity.texture != "bigboss" {
+		t.Fatalf("boss entity = %#v", play.scriptEntities[1])
+	}
+}
+
+func TestSetRobotRageUpdatesRobotBossState(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 1}}, scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "zombie", entityType: "boss_robot"}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetRobotRage", []scripting.Value{true}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.zombies[0].bossRage {
+		t.Fatal("robot rage state was not enabled")
+	}
+	if _, err := host.Call("SetRobotRage", []scripting.Value{false}); err != nil {
+		t.Fatal(err)
+	}
+	if play.zombies[0].bossRage {
+		t.Fatal("robot rage state was not disabled")
+	}
+}
+
+func TestAddWesternBossZombieUsesNativeSpawnState(t *testing.T) {
+	play := &playState{scriptEntities: map[int]*scriptEntity{}, scriptNextEntity: 1}
+	host := &playScriptHost{play: play}
+	result, err := host.Call("AddWesternBossZombie", []scripting.Value{120, 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Values) != 1 || result.Values[0] != 1 {
+		t.Fatalf("AddWesternBossZombie result = %#v, want handle 1", result.Values)
+	}
+	if len(play.zombies) != 1 {
+		t.Fatalf("zombie count = %d, want 1", len(play.zombies))
+	}
+	zombie := play.zombies[0]
+	if zombie.texture != "maddog" || zombie.size.X != 60 || zombie.size.Y != 60 || zombie.health != 40000 || zombie.speed != 0 || zombie.scriptID != 1 {
+		t.Fatalf("boss state = %#v", zombie)
+	}
+	if entity := play.scriptEntities[1]; entity == nil || entity.entityType != "boss_west" || entity.texture != "maddog" {
+		t.Fatalf("boss entity = %#v", play.scriptEntities[1])
 	}
 }
