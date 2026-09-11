@@ -337,6 +337,18 @@ func TestZombieDeathDelayUsesNativeTransitionTimer(t *testing.T) {
 	}
 }
 
+func TestPortalRotationUsesNativeAngleUnits(t *testing.T) {
+	play := &playState{portals: []portalState{{}}}
+	play.updatePortals()
+	if play.portals[0].rotationSpeed != portalOpenRotationSpeed*portalRotationLerp {
+		t.Fatalf("portal rotation speed = %.3f, want %.3f", play.portals[0].rotationSpeed, portalOpenRotationSpeed*portalRotationLerp)
+	}
+	play.updatePortals()
+	if play.portals[0].rotationUnits >= 0 {
+		t.Fatalf("portal rotation units = %.3f, want negative native clockwise step", play.portals[0].rotationUnits)
+	}
+}
+
 func TestCameraShakeStoresNativeCallbackArguments(t *testing.T) {
 	play := &playState{}
 	host := &playScriptHost{play: play}

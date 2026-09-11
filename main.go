@@ -89,6 +89,8 @@ type explosionState struct {
 
 type portalState struct {
 	x, y, age, size     float64
+	rotationUnits       float64
+	rotationSpeed       float64
 	cellX, cellY, frame int
 	animationTimer      float64
 }
@@ -221,6 +223,9 @@ var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-8.5, 25}, {2.5, 24}, {8.5
 const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
 const zombieDeathDelay = .1
+const portalRotationUnitsPerSecond = 65338.0
+const portalOpenRotationSpeed = 1.2
+const portalRotationLerp = .05
 
 func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -1956,6 +1961,7 @@ func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-64, -64)
 	options.GeoM.Scale(renderSize/128*a.play.world.Zoom, renderSize/128*a.play.world.Zoom)
+	options.GeoM.Rotate((portal.rotationUnits / 182) * math.Pi / 180)
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
 }
@@ -2905,6 +2911,7 @@ func (p *playState) updatePortals() {
 	active := p.portals[:0]
 	for _, portal := range p.portals {
 		portal.age += 1.0 / 60.0
+		portal.rotationUnits -= 1.0 / 60.0 * portal.rotationSpeed * portalRotationUnitsPerSecond
 		if portal.animationTimer < 1 {
 			portal.frame = (portal.frame + 1) % 4
 			portal.animationTimer = 100
@@ -2917,6 +2924,11 @@ func (p *playState) updatePortals() {
 			targetSize = 0
 		}
 		portal.size += (targetSize - portal.size) * .1
+		targetRotationSpeed := portalOpenRotationSpeed
+		if remaining < portalCloseRemaining {
+			targetRotationSpeed = 0
+		}
+		portal.rotationSpeed += (targetRotationSpeed - portal.rotationSpeed) * portalRotationLerp
 		if remaining >= portalRemoveRemaining {
 			active = append(active, portal)
 		}
