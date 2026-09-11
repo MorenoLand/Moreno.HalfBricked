@@ -533,8 +533,6 @@ func (a *app) captureState() string {
 	switch a.page {
 	case 0:
 		return "main-menu"
-	case 1:
-		return "world-select"
 	case 2:
 		return "level-select"
 	default:
@@ -594,8 +592,6 @@ func (a *app) setCaptureState(state string) error {
 	case "main-menu":
 		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
 		a.menuSpawnTime, a.titleSoundStage = .2, 0
-	case "world-select":
-		a.titleScreen, a.page, a.world, a.mode, a.level = false, 1, 0, 0, 0
 	case "level-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 	case "play":
@@ -774,8 +770,6 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 			}
 			a.drawMarqueeButton(screen, button, index == a.menuSelection)
 		}
-	} else if a.page == 1 {
-		a.drawWorldSelect(screen)
 	} else {
 		a.drawLevelSelect(screen)
 	}
@@ -830,29 +824,6 @@ func (a *app) drawMenuClick(screen *ebiten.Image, button menuButton, click menuC
 	moving := button
 	moving.cx, moving.cy = click.x, click.y
 	a.drawImage(screen, source, marqueeImageOptions(moving, .8, 70, 35))
-}
-
-func (a *app) drawWorldSelect(screen *ebiten.Image) {
-	a.drawBackdrop(screen)
-	a.drawTexture(screen, "Frontend0/Textures/Ageofzombies", 24, 10, .25)
-	for i, item := range a.items() {
-		y := 96 + i*28
-		a.drawMenuButton(screen, 34, float64(y), i == a.cursor())
-		a.text(screen, item, 48, float64(y), .5)
-	}
-	a.drawWorldDetails(screen)
-}
-
-func (a *app) drawWorldDetails(screen *ebiten.Image) {
-	worlds := a.worlds()
-	if a.world < 0 || a.world >= len(worlds) {
-		return
-	}
-	world := worlds[a.world]
-	a.text(screen, fmt.Sprintf("WORLD %d", world+1), 330, 104, .5)
-	if world >= 0 && world < 5 {
-		a.drawTexture(screen, fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", world+1), 320, 122, 1)
-	}
 }
 
 func (a *app) drawTitle(screen *ebiten.Image) {
@@ -1236,13 +1207,6 @@ func (a *app) items() []string {
 	if a.page == 0 {
 		return []string{"OPTIONS", "PLAY", "QUIT", "STATS"}
 	}
-	if a.page == 1 {
-		var result []string
-		for _, world := range a.worlds() {
-			result = append(result, fmt.Sprintf("WORLD %d / %s", world+1, a.worldName(world)))
-		}
-		return result
-	}
 	var result []string
 	for _, item := range a.filteredLevels() {
 		result = append(result, strings.ReplaceAll(item.DisplayName, "\n", " / "))
@@ -1259,18 +1223,6 @@ func (a *app) worlds() []int {
 		}
 	}
 	return result
-}
-func (a *app) worldName(world int) string {
-	for _, item := range a.levels {
-		if item.WorldIndex == world && !hasLevelFlag(item, "SURVIVAL") {
-			name := item.DisplayName
-			if index := strings.Index(name, ":"); index >= 0 {
-				name = name[:index]
-			}
-			return strings.ToUpper(strings.TrimSpace(name))
-		}
-	}
-	return fmt.Sprintf("WORLD %d", world+1)
 }
 func (a *app) filteredLevels() []formats.LevelInfo {
 	worlds := a.worlds()
@@ -1355,16 +1307,12 @@ func (a *app) cursor() int {
 	if a.page == 2 {
 		return a.level
 	}
-	return a.world
+	return a.mainMenuIndex()
 }
 func (a *app) move(delta int) {
 	if a.page == 0 {
 		index := clamp(a.menuSelection+delta, 0, len(mainMenuButtons)-1)
 		a.menuSelection = index
-		return
-	}
-	if a.page == 1 {
-		a.world = clamp(a.world+delta, 0, len(a.worlds())-1)
 		return
 	}
 	a.level = clamp(a.level+delta, 0, len(a.filteredLevels())-1)
@@ -1377,8 +1325,6 @@ func (a *app) setCursor(index int) {
 		a.level = index
 	} else if a.page == 0 {
 		a.menuSelection = index
-	} else {
-		a.world = index
 	}
 }
 func (a *app) activate() error {
@@ -1392,8 +1338,6 @@ func (a *app) activate() error {
 		case 4:
 			return ebiten.Termination
 		}
-	case 1:
-		a.page, a.level = 2, 0
 	case 2:
 		levels := a.filteredLevels()
 		if a.level < 0 || a.level >= len(levels) || !a.levelUnlocked(levels[a.level]) {
@@ -1408,17 +1352,6 @@ func (a *app) activate() error {
 }
 func (a *app) drawDetails(screen *ebiten.Image) {
 	if a.page == 0 {
-		return
-	}
-	if a.page == 1 {
-		worlds := a.worlds()
-		if a.world >= len(worlds) {
-			return
-		}
-		a.text(screen, fmt.Sprintf("WORLD %d", worlds[a.world]+1), 330, 104, .5)
-		if worlds[a.world] < 5 {
-			a.drawTexture(screen, fmt.Sprintf("Frontend0/Textures/menu_zombie_%d_SD", worlds[a.world]+1), 320, 122, 1)
-		}
 		return
 	}
 	levels := a.filteredLevels()
@@ -3354,7 +3287,7 @@ func main() {
 	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, world-select, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
