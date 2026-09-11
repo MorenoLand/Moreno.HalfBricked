@@ -1144,7 +1144,17 @@ func (h *playScriptHost) zombieProperty(name string, args []scripting.Value) (sc
 	case "SetZombieAlpha":
 		zombie.alpha, err = scriptAlpha(args, 1)
 	case "SetZombieAnimTime":
-		zombie.frame, err = scriptNumber(args, 1)
+		var mode bool
+		mode, err = scriptBool(args, 1)
+		if err == nil {
+			time := 1.0
+			if len(args) == 3 {
+				time, err = scriptNumber(args, 2)
+			}
+			if err == nil {
+				zombie.animTimeMode, zombie.frame = mode, time
+			}
+		}
 	case "SetZombieTexture":
 		if len(args) > 1 {
 			var textureID int

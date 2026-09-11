@@ -389,3 +389,20 @@ func TestMakeRexRageUsesNativeTimerGate(t *testing.T) {
 		t.Fatalf("T-Rex rage timers = %.0f, %.0f, want 1000, 700", play.zombies[0].rexRageTimer, play.zombies[1].rexRageTimer)
 	}
 }
+
+func TestSetZombieAnimTimeUsesNativeModeAndDefault(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 1, frame: 9}}, scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "zombie"}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetZombieAnimTime", []scripting.Value{1, true, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.zombies[0].animTimeMode || play.zombies[0].frame != 0 {
+		t.Fatalf("animated zombie state = mode:%t frame:%.1f, want true/0", play.zombies[0].animTimeMode, play.zombies[0].frame)
+	}
+	if _, err := host.Call("SetZombieAnimTime", []scripting.Value{1, false}); err != nil {
+		t.Fatal(err)
+	}
+	if play.zombies[0].animTimeMode || play.zombies[0].frame != 1 {
+		t.Fatalf("default animated zombie state = mode:%t frame:%.1f, want false/1", play.zombies[0].animTimeMode, play.zombies[0].frame)
+	}
+}
