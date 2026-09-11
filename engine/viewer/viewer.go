@@ -152,6 +152,9 @@ func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Im
 	if entities != nil {
 		entities(screen)
 	}
+	if v.Layers[formats.LayerH] {
+		v.drawLayer(screen, formats.LayerH, tileSize)
+	}
 	if v.Layers[formats.LayerC] {
 		v.drawCollision(screen, tileSize)
 	}
