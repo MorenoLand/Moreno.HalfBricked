@@ -236,6 +236,12 @@ func TestPlayerRenderAnchorUsesNativeOffset(t *testing.T) {
 	}
 }
 
+func TestPlayerFlashDurationUsesNativeWeaponTimer(t *testing.T) {
+	if nativePlayerFlashDuration != 0.4 {
+		t.Fatalf("player flash duration = %.2f, want native 0.4", nativePlayerFlashDuration)
+	}
+}
+
 func TestScriptAnimationStopsOnNonLoopingXMLAnimation(t *testing.T) {
 	play := &playState{
 		sprites:        formats.SpriteCatalog{"test": {Name: "test", Animations: map[string]formats.SpriteAnimation{"idle": {Name: "Idle", Frames: 2, FPS: 60, Loop: false}}, AnimationOrder: []string{"idle"}}},

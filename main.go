@@ -140,8 +140,6 @@ type playState struct {
 	tileSize                                               int
 	radius                                                 float64
 	flash                                                  float64
-	flare                                                  float64
-	flareX, flareY, flareAngle                             float64
 	stick                                                  int
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY       float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
@@ -229,6 +227,7 @@ const portalRotationLerp = .05
 const zombieRenderAnchor = .35
 const nativeZombieDefaultRenderSize = 48.0
 const playerRenderAnchor = 25.0
+const nativePlayerFlashDuration = 0.4
 
 func nativeZombieRenderSize(size float64) float64 {
 	if size > 0 {
@@ -1480,9 +1479,6 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
-		if a.play.flare > 0 {
-			a.drawWeaponFlare(target, a.play.flareX, a.play.flareY, a.play.flareAngle)
-		}
 		a.drawBullets(target)
 		for _, zombie := range a.play.zombies {
 			if zombie.y > a.play.y {
@@ -2055,7 +2051,7 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	} else {
 		options.GeoM.Scale(scale, scale)
 	}
-	options.GeoM.Translate(x, y)
+	options.GeoM.Translate(x, y-16*scale)
 	a.drawImage(screen, source, options)
 }
 func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
@@ -2074,35 +2070,6 @@ func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
 	a.drawImage(screen, texture, options)
 }
 
-func (a *app) drawWeaponFlare(screen *ebiten.Image, x, y, angle float64) {
-	if a.play == nil || a.play.weapon.TextureFlare == "" {
-		return
-	}
-	texture, err := a.Texture(commonSDTexture(a.play.weapon.TextureFlare))
-	if err != nil {
-		return
-	}
-	const frames = 4
-	cellWidth := texture.Bounds().Dx() / frames
-	cellHeight := texture.Bounds().Dy()
-	if cellWidth <= 0 || cellHeight <= 0 {
-		return
-	}
-	phase := math.Mod(math.Max(0, a.play.flare)*2, 1)
-	frame := int(math.Floor(phase * frames))
-	if frame >= frames {
-		frame = frames - 1
-	}
-	source := texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image)
-	flareX := x + 15*math.Cos(angle)
-	flareY := y - 10*math.Sin(angle)
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
-	options.GeoM.Rotate(angle)
-	options.GeoM.Scale(45/float64(cellWidth)*a.play.world.Zoom, 30/float64(cellHeight)*a.play.world.Zoom)
-	options.GeoM.Translate((flareX-a.play.world.CameraX)*a.play.world.Zoom+a.play.world.ViewportX, (flareY-a.play.world.CameraY)*a.play.world.Zoom+a.play.world.ViewportY)
-	a.drawImage(screen, source, options)
-}
 func (a *app) drawReticule(screen *ebiten.Image) {
 	texture, err := a.Texture("Common0/Textures/Reticule_SD")
 	if err != nil {
@@ -2443,7 +2410,6 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		return false
 	}
 	p.flash = math.Max(0, p.flash-1.0/60.0)
-	p.flare = math.Max(0, p.flare-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	fired := false
 	if p.scriptRuntime == nil || p.scriptRuntime.Done() {
@@ -3024,7 +2990,7 @@ func (p *playState) fire(dx, dy float64) bool {
 		return false
 	}
 	dirX, dirY := dx/dist, dy/dist
-	offsetX, offsetY, flareAngle, hasMuzzle := muzzleTransform(dirX, dirY)
+	offsetX, offsetY, _, _ := muzzleTransform(dirX, dirY)
 	bx := p.x + offsetX
 	by := p.y + offsetY
 	bvx := dirX * p.weapon.Speed
@@ -3038,13 +3004,7 @@ func (p *playState) fire(dx, dy float64) bool {
 		life:  p.weapon.Life,
 		angle: bAngle,
 	})
-	p.flash = 1.0 / 60.0
-	p.flare = 0
-	p.flareX, p.flareY = bx, by
-	p.flareAngle = flareAngle
-	if hasMuzzle {
-		p.flare = .16
-	}
+	p.flash = nativePlayerFlashDuration
 	p.shootCooldown = p.weapon.RateOfFire
 	return true
 }
