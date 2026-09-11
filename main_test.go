@@ -76,6 +76,18 @@ func TestZombieDeathAnimationUsesXMLCatalog(t *testing.T) {
 	}
 }
 
+func TestBaseRenderLayersUseNativeOrder(t *testing.T) {
+	want := []formats.LayerKind{formats.LayerG, formats.LayerHB, formats.LayerD}
+	if len(formats.BaseRenderLayerKinds) != len(want) {
+		t.Fatalf("base render layers = %#v, want %#v", formats.BaseRenderLayerKinds, want)
+	}
+	for index := range want {
+		if formats.BaseRenderLayerKinds[index] != want[index] {
+			t.Fatalf("base render layer %d = %q, want %q", index, formats.BaseRenderLayerKinds[index], want[index])
+		}
+	}
+}
+
 func TestWalkZombieToUsesNativeArrivalRange(t *testing.T) {
 	play := &playState{
 		world:          &viewer.Viewer{Level: formats.Level{Width: 1, Height: 1, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {math.MaxUint32}}}},

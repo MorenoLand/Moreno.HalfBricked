@@ -13,8 +13,8 @@ const (
 )
 
 var LayerKinds = []LayerKind{LayerG, LayerD, LayerH, LayerHB, LayerC}
-var RenderLayerKinds = []LayerKind{LayerG, LayerD, LayerHB}
-var BaseRenderLayerKinds = []LayerKind{LayerG, LayerD, LayerHB}
+var RenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
+var BaseRenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
 
 type LevelInfo struct {
 	ID            string   `json:"id"`
