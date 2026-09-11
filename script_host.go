@@ -918,6 +918,15 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_west", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "maddog", speed: 0}
 		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", "")})
 		return scriptValues(id), nil
+	case "SetWesternBossDead":
+		for index := range h.play.zombies {
+			entity := h.play.scriptEntities[h.play.zombies[index].scriptID]
+			if entity != nil && entity.entityType == "boss_west" {
+				h.play.zombies[index].animation = "Dead"
+				h.play.zombies[index].speed = 0
+			}
+		}
+		return scripting.CallResult{}, nil
 	case "SpawnZombiesAroundPlayer":
 		return scripting.CallResult{}, fmt.Errorf("SpawnZombiesAroundPlayer call shape is unresolved")
 	case "TriggerTutorial":

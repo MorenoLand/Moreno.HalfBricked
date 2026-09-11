@@ -367,3 +367,14 @@ func TestAddWesternBossZombieUsesNativeSpawnState(t *testing.T) {
 		t.Fatalf("boss entity = %#v", play.scriptEntities[1])
 	}
 }
+
+func TestSetWesternBossDeadUsesMaddogDeathAnimation(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 1, speed: 90}}, scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "zombie", entityType: "boss_west"}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetWesternBossDead", nil); err != nil {
+		t.Fatal(err)
+	}
+	if play.zombies[0].animation != "Dead" || play.zombies[0].speed != 0 {
+		t.Fatalf("western boss state = %#v", play.zombies[0])
+	}
+}
