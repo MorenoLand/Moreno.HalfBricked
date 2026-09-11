@@ -40,7 +40,8 @@ type levelXMLData struct {
 	Waves   waveList `xml:"waves"`
 }
 type propList struct {
-	Props []propXML `xml:"prop"`
+	Props         []propXML         `xml:"prop"`
+	AnimatedProps []animatedPropXML `xml:"animated_prop"`
 }
 type propXML struct {
 	Texture  string  `xml:"texture,attr"`
@@ -49,6 +50,15 @@ type propXML struct {
 	Scale    string  `xml:"scale,attr"`
 	UV1      string  `xml:"uv1,attr"`
 	UV2      string  `xml:"uv2,attr"`
+}
+type animatedPropXML struct {
+	Texture   string `xml:"texture,attr"`
+	Position  string `xml:"position,attr"`
+	Height    string `xml:"height,attr"`
+	Scale     string `xml:"scale,attr"`
+	XFrames   string `xml:"x_frames,attr"`
+	YFrames   string `xml:"y_frames,attr"`
+	FrameTime string `xml:"frame_time,attr"`
 }
 type waveList struct {
 	Waves []waveXML `xml:"wave"`
@@ -183,20 +193,50 @@ func ParseLevel(root string, info LevelInfo) (Level, error) {
 			return Level{}, fmt.Errorf("%s: %w", mapPath, err)
 		}
 	}
-	props := make([]Prop, 0, len(d.Props.Props))
-	for _, p := range d.Props.Props {
+	props, animatedProps, err := parseProps(d.Props)
+	if err != nil {
+		return Level{}, fmt.Errorf("%s props: %w", info.ID, err)
+	}
+	waves, err := parseWaves(d.Waves)
+	if err != nil {
+		return Level{}, fmt.Errorf("%s waves: %w", info.ID, err)
+	}
+	level := Level{Info: info, Width: d.Width, Height: d.Height, Tileset: d.Tileset, Layers: layers, Props: props, AnimatedProps: animatedProps, Waves: waves}
+	return level, level.Validate()
+}
+
+func parseProps(document propList) ([]Prop, []AnimatedProp, error) {
+	props := make([]Prop, 0, len(document.Props))
+	for _, p := range document.Props {
 		x, y := pair(p.Position)
 		sx, sy := pair(p.Scale)
 		u1x, u1y := pair(p.UV1)
 		u2x, u2y := pair(p.UV2)
 		props = append(props, Prop{Texture: p.Texture, X: x, Y: y, Height: p.Height, ScaleX: sx, ScaleY: sy, UV1X: u1x, UV1Y: u1y, UV2X: u2x, UV2Y: u2y})
 	}
-	waves, err := parseWaves(d.Waves)
-	if err != nil {
-		return Level{}, fmt.Errorf("%s waves: %w", info.ID, err)
+	animated := make([]AnimatedProp, 0, len(document.AnimatedProps))
+	for index, p := range document.AnimatedProps {
+		x, y := pair(p.Position)
+		sx, sy := pair(p.Scale)
+		height, err := parseXMLFloat(p.Height, "animated_prop height", index)
+		if err != nil {
+			return nil, nil, err
+		}
+		xFrames, err := parseXMLInt(p.XFrames, "animated_prop x_frames", index)
+		if err != nil {
+			return nil, nil, err
+		}
+		yFrames, err := parseXMLInt(p.YFrames, "animated_prop y_frames", index)
+		if err != nil {
+			return nil, nil, err
+		}
+		frameTime, err := parseXMLFloat(p.FrameTime, "animated_prop frame_time", index)
+		if err != nil {
+			return nil, nil, err
+		}
+		animated = append(animated, AnimatedProp{Texture: p.Texture, X: x, Y: y, Height: height, ScaleX: sx, ScaleY: sy, XFrames: xFrames, YFrames: yFrames, FrameTime: frameTime})
 	}
-	level := Level{Info: info, Width: d.Width, Height: d.Height, Tileset: d.Tileset, Layers: layers, Props: props, Waves: waves}
-	return level, level.Validate()
+	return props, animated, nil
 }
 
 func parseWaves(document waveList) ([]Wave, error) {

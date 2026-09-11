@@ -1432,6 +1432,9 @@ func (a *app) drawBarryMenu(screen *ebiten.Image) {
 	a.drawImage(screen, image, options)
 }
 func (a *app) drawPlay(screen *ebiten.Image) {
+	if !a.play.paused {
+		a.play.world.AnimationTime += 1.0 / 60.0
+	}
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (a.play.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
 	frame := int(a.play.time*8) % 4

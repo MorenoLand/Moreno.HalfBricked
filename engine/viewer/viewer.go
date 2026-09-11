@@ -24,6 +24,7 @@ type Viewer struct {
 	CameraX, CameraY, Zoom     float64
 	ViewportX, ViewportY       float64
 	RenderScaleX, RenderScaleY float64
+	AnimationTime              float64
 	Layers                     map[formats.LayerKind]bool
 	Props, Grid, Debug         bool
 	dragging                   bool
@@ -76,6 +77,7 @@ func (v *Viewer) pointer() (int, int) {
 	return x * 480 / v.inputWidth, y * 320 / v.inputHeight
 }
 func (v *Viewer) Update() {
+	v.AnimationTime += 1.0 / 60.0
 	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		v.toggle(formats.LayerG)
 	}
@@ -275,38 +277,73 @@ func collisionColor(value uint32) color.RGBA {
 	}
 }
 func (v *Viewer) drawProps(screen *ebiten.Image) {
-	props := append([]formats.Prop(nil), v.Level.Props...)
+	type propDraw struct {
+		texture                      string
+		x, y, height, scaleX, scaleY float64
+		uv1X, uv1Y, uv2X, uv2Y       float64
+		xFrames, yFrames             int
+		frameTime                    float64
+		animated                     bool
+	}
+	props := make([]propDraw, 0, len(v.Level.Props)+len(v.Level.AnimatedProps))
+	for _, prop := range v.Level.Props {
+		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, uv1X: prop.UV1X, uv1Y: prop.UV1Y, uv2X: prop.UV2X, uv2Y: prop.UV2Y})
+	}
+	for _, prop := range v.Level.AnimatedProps {
+		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, xFrames: prop.XFrames, yFrames: prop.YFrames, frameTime: prop.FrameTime, animated: true})
+	}
 	sort.SliceStable(props, func(i, j int) bool {
-		return props[i].Y+props[i].Height*float64(v.tileSize()) < props[j].Y+props[j].Height*float64(v.tileSize())
+		return props[i].y+props[i].height*float64(v.tileSize()) < props[j].y+props[j].height*float64(v.tileSize())
 	})
 	for _, prop := range props {
 		if v.Textures == nil {
 			continue
 		}
-		texture, err := v.Textures.Texture(prop.Texture)
+		texture, err := v.Textures.Texture(prop.texture)
 		if err != nil {
-			texture, err = v.Textures.Texture(prop.Texture + "_SD")
+			texture, err = v.Textures.Texture(prop.texture + "_SD")
 		}
 		if err != nil {
 			continue
 		}
-		scaleX, scaleY := prop.ScaleX, prop.ScaleY
+		scaleX, scaleY := prop.scaleX, prop.scaleY
 		if scaleX == 0 {
 			scaleX = 1
 		}
 		if scaleY == 0 {
 			scaleY = 1
 		}
-		sourceX0, sourceY0 := prop.UV1X, prop.UV1Y
-		sourceX1, sourceY1 := prop.UV2X, prop.UV2Y
+		sourceX0, sourceY0 := prop.uv1X, prop.uv1Y
+		sourceX1, sourceY1 := prop.uv2X, prop.uv2Y
+		if prop.animated {
+			xFrames, yFrames := prop.xFrames, prop.yFrames
+			if xFrames <= 0 {
+				xFrames = 1
+			}
+			if yFrames <= 0 {
+				yFrames = 1
+			}
+			frame := 0
+			if prop.frameTime > 0 {
+				frame = int(math.Floor(v.AnimationTime * 1000 / prop.frameTime))
+			}
+			frame %= xFrames * yFrames
+			cellWidth, cellHeight := texture.Bounds().Dx()/xFrames, texture.Bounds().Dy()/yFrames
+			if cellWidth <= 0 || cellHeight <= 0 {
+				continue
+			}
+			column, row := frame%xFrames, frame/xFrames
+			sourceX0, sourceY0 = float64(column*cellWidth), float64(row*cellHeight)
+			sourceX1, sourceY1 = sourceX0+float64(cellWidth), sourceY0+float64(cellHeight)
+		}
 		if sourceX1 <= sourceX0 || sourceY1 <= sourceY0 {
 			sourceX0, sourceY0 = 0, 0
 			sourceX1, sourceY1 = float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
 		}
 		worldWidth := scaleX * float64(v.tileSize())
 		worldHeight := scaleY * float64(v.tileSize())
-		destinationX0 := float32((prop.X-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
-		destinationY0 := float32((prop.Y-prop.Height*float64(v.tileSize())-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
+		destinationX0 := float32((prop.x-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
+		destinationY0 := float32((prop.y-prop.height*float64(v.tileSize())-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
 		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
 		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
 		renderScaleX, renderScaleY := v.renderScale()

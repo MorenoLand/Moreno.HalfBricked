@@ -28,13 +28,14 @@ type LevelInfo struct {
 }
 
 type Level struct {
-	Info    LevelInfo              `json:"info"`
-	Width   int                    `json:"width"`
-	Height  int                    `json:"height"`
-	Tileset string                 `json:"tileset"`
-	Layers  map[LayerKind][]uint32 `json:"layers"`
-	Props   []Prop                 `json:"props"`
-	Waves   []Wave                 `json:"waves"`
+	Info          LevelInfo              `json:"info"`
+	Width         int                    `json:"width"`
+	Height        int                    `json:"height"`
+	Tileset       string                 `json:"tileset"`
+	Layers        map[LayerKind][]uint32 `json:"layers"`
+	Props         []Prop                 `json:"props"`
+	AnimatedProps []AnimatedProp         `json:"animatedProps"`
+	Waves         []Wave                 `json:"waves"`
 }
 
 type Wave struct {
@@ -73,6 +74,18 @@ type Prop struct {
 	UV1Y    float64 `json:"uv1Y"`
 	UV2X    float64 `json:"uv2X"`
 	UV2Y    float64 `json:"uv2Y"`
+}
+
+type AnimatedProp struct {
+	Texture   string  `json:"texture"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+	Height    float64 `json:"height"`
+	ScaleX    float64 `json:"scaleX"`
+	ScaleY    float64 `json:"scaleY"`
+	XFrames   int     `json:"xFrames"`
+	YFrames   int     `json:"yFrames"`
+	FrameTime float64 `json:"frameTime"`
 }
 
 type TileSet struct {
