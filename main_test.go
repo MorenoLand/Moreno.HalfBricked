@@ -215,6 +215,15 @@ func TestSpawnZombieUsesNativeDefaultRenderSize(t *testing.T) {
 	}
 }
 
+func TestNativeZombieRenderSizeUsesConstructorDefault(t *testing.T) {
+	if got := nativeZombieRenderSize(0); got != nativeZombieDefaultRenderSize {
+		t.Fatalf("native default zombie render size = %.1f, want %.1f", got, nativeZombieDefaultRenderSize)
+	}
+	if got := nativeZombieRenderSize(29); got != 58 {
+		t.Fatalf("positive zombie render size = %.1f, want 58", got)
+	}
+}
+
 func TestZombieRenderAnchorUsesNativeFactor(t *testing.T) {
 	if zombieRenderAnchor != .35 {
 		t.Fatalf("zombie render anchor = %.2f, want native .35", zombieRenderAnchor)

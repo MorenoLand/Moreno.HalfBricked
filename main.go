@@ -227,6 +227,14 @@ const portalRotationUnitsPerSecond = 65338.0
 const portalOpenRotationSpeed = 1.2
 const portalRotationLerp = .05
 const zombieRenderAnchor = .35
+const nativeZombieDefaultRenderSize = 48.0
+
+func nativeZombieRenderSize(size float64) float64 {
+	if size > 0 {
+		return size * 2
+	}
+	return nativeZombieDefaultRenderSize
+}
 
 func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)
@@ -2732,7 +2740,7 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	id := p.scriptNextEntity
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: entry.Size, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: formats.Vec2{X: nativeZombieDefaultRenderSize, Y: nativeZombieDefaultRenderSize}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
 }
 
 func (p *playState) addPortal(x, y float64) {

@@ -987,10 +987,7 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 			texture = "Characters/princeworker"
 		}
 	}
-	renderSize := size * 2
-	if renderSize <= 0 {
-		renderSize = 48
-	}
+	renderSize := nativeZombieRenderSize(size)
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "zombie", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
