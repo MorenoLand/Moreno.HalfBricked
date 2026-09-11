@@ -406,3 +406,14 @@ func TestSetZombieAnimTimeUsesNativeModeAndDefault(t *testing.T) {
 		t.Fatalf("default animated zombie state = mode:%t frame:%.1f, want false/1", play.zombies[0].animTimeMode, play.zombies[0].frame)
 	}
 }
+
+func TestUnlockWesternBossAchievementStoresChoice(t *testing.T) {
+	play := &playState{}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("UnlockWesternBossAchievement", []scripting.Value{1}); err != nil {
+		t.Fatal(err)
+	}
+	if play.westernAchievementChoice != 1 || !play.westernAchievementUnlocked {
+		t.Fatalf("achievement state = choice %.1f unlocked %t, want 1 true", play.westernAchievementChoice, play.westernAchievementUnlocked)
+	}
+}

@@ -189,6 +189,8 @@ type playState struct {
 	scriptCameraFollowOffsetX, scriptCameraFollowOffsetY   float64
 	shakeX, shakeY, shakeAmount, shakeDuration             float64
 	shakeActive                                            bool
+	westernAchievementChoice                               float64
+	westernAchievementUnlocked                             bool
 	scriptAimX, scriptAimY                                 float64
 	scriptHasAim                                           bool
 	scriptLastCallback                                     string
