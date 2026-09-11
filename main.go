@@ -220,7 +220,7 @@ var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-8.5, 25}, {2.5, 24}, {8.5
 
 const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
-const zombieDeathDelay = .125
+const zombieDeathDelay = .1
 
 func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	prepared, err := content.PrepareAssets(root)

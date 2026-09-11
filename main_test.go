@@ -331,6 +331,12 @@ func TestKillZombieIgnoresNonPositiveHealth(t *testing.T) {
 	}
 }
 
+func TestZombieDeathDelayUsesNativeTransitionTimer(t *testing.T) {
+	if zombieDeathDelay != .1 {
+		t.Fatalf("zombie death delay = %.3f, want native .1", zombieDeathDelay)
+	}
+}
+
 func TestCameraShakeStoresNativeCallbackArguments(t *testing.T) {
 	play := &playState{}
 	host := &playScriptHost{play: play}
