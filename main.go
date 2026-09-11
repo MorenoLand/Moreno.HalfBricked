@@ -1724,6 +1724,12 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 	}
 	if active != nil {
 		tileSize := tileSizeFor(active.TileSet)
+		atlas := "none"
+		if active.Atlas != nil {
+			bounds := active.Atlas.Bounds()
+			atlas = fmt.Sprintf("%dx%d", bounds.Dx(), bounds.Dy())
+		}
+		lines = append(lines, fmt.Sprintf("level %s tileset %s atlas %s", active.Level.Info.ID, active.TileSet.Name, atlas))
 		worldX := (float64(logicalX)-active.ViewportX)/active.Zoom + active.CameraX
 		worldY := (float64(logicalY)-active.ViewportY)/active.Zoom + active.CameraY
 		tileX, tileY := int(math.Floor(worldX/float64(tileSize))), int(math.Floor(worldY/float64(tileSize)))
@@ -1763,7 +1769,20 @@ func debugTileLine(active *viewer.Viewer, kind formats.LayerKind, tileX, tileY i
 	if kind == formats.LayerC {
 		return fmt.Sprintf("%s %08X runtime=%d %s", strings.ToUpper(string(kind)), raw, (raw+1)&0xffff, collisionLabel((raw+1)&0xffff))
 	}
-	return fmt.Sprintf("%s %08X id=%d f=%s %s", strings.ToUpper(string(kind)), raw, raw&0xffff, flip, accepted)
+	atlasInfo := ""
+	tileSize := tileSizeFor(active.TileSet)
+	if active.Atlas != nil && tileSize > 0 {
+		bounds := active.Atlas.Bounds()
+		columns, rows := bounds.Dx()/tileSize, bounds.Dy()/tileSize
+		tileID := int(raw & 0xffff)
+		if columns > 0 && rows > 0 && tileID < columns*rows {
+			sourceX := tileID%columns*tileSize + tileSize/2
+			sourceY := tileID/columns*tileSize + tileSize/2
+			r, g, b, a := active.Atlas.At(sourceX, sourceY).RGBA()
+			atlasInfo = fmt.Sprintf(" src=%d,%d rgba=%02X%02X%02X%02X", sourceX, sourceY, r>>8, g>>8, b>>8, a>>8)
+		}
+	}
+	return fmt.Sprintf("%s %08X id=%d f=%s %s%s", strings.ToUpper(string(kind)), raw, raw&0xffff, flip, accepted, atlasInfo)
 }
 
 func collisionLabel(value uint32) string {
