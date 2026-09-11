@@ -1949,14 +1949,18 @@ func (a *app) drawBloodPop(screen *ebiten.Image, pop bloodPop) {
 	if a.play == nil || pop.variant < 0 || pop.variant > 2 {
 		return
 	}
-	texture, err := a.Texture(fmt.Sprintf("Common0/Textures/ZombiePop_%d_SD", pop.variant))
+	animation, ok := zombieDeathAnimation(a.sprites, pop.variant)
+	if !ok || animation.Frames <= 0 || animation.FPS <= 0 {
+		return
+	}
+	texture, err := a.Texture(animation.Texture)
 	if err != nil {
 		return
 	}
-	const frames = 4
+	frames := animation.Frames
 	cellWidth := texture.Bounds().Dx() / frames
 	cellHeight := texture.Bounds().Dy()
-	frame := int(math.Floor(pop.age * 8))
+	frame := int(math.Floor(pop.age * animation.FPS))
 	if cellWidth <= 0 || cellHeight <= 0 || frame < 0 || frame >= frames {
 		return
 	}
@@ -1972,6 +1976,14 @@ func (a *app) drawBloodPop(screen *ebiten.Image, pop bloodPop) {
 	options.GeoM.Scale(zoom, zoom)
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
+}
+
+func zombieDeathAnimation(catalog formats.SpriteCatalog, variant int) (formats.SpriteAnimation, bool) {
+	definition, ok := catalog.Find("ZombieDeaths")
+	if !ok {
+		return formats.SpriteAnimation{}, false
+	}
+	return definition.Animation(fmt.Sprintf("Pop_%d", variant))
 }
 
 func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
@@ -2945,7 +2957,11 @@ func (p *playState) updateBloodPops() {
 	active := p.bloodPops[:0]
 	for _, pop := range p.bloodPops {
 		pop.age += 1.0 / 60.0
-		if pop.age < .5 {
+		duration := .5
+		if animation, ok := zombieDeathAnimation(p.sprites, pop.variant); ok && animation.FPS > 0 && animation.Frames > 0 {
+			duration = float64(animation.Frames) / animation.FPS
+		}
+		if pop.age < duration {
 			active = append(active, pop)
 		}
 	}

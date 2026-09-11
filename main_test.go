@@ -68,6 +68,14 @@ func TestPortalUsesNativeAnimationTimer(t *testing.T) {
 	}
 }
 
+func TestZombieDeathAnimationUsesXMLCatalog(t *testing.T) {
+	catalog := formats.SpriteCatalog{"zombiedeaths": {Name: "ZombieDeaths", Animations: map[string]formats.SpriteAnimation{"pop_1": {Name: "Pop_1", Texture: "Textures/ZombiePop_1_SD", Frames: 4, FPS: 8, Loop: false}}}}
+	animation, ok := zombieDeathAnimation(catalog, 1)
+	if !ok || animation.Texture != "Textures/ZombiePop_1_SD" || animation.Frames != 4 || animation.FPS != 8 || animation.Loop {
+		t.Fatalf("death animation = %#v, found %t, want XML Pop_1 metadata", animation, ok)
+	}
+}
+
 func TestWalkZombieToUsesNativeArrivalRange(t *testing.T) {
 	play := &playState{
 		world:          &viewer.Viewer{Level: formats.Level{Width: 1, Height: 1, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {math.MaxUint32}}}},
