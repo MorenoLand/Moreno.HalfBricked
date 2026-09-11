@@ -114,6 +114,7 @@ type zombieState struct {
 	hitFlash      float64
 	invulnerable  bool
 	bossRage      bool
+	rexRageTimer  float64
 	spawnAway     bool
 	dying         bool
 	deathAge      float64
@@ -1895,7 +1896,7 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		textureName = "cavezombie"
 	}
 	animation, hasAnimation := a.spriteAnimation(textureName, zombie.animation)
-	if zombie.bossRage {
+	if zombie.bossRage || zombie.rexRageTimer > 0 {
 		animation, hasAnimation = a.spriteAnimation(textureName, "Rage")
 	}
 	texturePath := commonSDTexture(textureName)
@@ -2859,6 +2860,7 @@ func (p *playState) updateZombies() {
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
+		zombie.rexRageTimer = math.Max(0, zombie.rexRageTimer-1000*dt)
 		if zombie.dying {
 			zombie.deathAge += dt
 			continue

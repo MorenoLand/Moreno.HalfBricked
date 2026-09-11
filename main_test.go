@@ -378,3 +378,14 @@ func TestSetWesternBossDeadUsesMaddogDeathAnimation(t *testing.T) {
 		t.Fatalf("western boss state = %#v", play.zombies[0])
 	}
 }
+
+func TestMakeRexRageUsesNativeTimerGate(t *testing.T) {
+	play := &playState{zombies: []zombieState{{scriptID: 1, rexRageTimer: 100}, {scriptID: 2, rexRageTimer: 700}}, scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "zombie", entityType: "boss_rex"}, 2: {id: 2, kind: "zombie", entityType: "boss_rex"}}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("MakeRexRage", nil); err != nil {
+		t.Fatal(err)
+	}
+	if play.zombies[0].rexRageTimer != 1000 || play.zombies[1].rexRageTimer != 700 {
+		t.Fatalf("T-Rex rage timers = %.0f, %.0f, want 1000, 700", play.zombies[0].rexRageTimer, play.zombies[1].rexRageTimer)
+	}
+}

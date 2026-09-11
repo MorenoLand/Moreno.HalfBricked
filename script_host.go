@@ -927,6 +927,14 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			}
 		}
 		return scripting.CallResult{}, nil
+	case "MakeRexRage":
+		for index := range h.play.zombies {
+			entity := h.play.scriptEntities[h.play.zombies[index].scriptID]
+			if entity != nil && entity.entityType == "boss_rex" && h.play.zombies[index].rexRageTimer < 500 {
+				h.play.zombies[index].rexRageTimer = 1000
+			}
+		}
+		return scripting.CallResult{}, nil
 	case "SpawnZombiesAroundPlayer":
 		return scripting.CallResult{}, fmt.Errorf("SpawnZombiesAroundPlayer call shape is unresolved")
 	case "TriggerTutorial":
