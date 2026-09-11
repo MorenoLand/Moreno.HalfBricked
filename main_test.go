@@ -417,3 +417,29 @@ func TestUnlockWesternBossAchievementStoresChoice(t *testing.T) {
 		t.Fatalf("achievement state = choice %.1f unlocked %t, want 1 true", play.westernAchievementChoice, play.westernAchievementUnlocked)
 	}
 }
+
+func TestStationaryZombieDamagesOnlyAtContact(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: make([]uint32, 400)}}}, x: 32, y: 32, health: 1, scriptCollideZombies: true, scriptEntities: map[int]*scriptEntity{1: {id: 1, kind: "zombie", entityType: "zombie"}}, zombies: []zombieState{{x: 320, y: 320, health: 100, size: formats.Vec2{X: 32, Y: 32}, scriptID: 1, scriptControlled: true}}}
+	play.updateZombies()
+	if play.health != 1 {
+		t.Fatalf("distant zombie changed health to %.3f", play.health)
+	}
+	play.zombies[0].x, play.zombies[0].y = 32, 32
+	play.updateZombies()
+	if play.health >= 1 {
+		t.Fatal("contact zombie did not damage player")
+	}
+}
+
+func TestPlayerDeathUsesNativeTimerAndRespawn(t *testing.T) {
+	play := &playState{health: 0, maxHealth: 1, lives: 3, spawnX: 100, spawnY: 120, x: 40, y: 50}
+	if !play.updatePlayerDeath() || play.lives != 2 || play.deathTimer <= 0 {
+		t.Fatalf("initial death state = health %.1f lives %d timer %.3f", play.health, play.lives, play.deathTimer)
+	}
+	for i := 0; i < 120; i++ {
+		play.updatePlayerDeath()
+	}
+	if play.health != 1 || play.lives != 2 || play.x != 100 || play.y != 120 || play.deathTimer != 0 {
+		t.Fatalf("respawn state = health %.1f lives %d pos %.1f,%.1f timer %.3f", play.health, play.lives, play.x, play.y, play.deathTimer)
+	}
+}

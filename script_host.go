@@ -686,6 +686,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 				if layer[y*h.play.world.Level.Width+x] == 2 {
 					h.play.x = float64(x*h.play.tileSize + h.play.tileSize/2)
 					h.play.y = float64(y*h.play.tileSize + h.play.tileSize/2)
+					h.play.spawnX, h.play.spawnY = h.play.x, h.play.y
 					h.play.scriptWalking = false
 					return scripting.CallResult{}, nil
 				}
@@ -884,7 +885,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptNextEntity++
 		const size, health = 70.0, 40000.0
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_robot", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "bigboss", speed: -1}
-		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: -1, health: health, size: formats.Vec2{X: size, Y: size}, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", "")})
+		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: -1, health: health, size: formats.Vec2{X: size, Y: size}, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", ""), scriptControlled: true})
 		return scriptValues(id), nil
 	case "SetRobotRage":
 		rage, err := scriptBool(args, 0)
@@ -917,7 +918,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptNextEntity++
 		const size, health = 60.0, 40000.0
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_west", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "maddog", speed: 0}
-		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", "")})
+		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", ""), scriptControlled: true})
 		return scriptValues(id), nil
 	case "SetWesternBossDead":
 		for index := range h.play.zombies {
@@ -976,7 +977,7 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "zombie", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "cavezombie", speed: speed}
-	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: size, Y: size}, texture: "cavezombie", scriptID: id, alpha: 1, fps: h.play.spriteFPS("cavezombie", "")})
+	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: size, Y: size}, texture: "cavezombie", scriptID: id, alpha: 1, fps: h.play.spriteFPS("cavezombie", ""), scriptControlled: true})
 	return scriptValues(id), nil
 }
 

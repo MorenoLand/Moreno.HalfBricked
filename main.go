@@ -100,26 +100,27 @@ type bloodPop struct {
 }
 
 type zombieState struct {
-	x, y          float64
-	speed, health float64
-	size          formats.Vec2
-	texture       string
-	animation     string
-	frame         float64
-	angle         int
-	flipX         bool
-	flipY         bool
-	scriptID      int
-	alpha         float64
-	fps           float64
-	hitFlash      float64
-	invulnerable  bool
-	bossRage      bool
-	animTimeMode  bool
-	rexRageTimer  float64
-	spawnAway     bool
-	dying         bool
-	deathAge      float64
+	x, y             float64
+	speed, health    float64
+	size             formats.Vec2
+	texture          string
+	animation        string
+	frame            float64
+	angle            int
+	flipX            bool
+	flipY            bool
+	scriptID         int
+	alpha            float64
+	fps              float64
+	hitFlash         float64
+	invulnerable     bool
+	bossRage         bool
+	animTimeMode     bool
+	rexRageTimer     float64
+	spawnAway        bool
+	dying            bool
+	deathAge         float64
+	scriptControlled bool
 }
 
 type dialogueLine struct {
@@ -129,7 +130,7 @@ type dialogueLine struct {
 
 type playState struct {
 	world                                                  *viewer.Viewer
-	x, y                                                   float64
+	x, y, spawnX, spawnY, deathTimer                       float64
 	time                                                   float64
 	moving                                                 bool
 	angle                                                  int
@@ -347,6 +348,9 @@ func (a *app) Update() error {
 				a.play.updateWaves()
 			}
 			a.play.updateZombies()
+			if a.play.updatePlayerDeath() {
+				return nil
+			}
 			a.play.updatePortals()
 			a.play.updatePickups()
 			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -2308,7 +2312,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1}
+	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1}
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2422,6 +2426,9 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		p.updateWaves()
 	}
 	p.updateZombies()
+	if p.updatePlayerDeath() {
+		return false
+	}
 	p.updatePortals()
 	p.updateBloodPops()
 	p.updateExplosions()
@@ -2848,7 +2855,7 @@ func (p *playState) updateZombies() {
 				}
 				zombie.x, zombie.y = candidateX, candidateY
 			}
-		} else if entity == nil || !entity.walking {
+		} else if distance <= collisionDistance && (entity == nil || !entity.walking) && (!zombie.scriptControlled || p.scriptCollideZombies) {
 			p.health = math.Max(0, p.health-dt*.08)
 		}
 		if entity != nil {
@@ -2863,6 +2870,29 @@ func (p *playState) updateZombies() {
 		}
 		zombie.frame += dt * fps
 	}
+}
+
+func (p *playState) updatePlayerDeath() bool {
+	if p.health > 0 {
+		return false
+	}
+	if p.deathTimer <= 0 {
+		p.deathTimer = 2
+		if p.lives > 0 {
+			p.lives--
+		}
+		p.scriptWalking = false
+		p.moveControl, p.shootControl = false, false
+	}
+	p.deathTimer = math.Max(0, p.deathTimer-1.0/60.0)
+	if p.deathTimer > 0 || p.lives <= 0 {
+		return true
+	}
+	p.x, p.y = p.spawnX, p.spawnY
+	p.health = p.maxHealth
+	p.deathTimer = 0
+	p.moveControl, p.shootControl = true, true
+	return false
 }
 
 func (p *playState) updatePortals() {
