@@ -93,6 +93,25 @@ func TestWalkZombieToUsesNativeArrivalRange(t *testing.T) {
 	}
 }
 
+func TestWalkZombieToStopsMovementWhenNativeFlagIsSet(t *testing.T) {
+	play := &playState{
+		world:          &viewer.Viewer{Level: formats.Level{Width: 1, Height: 1, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {math.MaxUint32}}}},
+		x:              0,
+		y:              0,
+		scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie", speed: 60}},
+		zombies:        []zombieState{{x: 85, y: 0, speed: 60, health: 100, size: formats.Vec2{X: 32, Y: 32}, scriptID: 7}},
+	}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("WalkZombieTo", []scripting.Value{7, 100, 0, 20, true}); err != nil {
+		t.Fatal(err)
+	}
+	play.updateZombies()
+	entity := play.scriptEntities[7]
+	if entity.walking || !entity.stopOnArrival || play.zombies[0].speed != 0 {
+		t.Fatalf("flagged WalkZombieTo state = walking %t stop %t speed %.1f, want false true 0", entity.walking, entity.stopOnArrival, play.zombies[0].speed)
+	}
+}
+
 func TestSpawnAwayZombieUsesNativeAwayState(t *testing.T) {
 	play := &playState{zombies: []zombieState{{scriptID: 7, health: 100}}, scriptEntities: map[int]*scriptEntity{7: {id: 7, kind: "zombie", walking: true}}}
 	host := &playScriptHost{play: play}

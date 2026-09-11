@@ -38,6 +38,7 @@ type scriptEntity struct {
 	animation, frame        int
 	targetX, targetY, speed float64
 	targetRange             float64
+	stopOnArrival           bool
 	walking                 bool
 	playing                 bool
 	frameTime               float64
@@ -323,11 +324,18 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
+		stopOnArrival := false
+		if len(args) >= 5 {
+			stopOnArrival, err = scriptBool(args, 4)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
 		entity := h.findEntity(id)
 		if entity == nil {
 			return scripting.CallResult{}, fmt.Errorf("entity %d not found", id)
 		}
-		entity.targetX, entity.targetY, entity.targetRange, entity.walking = x, y, math.Abs(rangeCheck), true
+		entity.targetX, entity.targetY, entity.targetRange, entity.stopOnArrival, entity.walking = x, y, math.Abs(rangeCheck), stopOnArrival, true
 		return scripting.CallResult{}, nil
 	case "SpawnAwayZombie":
 		id, err := scriptID(args, 0)
@@ -1164,6 +1172,11 @@ func (h *playScriptHost) zombieProperty(name string, args []scripting.Value) (sc
 		return scriptValues(zombie.speed), nil
 	case "SetZombieSpeed":
 		zombie.speed, err = scriptNumber(args, 1)
+		if err == nil {
+			if entity := h.play.scriptEntities[id]; entity != nil {
+				entity.speed = zombie.speed
+			}
+		}
 	case "SetZombieAlpha":
 		zombie.alpha, err = scriptAlpha(args, 1)
 	case "SetZombieAnimTime":

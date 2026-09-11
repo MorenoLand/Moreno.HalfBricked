@@ -2830,6 +2830,9 @@ func (p *playState) updateZombies() {
 		}
 		if entity != nil && entity.walking && distance <= stopDistance {
 			entity.walking = false
+			if entity.stopOnArrival {
+				zombie.speed, entity.speed = 0, 0
+			}
 		} else if distance > stopDistance && speed > 0 {
 			step := math.Min(speed*dt, distance-stopDistance)
 			if distance > 0 {
