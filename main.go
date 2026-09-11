@@ -44,6 +44,7 @@ type app struct {
 	sprites                              formats.SpriteCatalog
 	capture                              *engine.Capture
 	captureLimit                         int
+	captureAutoDialogue                  bool
 	sound                                *engine.SoundSystem
 	images                               map[string]*ebiten.Image
 	sources                              map[string]image.Image
@@ -205,6 +206,7 @@ type playState struct {
 	hudVisible                                             bool
 	dialogue                                               []dialogueLine
 	dialogueIndex                                          int
+	dialogueAge                                            float64
 }
 
 const playerBaseSpeed = 180.0
@@ -332,6 +334,11 @@ func (a *app) Update() error {
 				if err := a.play.updateScript(); err != nil {
 					return err
 				}
+				a.play.dialogueAge += 1.0 / 60.0
+				if a.capture != nil && a.captureAutoDialogue && a.play.dialogueAge >= .5 {
+					a.play.dialogueIndex++
+					a.play.dialogueAge = 0
+				}
 			}
 			if a.play.scriptRuntime == nil || a.play.scriptRuntime.Done() {
 				a.play.updateWaves()
@@ -341,6 +348,7 @@ func (a *app) Update() error {
 			a.play.updatePickups()
 			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 				a.play.dialogueIndex++
+				a.play.dialogueAge = 0
 			}
 			return nil
 		}
@@ -3289,6 +3297,7 @@ func main() {
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
 	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
+	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	flag.Parse()
 	game, err := newApp(*assets, *debug, *mobile, *silent)
@@ -3300,6 +3309,7 @@ func main() {
 		log.Fatal(err)
 	}
 	game.captureLimit = *captureFrames
+	game.captureAutoDialogue = *captureAutoDialogue
 	if *captureState != "" {
 		if err := game.setCaptureState(*captureState); err != nil {
 			log.Fatal(err)

@@ -595,6 +595,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		}
 		h.play.dialogue = conversationLines(conversation)
 		h.play.dialogueIndex = 0
+		h.play.dialogueAge = 0
 		return scripting.CallResult{}, nil
 	case "IsSpeechRunning":
 		if h.play.dialogueIndex < len(h.play.dialogue) {
