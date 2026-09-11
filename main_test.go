@@ -198,6 +198,20 @@ func TestSpawnZombieUsesNativeSpriteIndex(t *testing.T) {
 		if got := play.scriptEntities[1].texture; got != test.want {
 			t.Fatalf("script sprite index %v = %q, want %q", test.index, got, test.want)
 		}
+		if got := play.zombies[0].size; got.X != 64 || got.Y != 64 {
+			t.Fatalf("script sprite index %v render size = %#v, want 64x64", test.index, got)
+		}
+	}
+}
+
+func TestSpawnZombieUsesNativeDefaultRenderSize(t *testing.T) {
+	play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.spawnZombie([]scripting.Value{100, 120, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if got := play.zombies[0].size; got.X != 48 || got.Y != 48 {
+		t.Fatalf("default zombie render size = %#v, want 48x48", got)
 	}
 }
 

@@ -987,10 +987,14 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 			texture = "Characters/princeworker"
 		}
 	}
+	renderSize := size * 2
+	if renderSize <= 0 {
+		renderSize = 48
+	}
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "zombie", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: size, Y: size}, texture: texture, scriptID: id, alpha: 1, fps: h.play.spriteFPS(texture, ""), scriptControlled: true})
+	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: renderSize, Y: renderSize}, texture: texture, scriptID: id, alpha: 1, fps: h.play.spriteFPS(texture, ""), scriptControlled: true})
 	return scriptValues(id), nil
 }
 
