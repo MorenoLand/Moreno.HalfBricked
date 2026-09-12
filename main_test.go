@@ -76,6 +76,23 @@ func TestZombieDeathAnimationUsesXMLCatalog(t *testing.T) {
 	}
 }
 
+func TestSpawnEntityDistinguishesNativePickupNames(t *testing.T) {
+	play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.spawnEntity([]scripting.Value{"mine", 10, 20}); err != nil {
+		t.Fatal(err)
+	}
+	if entity := play.scriptEntities[1]; entity == nil || entity.kind != "sprite" || !entity.playing {
+		t.Fatalf("mine entity = %#v, want active sprite", play.scriptEntities[1])
+	}
+	if _, err := host.spawnEntity([]scripting.Value{"p_grenade", 30, 40}); err != nil {
+		t.Fatal(err)
+	}
+	if entity := play.scriptEntities[2]; entity == nil || entity.kind != "pickup" || entity.playing {
+		t.Fatalf("p_grenade entity = %#v, want inactive pickup", play.scriptEntities[2])
+	}
+}
+
 func TestBaseRenderLayersUseNativeOrder(t *testing.T) {
 	want := []formats.LayerKind{formats.LayerG, formats.LayerHB, formats.LayerD}
 	if len(formats.BaseRenderLayerKinds) != len(want) {

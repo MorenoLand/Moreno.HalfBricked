@@ -1035,9 +1035,13 @@ func (h *playScriptHost) spawnEntity(args []scripting.Value) (scripting.CallResu
 	if err != nil {
 		return scripting.CallResult{}, err
 	}
+	kind, playing := "sprite", true
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(texture)), "p_") {
+		kind, playing = "pickup", false
+	}
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
-	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture}
+	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: kind, entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: playing}
 	return scriptValues(id), nil
 }
 
