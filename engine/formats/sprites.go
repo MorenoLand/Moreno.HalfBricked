@@ -28,7 +28,7 @@ type SpriteDefinition struct {
 type SpriteCatalog map[string]SpriteDefinition
 
 type spriteXML struct {
-	Sprites []spriteDefinitionXML `xml:"Sprite"`
+	Sprites []spriteDefinitionXML `xml:"Sprites>Sprite"`
 }
 
 type spriteDefinitionXML struct {

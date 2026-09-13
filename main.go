@@ -1707,7 +1707,15 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 		if a.play.world != nil {
 			waveCount = len(a.play.world.Level.Waves)
 		}
-		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals)), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("player %.1f,%.1f walk %t target %.1f,%.1f dialogue %d/%d", a.play.x, a.play.y, a.play.scriptWalking, a.play.scriptWalkX, a.play.scriptWalkY, a.play.dialogueIndex, len(a.play.dialogue)), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
+		death := fmt.Sprintf("catalog %d", len(a.sprites))
+		if definition, ok := a.sprites.Find("ZombieDeaths"); ok {
+			death = fmt.Sprintf("catalog %d anims %d", len(a.sprites), len(definition.Animations))
+		}
+		if animation, ok := zombieDeathAnimation(a.sprites, 0); ok {
+			_, err := a.Texture(animation.Texture)
+			death = fmt.Sprintf("%s %d@%.1f loaded %t", animation.Texture, animation.Frames, animation.FPS, err == nil)
+		}
+		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d pops %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals), len(a.play.bloodPops)), fmt.Sprintf("death0 %s", death), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("player %.1f,%.1f walk %t target %.1f,%.1f dialogue %d/%d", a.play.x, a.play.y, a.play.scriptWalking, a.play.scriptWalkX, a.play.scriptWalkY, a.play.dialogueIndex, len(a.play.dialogue)), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
 		for index, portal := range a.play.portals {
 			if index >= 3 {
 				break
