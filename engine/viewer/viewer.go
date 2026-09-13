@@ -221,11 +221,10 @@ func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Ver
 		return vertices, false
 	}
 	tileX, tileY := int(tileID)%cols, int(tileID)/cols
-	uvOffset := float32(v.TileSet.UVOffset)
-	sourceX0 := float32(tileX*tileSize) + uvOffset
-	sourceY0 := float32(tileY*tileSize) + uvOffset
-	sourceX1 := float32((tileX+1)*tileSize) - uvOffset
-	sourceY1 := float32((tileY+1)*tileSize) - uvOffset
+	sourceX0 := float32(tileX * tileSize)
+	sourceY0 := float32(tileY * tileSize)
+	sourceX1 := float32((tileX + 1) * tileSize)
+	sourceY1 := float32((tileY + 1) * tileSize)
 	if id&0x00010000 != 0 {
 		sourceX0, sourceX1 = sourceX1, sourceX0
 	}

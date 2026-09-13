@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/hajimehoshi/ebiten/v2"
 )
 
 func TestPropSourceBoundsPreserveReversedUVs(t *testing.T) {
@@ -25,5 +26,13 @@ func TestSetZoomReclampsCamera(t *testing.T) {
 	viewer.SetZoom(.5)
 	if viewer.CameraX != 0 || viewer.CameraY != 128 {
 		t.Fatalf("camera after zoom = %.0f,%.0f, want 0,128", viewer.CameraX, viewer.CameraY)
+	}
+}
+
+func TestAtlasTileVerticesUseFullNearestTexelBounds(t *testing.T) {
+	viewer := &Viewer{Atlas: ebiten.NewImage(512, 512), TileSet: formats.TileSet{TileSize: 32, UVOffset: .6}}
+	vertices, ok := viewer.atlasTileVertices(17, 0, 0, 32)
+	if !ok || vertices[0].SrcX != 32 || vertices[0].SrcY != 32 || vertices[3].SrcX != 64 || vertices[3].SrcY != 64 {
+		t.Fatalf("nearest tile bounds = (%v,%v)-(%v,%v), want (32,32)-(64,64)", vertices[0].SrcX, vertices[0].SrcY, vertices[3].SrcX, vertices[3].SrcY)
 	}
 }
