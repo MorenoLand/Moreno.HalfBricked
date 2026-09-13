@@ -144,7 +144,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if zoom <= 0 {
 			return scripting.CallResult{}, fmt.Errorf("zoom must be positive")
 		}
-		h.play.world.Zoom = zoom
+		h.play.world.SetZoom(zoom)
 		return scripting.CallResult{}, nil
 	case "GetZoom":
 		return scriptValues(h.play.world.Zoom), nil
@@ -1065,6 +1065,7 @@ func (h *playScriptHost) loadScriptLevel(name string) error {
 	zoom := h.play.world.Zoom
 	world := viewer.New(level, tileset, atlas, h.app)
 	world.Zoom = zoom
+	world.ViewportX, world.ViewportY = 0, 0
 	world.Layers[formats.LayerH] = true
 	h.play.world = world
 	h.play.tileSize = tileSizeFor(tileset)

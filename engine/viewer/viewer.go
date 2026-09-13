@@ -59,6 +59,13 @@ func (v *Viewer) SetRenderScale(scaleX, scaleY float64) {
 		v.RenderScaleY = scaleY
 	}
 }
+func (v *Viewer) SetZoom(zoom float64) {
+	if zoom <= 0 {
+		return
+	}
+	v.Zoom = zoom
+	v.clampCamera()
+}
 func (v *Viewer) renderScale() (float64, float64) {
 	scaleX, scaleY := v.RenderScaleX, v.RenderScaleY
 	if scaleX <= 0 {
