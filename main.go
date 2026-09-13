@@ -1498,10 +1498,10 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		}
 	})
 	a.drawScriptFade(screen)
-	a.drawPlayControls(screen)
-	a.drawGameHUD(screen)
 	a.drawScriptTextures(screen)
 	a.drawScriptText(screen)
+	a.drawPlayControls(screen)
+	a.drawGameHUD(screen)
 	if a.play.paused {
 		a.drawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 		a.text(screen, "PAUSED", 195, 115, 1.0)
