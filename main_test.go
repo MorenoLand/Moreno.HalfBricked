@@ -26,6 +26,13 @@ func TestPortalCellMatchesNativeBounds(t *testing.T) {
 		}
 	}
 }
+func TestPortalCellReuseResetsNativeLifetime(t *testing.T) {
+	play := &playState{portals: []portalState{{cellX: 1, cellY: 1, age: 1.5}}}
+	play.addPortal(120, 120)
+	if len(play.portals) != 1 || play.portals[0].age != 0 {
+		t.Fatalf("reused portal state = %#v, want one portal with age 0", play.portals)
+	}
+}
 
 func TestButtonTextRectsUseNativeAtlasRows(t *testing.T) {
 	got, ok := buttonTextRect(6)
