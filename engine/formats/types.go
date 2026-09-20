@@ -54,13 +54,17 @@ type Spawner struct {
 }
 
 type SpawnType struct {
-	Name      string  `json:"name"`
-	Chance    float64 `json:"chance"`
-	Speed     Vec2    `json:"speed"`
-	Strength  float64 `json:"strength"`
-	Size      Vec2    `json:"size"`
-	TurnSpeed float64 `json:"turnSpeed"`
-	Texture   string  `json:"texture"`
+	Name              string  `json:"name"`
+	Chance            float64 `json:"chance"`
+	Speed             Vec2    `json:"speed"`
+	Strength          float64 `json:"strength"`
+	Size              Vec2    `json:"size"`
+	TurnSpeed         float64 `json:"turnSpeed"`
+	Texture           string  `json:"texture"`
+	Weapon            string  `json:"weapon"`
+	AlertRadius       float64 `json:"alertRadius"`
+	DeviateCycleSpeed float64 `json:"deviateCycleSpeed"`
+	DeviateAmount     float64 `json:"deviateAmount"`
 }
 
 type Prop struct {

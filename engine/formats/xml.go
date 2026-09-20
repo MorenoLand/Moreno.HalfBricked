@@ -77,13 +77,17 @@ type spawnerXML struct {
 	Types     []spawnTypeXML `xml:"type"`
 }
 type spawnTypeXML struct {
-	Name      string `xml:"name,attr"`
-	Chance    string `xml:"chance,attr"`
-	Speed     string `xml:"speed,attr"`
-	Strength  string `xml:"strength,attr"`
-	Size      string `xml:"size,attr"`
-	TurnSpeed string `xml:"turnSpeed,attr"`
-	Texture   string `xml:"texture,attr"`
+	Name              string `xml:"name,attr"`
+	Chance            string `xml:"chance,attr"`
+	Speed             string `xml:"speed,attr"`
+	Strength          string `xml:"strength,attr"`
+	Size              string `xml:"size,attr"`
+	TurnSpeed         string `xml:"turnSpeed,attr"`
+	Texture           string `xml:"texture,attr"`
+	Weapon            string `xml:"weapon,attr"`
+	AlertRadius       string `xml:"alertRadius,attr"`
+	DeviateCycleSpeed string `xml:"deviateCycleSpeed,attr"`
+	DeviateAmount     string `xml:"deviateAmount,attr"`
 }
 type tileDocument struct {
 	TileSets []tileXML `xml:"TileSet"`
@@ -294,7 +298,19 @@ func parseWaves(document waveList) ([]Wave, error) {
 				if err != nil {
 					return nil, err
 				}
-				spawner.Types = append(spawner.Types, SpawnType{Name: entry.Name, Chance: chance, Speed: speed, Strength: strength, Size: size, TurnSpeed: turnSpeed, Texture: entry.Texture})
+				alertRadius, err := parseXMLFloatDefault(entry.AlertRadius, "alertRadius", typeIndex, 0)
+				if err != nil {
+					return nil, err
+				}
+				deviateCycleSpeed, err := parseXMLFloatDefault(entry.DeviateCycleSpeed, "deviateCycleSpeed", typeIndex, 0)
+				if err != nil {
+					return nil, err
+				}
+				deviateAmount, err := parseXMLFloatDefault(entry.DeviateAmount, "deviateAmount", typeIndex, 0)
+				if err != nil {
+					return nil, err
+				}
+				spawner.Types = append(spawner.Types, SpawnType{Name: entry.Name, Chance: chance, Speed: speed, Strength: strength, Size: size, TurnSpeed: turnSpeed, Texture: entry.Texture, Weapon: entry.Weapon, AlertRadius: alertRadius, DeviateCycleSpeed: deviateCycleSpeed, DeviateAmount: deviateAmount})
 			}
 			wave.Spawners = append(wave.Spawners, spawner)
 		}

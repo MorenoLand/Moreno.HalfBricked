@@ -21,3 +21,18 @@ func TestParsePropsKeepsAnimatedXMLRecords(t *testing.T) {
 		t.Fatalf("animated prop = %#v", animated[0])
 	}
 }
+
+func TestParseWavesKeepsNativeSpawnAttributes(t *testing.T) {
+	var document waveList
+	if err := xml.Unmarshal([]byte(`<waves><wave next_wave="0" run_time="1000" end_wave_time="100" end_wave_zombies="0"><spawner delay_time="0" count="1" index="3"><type name="armed_zombie" chance="2" speed="80" strength="300" size="40" turnSpeed="12" texture="cyborg" weapon="PISTOL" alertRadius="120" deviateCycleSpeed="1.5" deviateAmount="4"/></spawner></wave></waves>`), &document); err != nil {
+		t.Fatal(err)
+	}
+	waves, err := parseWaves(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spawn := waves[0].Spawners[0].Types[0]
+	if spawn.Weapon != "PISTOL" || spawn.AlertRadius != 120 || spawn.DeviateCycleSpeed != 1.5 || spawn.DeviateAmount != 4 {
+		t.Fatalf("spawn attributes = %#v", spawn)
+	}
+}
