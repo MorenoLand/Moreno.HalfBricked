@@ -465,6 +465,27 @@ func TestCameraShakeStoresNativeCallbackArguments(t *testing.T) {
 	}
 }
 
+func TestSetCameraPanInterpolatesNativeDuration(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20}, Zoom: 1}, tileSize: 32}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetCameraPan", []scripting.Value{.5, 300, 300, 1}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.scriptCameraPanActive || play.world.Zoom != 1 {
+		t.Fatalf("camera pan start = active %t zoom %.3f, want active true zoom 1", play.scriptCameraPanActive, play.world.Zoom)
+	}
+	play.updateCamera()
+	if play.world.Zoom >= 1 || !play.scriptCameraPanActive {
+		t.Fatalf("camera pan first step = active %t zoom %.3f, want active true and zoom below 1", play.scriptCameraPanActive, play.world.Zoom)
+	}
+	for i := 0; i < 59; i++ {
+		play.updateCamera()
+	}
+	if play.scriptCameraPanActive || math.Abs(play.world.Zoom-.5) > .0001 {
+		t.Fatalf("camera pan final = active %t zoom %.3f, want active false zoom .5", play.scriptCameraPanActive, play.world.Zoom)
+	}
+}
+
 func TestAddRobotBossZombieUsesNativeSpawnState(t *testing.T) {
 	play := &playState{scriptEntities: map[int]*scriptEntity{}, scriptNextEntity: 1}
 	host := &playScriptHost{play: play}

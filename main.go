@@ -188,6 +188,11 @@ type playState struct {
 	scriptCameraFollow                                     bool
 	scriptCameraFollowID                                   int
 	scriptCameraFollowOffsetX, scriptCameraFollowOffsetY   float64
+	scriptCameraPanActive                                  bool
+	scriptCameraPanStartX, scriptCameraPanStartY           float64
+	scriptCameraPanTargetX, scriptCameraPanTargetY         float64
+	scriptCameraPanStartZoom, scriptCameraPanTargetZoom    float64
+	scriptCameraPanElapsed, scriptCameraPanDuration        float64
 	shakeX, shakeY, shakeAmount, shakeDuration             float64
 	shakeActive                                            bool
 	westernAchievementChoice                               float64
@@ -1743,7 +1748,11 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 		worldX := (float64(logicalX)-active.ViewportX)/active.Zoom + active.CameraX
 		worldY := (float64(logicalY)-active.ViewportY)/active.Zoom + active.CameraY
 		tileX, tileY := int(math.Floor(worldX/float64(tileSize))), int(math.Floor(worldY/float64(tileSize)))
-		lines = append(lines, fmt.Sprintf("world %.1f,%.1f tile %d,%d", worldX, worldY, tileX, tileY), fmt.Sprintf("camera %.1f,%.1f zoom %.2f", active.CameraX, active.CameraY, active.Zoom))
+		pan := "off"
+		if a.play != nil && a.play.scriptCameraPanActive {
+			pan = fmt.Sprintf("%.2f/%.2f", a.play.scriptCameraPanElapsed, a.play.scriptCameraPanDuration)
+		}
+		lines = append(lines, fmt.Sprintf("world %.1f,%.1f tile %d,%d", worldX, worldY, tileX, tileY), fmt.Sprintf("camera %.1f,%.1f zoom %.2f pan %s", active.CameraX, active.CameraY, active.Zoom, pan))
 		for _, kind := range []formats.LayerKind{formats.LayerG, formats.LayerD, formats.LayerHB, formats.LayerH, formats.LayerC} {
 			lines = append(lines, debugTileLine(active, kind, tileX, tileY))
 		}
@@ -3168,6 +3177,20 @@ func (p *playState) centerCamera() {
 	p.world.ViewportX, p.world.ViewportY = 0, 0
 }
 func (p *playState) updateCamera() {
+	if p.scriptCameraPanActive {
+		p.scriptCameraPanElapsed += 1.0 / 60.0
+		progress := p.scriptCameraPanElapsed / p.scriptCameraPanDuration
+		if progress >= 1 {
+			progress = 1
+		}
+		zoom := p.scriptCameraPanStartZoom + (p.scriptCameraPanTargetZoom-p.scriptCameraPanStartZoom)*progress
+		p.world.SetZoom(zoom)
+		p.setScriptCamera(p.scriptCameraPanStartX+(p.scriptCameraPanTargetX-p.scriptCameraPanStartX)*progress, p.scriptCameraPanStartY+(p.scriptCameraPanTargetY-p.scriptCameraPanStartY)*progress)
+		if progress >= 1 {
+			p.scriptCameraPanActive = false
+		}
+		return
+	}
 	if p.scriptRuntime != nil && !p.scriptRuntime.Done() && !p.scriptCameraFollow {
 		return
 	}

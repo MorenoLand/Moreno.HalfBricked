@@ -134,6 +134,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
+		h.play.cancelScriptCameraPan()
 		h.play.setScriptCamera(x, y)
 		return scripting.CallResult{}, nil
 	case "SetZoom":
@@ -144,6 +145,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if zoom <= 0 {
 			return scripting.CallResult{}, fmt.Errorf("zoom must be positive")
 		}
+		h.play.cancelScriptCameraPan()
 		h.play.world.SetZoom(zoom)
 		return scripting.CallResult{}, nil
 	case "GetZoom":
@@ -164,8 +166,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if zoom <= 0 {
 			return scripting.CallResult{}, fmt.Errorf("zoom must be positive")
 		}
-		h.play.world.Zoom = zoom
-		h.play.setScriptCamera(x, y)
+		duration, err := scriptNumber(args, 3)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		h.play.setScriptCameraPan(zoom, x, y, duration)
 		return scripting.CallResult{}, nil
 	case "GetCameraX":
 		return scriptValues(h.play.scriptCameraCenterX()), nil
@@ -189,6 +194,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 				return scripting.CallResult{}, err
 			}
 		}
+		h.play.cancelScriptCameraPan()
 		h.play.scriptCameraFollow = follow != 0
 		h.play.scriptCameraFollowID = int(follow)
 		h.play.scriptCameraFollowOffsetX, h.play.scriptCameraFollowOffsetY = offsetX, offsetY
@@ -1407,6 +1413,26 @@ func (p *playState) setScriptCamera(x, y float64) {
 	maxY := math.Max(0, worldHeight-float64(logicalHeight)/zoom)
 	p.world.CameraX = math.Max(0, math.Min(maxX, x-float64(logicalWidth)/(2*zoom)))
 	p.world.CameraY = math.Max(0, math.Min(maxY, y-float64(logicalHeight)/(2*zoom)))
+}
+func (p *playState) cancelScriptCameraPan() {
+	p.scriptCameraPanActive = false
+	p.scriptCameraPanElapsed = 0
+}
+func (p *playState) setScriptCameraPan(zoom, x, y, duration float64) {
+	if zoom <= 0 {
+		return
+	}
+	if duration <= 0 {
+		p.cancelScriptCameraPan()
+		p.world.SetZoom(zoom)
+		p.setScriptCamera(x, y)
+		return
+	}
+	p.scriptCameraPanStartX, p.scriptCameraPanStartY = p.scriptCameraCenterX(), p.scriptCameraCenterY()
+	p.scriptCameraPanStartZoom, p.scriptCameraPanTargetZoom = p.world.Zoom, zoom
+	p.scriptCameraPanTargetX, p.scriptCameraPanTargetY = x, y
+	p.scriptCameraPanElapsed, p.scriptCameraPanDuration = 0, duration
+	p.scriptCameraPanActive = true
 }
 
 func (p *playState) scriptCameraCenterX() float64 {
