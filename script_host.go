@@ -959,6 +959,8 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.westernAchievementChoice = choice
 		h.play.westernAchievementUnlocked = true
 		return scripting.CallResult{}, nil
+	case "GetPositionWithinRadius":
+		return scriptValues(0, 0), nil
 	case "SpawnZombiesAroundPlayer":
 		return scripting.CallResult{}, fmt.Errorf("SpawnZombiesAroundPlayer call shape is unresolved")
 	case "TriggerTutorial":

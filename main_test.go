@@ -365,6 +365,17 @@ func TestGetPlatformMatchesNativeValue(t *testing.T) {
 	}
 }
 
+func TestGetPositionWithinRadiusReturnsNativeClearedPair(t *testing.T) {
+	host := &playScriptHost{play: &playState{}}
+	result, err := host.Call("GetPositionWithinRadius", []scripting.Value{240, 160, 50, 170})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Values) != 2 || result.Values[0] != 0 || result.Values[1] != 0 {
+		t.Fatalf("GetPositionWithinRadius() = %#v, want cleared pair (0, 0)", result.Values)
+	}
+}
+
 func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
 	play := &playState{}
 	host := &playScriptHost{play: play}
