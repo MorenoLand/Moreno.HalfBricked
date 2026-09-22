@@ -13,10 +13,11 @@ type SoundSource interface {
 }
 
 type SoundSystem struct {
-	source  SoundSource
-	context *audio.Context
-	music   *audio.Player
-	cache   map[string][]byte
+	source       SoundSource
+	context      *audio.Context
+	music        *audio.Player
+	musicEnabled bool
+	cache        map[string][]byte
 }
 
 func NewSoundSystem(source SoundSource) *SoundSystem {
@@ -28,29 +29,43 @@ func NewSilentSoundSystem(source SoundSource) *SoundSystem {
 }
 
 func newSoundSystem(source SoundSource, musicEnabled bool) *SoundSystem {
-	system := &SoundSystem{source: source, cache: map[string][]byte{}}
+	system := &SoundSystem{source: source, musicEnabled: musicEnabled, cache: map[string][]byte{}}
 	if source == nil {
 		return system
 	}
-	data, err := system.bytes("audio/music/sound/Music_Menu.ogg")
+	_ = system.SetMusic("audio/music/sound/Music_Menu.ogg", 532640)
+	return system
+}
+func (s *SoundSystem) SetMusic(path string, loopPointSamples int64) error {
+	if s == nil || s.source == nil {
+		return nil
+	}
+	data, err := s.bytes(path)
 	if err != nil {
-		return system
+		return err
 	}
 	stream, err := vorbis.DecodeF32(bytes.NewReader(data))
 	if err != nil {
-		return system
+		return err
 	}
-	system.context = audio.NewContext(stream.SampleRate())
-	system.music, err = system.context.NewPlayerF32(audio.NewInfiniteLoopF32(stream, stream.Length()))
+	if s.context == nil {
+		s.context = audio.NewContext(stream.SampleRate())
+	}
+	introBytes, loopBytes := musicLoopBounds(loopPointSamples, stream.Length())
+	player, err := s.context.NewPlayerF32(audio.NewInfiniteLoopWithIntroF32(stream, introBytes, loopBytes))
 	if err != nil {
-		system.context = nil
-		return system
+		return err
 	}
-	system.music.SetVolume(.35)
-	if musicEnabled {
-		system.music.Play()
+	player.SetVolume(.35)
+	old := s.music
+	s.music = player
+	if old != nil {
+		_ = old.Close()
 	}
-	return system
+	if s.musicEnabled {
+		player.Play()
+	}
+	return nil
 }
 
 func (s *SoundSystem) Play(path string, volume float64) {
@@ -74,7 +89,11 @@ func (s *SoundSystem) Play(path string, volume float64) {
 }
 
 func (s *SoundSystem) MusicEnabled(enabled bool) {
-	if s == nil || s.music == nil {
+	if s == nil {
+		return
+	}
+	s.musicEnabled = enabled
+	if s.music == nil {
 		return
 	}
 	if enabled {
@@ -82,6 +101,13 @@ func (s *SoundSystem) MusicEnabled(enabled bool) {
 	} else {
 		s.music.Pause()
 	}
+}
+func musicLoopBounds(loopPointSamples, streamLength int64) (int64, int64) {
+	introBytes := loopPointSamples * 8
+	if loopPointSamples <= 0 || introBytes >= streamLength {
+		return 0, streamLength
+	}
+	return introBytes, streamLength - introBytes
 }
 
 func (s *SoundSystem) Close() error {

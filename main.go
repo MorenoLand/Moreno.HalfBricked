@@ -279,6 +279,31 @@ func (a *app) playSound(path string, volume float64) {
 	}
 	a.sound.Play(path, volume)
 }
+func (a *app) setMenuMusic() {
+	if a == nil || a.silent || a.sound == nil {
+		return
+	}
+	_ = a.sound.SetMusic("audio/music/sound/Music_Menu.ogg", 532640)
+}
+func (a *app) setWorldMusic(world int) {
+	if a == nil || a.silent || a.sound == nil {
+		return
+	}
+	path, loopPoint, ok := worldMusicTrack(world)
+	if ok {
+		_ = a.sound.SetMusic(path, loopPoint)
+	}
+}
+func worldMusicTrack(world int) (string, int64, bool) {
+	tracks := [...]struct {
+		path      string
+		loopPoint int64
+	}{{"audio/music/sound/Music_Caveman.ogg", 774700}, {"audio/music/sound/Music_1930s.ogg", 510000}, {"audio/music/sound/Music_Egypt.ogg", 795000}, {"audio/music/sound/Music_Japan.ogg", 599583}, {"audio/music/sound/Music_Future.ogg", 471000}, {"audio/music/sound/Music_western.ogg", 788162}}
+	if world < 0 || world >= len(tracks) {
+		return "", 0, false
+	}
+	return tracks[world].path, tracks[world].loopPoint, true
+}
 func (a *app) Update() error {
 	if a.capture != nil && a.captureLimit > 0 && a.capture.Frames() >= uint64(a.captureLimit) {
 		return ebiten.Termination
@@ -392,6 +417,7 @@ func (a *app) Update() error {
 		if a.play.shouldQuit {
 			a.play.closeScript()
 			a.play = nil
+			a.setMenuMusic()
 			return nil
 		}
 		return nil
@@ -2370,6 +2396,7 @@ func (a *app) openPlay() error {
 		}
 	}
 	a.play = play
+	a.setWorldMusic(level.Info.WorldIndex)
 	a.play.centerCamera()
 	return nil
 }
