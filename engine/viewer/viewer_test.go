@@ -36,3 +36,10 @@ func TestAtlasTileVerticesUseFullNearestTexelBounds(t *testing.T) {
 		t.Fatalf("nearest tile bounds = (%v,%v)-(%v,%v), want (32,32)-(64,64)", vertices[0].SrcX, vertices[0].SrcY, vertices[3].SrcX, vertices[3].SrcY)
 	}
 }
+func TestAtlasTileVerticesApplyNativeFlipBits(t *testing.T) {
+	viewer := &Viewer{Atlas: ebiten.NewImage(512, 512), TileSet: formats.TileSet{TileSize: 32}}
+	vertices, ok := viewer.atlasTileVertices(17|0x00030000, 0, 0, 32)
+	if !ok || vertices[0].SrcX != 64 || vertices[1].SrcX != 32 || vertices[0].SrcY != 64 || vertices[2].SrcY != 32 {
+		t.Fatalf("flipped tile source = (%v,%v)-(%v,%v), want x 64->32 and y 64->32", vertices[0].SrcX, vertices[1].SrcX, vertices[0].SrcY, vertices[2].SrcY)
+	}
+}
