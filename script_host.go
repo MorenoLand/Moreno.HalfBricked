@@ -1570,6 +1570,11 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if entity.kind == "pickup" {
 		columns, rows, col, frame = 1, 1, 0, 0
 	}
+	flipX := entity.flipX
+	if entity.rotationSet {
+		angle, flipX = nativeSpriteDirection(entity.rotation, columns)
+		col = angle
+	}
 	if col < 0 {
 		col = 0
 	} else if col >= columns {
@@ -1602,7 +1607,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if entity.flipY {
 		scaleY = -scaleY
 	}
-	if entity.flipX {
+	if flipX {
 		options.GeoM.Scale(-scaleX, scaleY)
 	} else {
 		options.GeoM.Scale(scaleX, scaleY)

@@ -335,6 +335,18 @@ func TestSetEntityRotationPreservesScriptFacing(t *testing.T) {
 		t.Fatalf("zombie rotation state = angle:%d flipX:%t, want angle:4 flipX:true", got.angle, got.flipX)
 	}
 }
+func TestNativeSpriteDirectionFoldsNativeRotation(t *testing.T) {
+	for _, test := range []struct {
+		degrees       float64
+		columns, want int
+		flip          bool
+	}{{0, 9, 4, false}, {90, 9, 0, false}, {180, 9, 4, true}, {270, 9, 8, false}, {0, 5, 2, false}} {
+		got, flip := nativeSpriteDirection(test.degrees, test.columns)
+		if got != test.want || flip != test.flip {
+			t.Fatalf("nativeSpriteDirection(%.1f,%d)=(%d,%t), want (%d,%t)", test.degrees, test.columns, got, flip, test.want, test.flip)
+		}
+	}
+}
 
 func TestMakeZombieInvulnerableSetsDamageGate(t *testing.T) {
 	play := &playState{

@@ -1916,6 +1916,10 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		return
 	}
 	angle := int(math.Round(float64(zombie.angle) * float64(columns-1) / 8))
+	flipX := zombie.flipX
+	if entity := a.play.scriptEntities[zombie.scriptID]; entity != nil && entity.rotationSet {
+		angle, flipX = nativeSpriteDirection(entity.rotation, columns)
+	}
 	frame := int(math.Floor(zombie.frame)) % rows
 	if frame < 0 {
 		frame += rows
@@ -1947,7 +1951,7 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if zombie.flipY {
 		scaleY = -scaleY
 	}
-	if zombie.flipX {
+	if flipX {
 		options.GeoM.Scale(-scaleX, scaleY)
 	} else {
 		options.GeoM.Scale(scaleX, scaleY)
@@ -3148,6 +3152,26 @@ func barryDirection(dx, dy float64) (int, bool) {
 		col = 8
 	}
 	return col, flipX
+}
+func nativeSpriteDirection(degrees float64, columns int) (int, bool) {
+	if columns <= 1 {
+		return 0, false
+	}
+	nativeUnits := float32(degrees) * 182.0
+	var raw uint16
+	if nativeUnits > 0 {
+		raw = uint16(int16(int(nativeUnits)))
+	}
+	nativeDegrees := float64(raw) / 182.04167175
+	directionCount := columns*2 - 1
+	direction := int(math.Floor(math.Ceil(450-nativeDegrees)/(360/float64(directionCount)))) % directionCount
+	if direction < 0 {
+		direction += directionCount
+	}
+	if direction >= columns {
+		return directionCount - 1 - direction, true
+	}
+	return direction, false
 }
 func barryAimDirection(angle int, flipX bool) (float64, float64) {
 	if angle < 0 {
