@@ -1596,7 +1596,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	screenX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 	screenY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
 	if entity.kind == "pickup" {
-		a.drawPickupBox(screen, screenX, screenY, zoom)
+		a.drawPickupBox(screen, screenX, screenY, zoom, entity.texture)
 	}
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
@@ -1621,8 +1621,8 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, texture.SubImage(rect).(*ebiten.Image), options)
 }
-func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64) {
-	texture, err := a.Texture("Common0/Textures/crate_SD")
+func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64, name string) {
+	texture, err := a.Texture(pickupCrateTexture(name))
 	if err != nil {
 		return
 	}
@@ -1632,6 +1632,14 @@ func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64) {
 	options.GeoM.Scale(zoom, zoom)
 	options.GeoM.Translate(x, y)
 	a.drawImage(screen, texture, options)
+}
+func pickupCrateTexture(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "p_cow_pat", "p_bazooka", "p_sentry", "p_rand_1", "p_rand_2":
+		return "Common0/Textures/Special_Crate"
+	default:
+		return "Common0/Textures/crate_SD"
+	}
 }
 
 func (a *app) drawScriptTextures(screen *ebiten.Image) {

@@ -347,6 +347,16 @@ func TestNativeSpriteDirectionFoldsNativeRotation(t *testing.T) {
 		}
 	}
 }
+func TestPickupCrateTextureUsesNativeSpecialTypes(t *testing.T) {
+	for _, name := range []string{"p_cow_pat", "p_bazooka", "p_sentry", "p_rand_1", "p_rand_2"} {
+		if got := pickupCrateTexture(name); got != "Common0/Textures/Special_Crate" {
+			t.Fatalf("pickupCrateTexture(%q) = %q, want special crate", name, got)
+		}
+	}
+	if got := pickupCrateTexture("p_grenade"); got != "Common0/Textures/crate_SD" {
+		t.Fatalf("pickupCrateTexture(p_grenade) = %q, want normal crate", got)
+	}
+}
 func TestWaveSpawnerIntervalUsesNativeDelayAndCount(t *testing.T) {
 	if got := waveSpawnerInterval(1000, 100, 3); got != 300 {
 		t.Fatalf("waveSpawnerInterval = %.1f, want 300", got)
