@@ -40,6 +40,12 @@ func TestButtonTextRectsUseNativeAtlasRows(t *testing.T) {
 		t.Fatalf("quit text rect = %v, want (0,96)-(128,112)", got)
 	}
 }
+func TestMainMenuHitUsesNativeButtonSize(t *testing.T) {
+	app := &app{variables: formats.FrontendVariables{"MAINMENU_AOZ_BUTTON_SIZE_VAR": {Kind: "Vec2", Vec2: formats.Vec2{X: 128, Y: 128}}}}
+	if got := app.mainMenuHit(76, 150); got != 0 {
+		t.Fatalf("native-sized main-menu hit = %d, want options button 0", got)
+	}
+}
 
 func TestPortalUsesNativeCloseAndRemovalCadence(t *testing.T) {
 	play := &playState{portals: []portalState{{age: 2.0, size: 140, animationTimer: 100}}}

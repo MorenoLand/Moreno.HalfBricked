@@ -515,7 +515,11 @@ func (a *app) mainMenuHit(x, y int) int {
 		dx, dy := float64(x)-button.cx, float64(y)-button.cy
 		cosine, sine := math.Cos(button.angle), math.Sin(button.angle)
 		localX, localY := cosine*dx+sine*dy, -sine*dx+cosine*dy
-		if math.Abs(localX) <= button.width/2 && math.Abs(localY) <= button.height/2 {
+		width, height := button.width, button.height
+		if size, ok := a.variables.Vec2Value("MAINMENU_AOZ_BUTTON_SIZE_VAR"); ok {
+			width, height = size.X, size.Y
+		}
+		if math.Abs(localX) <= width/2 && math.Abs(localY) <= height/2 {
 			return i
 		}
 	}
