@@ -305,6 +305,25 @@ func TestPlayerRenderAnchorUsesNativeOffset(t *testing.T) {
 	}
 }
 
+func TestMuzzleTransformHorizontalOffsetsAreSymmetric(t *testing.T) {
+	x, y, _, ok := muzzleTransform(1, 0)
+	if !ok || x != 22 || y != 0 {
+		t.Fatalf("right-horizontal muzzle offset = (%.1f, %.1f), %t; want (22, 0), true", x, y, ok)
+	}
+	x, y, _, ok = muzzleTransform(1, .1)
+	if !ok || x != 22 || y != 12 {
+		t.Fatalf("slightly-down-right muzzle offset = (%.1f, %.1f), %t; want unchanged (22, 12), true", x, y, ok)
+	}
+	x, y, _, ok = muzzleTransform(-1, 0)
+	if !ok || x != -22 || y != 0 {
+		t.Fatalf("left-horizontal muzzle offset = (%.1f, %.1f), %t; want symmetric (-22, 0), true", x, y, ok)
+	}
+	x, y, _, ok = muzzleTransform(-1, .1)
+	if !ok || x != -22 || y != 12 {
+		t.Fatalf("slightly-down-left muzzle offset = (%.1f, %.1f), %t; want unchanged (-22, 12), true", x, y, ok)
+	}
+}
+
 func TestPlayerFlashDurationUsesNativeWeaponTimer(t *testing.T) {
 	if nativePlayerFlashDuration != 0.4 {
 		t.Fatalf("player flash duration = %.2f, want native 0.4", nativePlayerFlashDuration)
@@ -369,6 +388,38 @@ func TestWaveSpawnerIntervalUsesNativeDelayAndCount(t *testing.T) {
 	}
 	if got := waveSpawnerInterval(100, 200, 1); got != 500 {
 		t.Fatalf("invalid waveSpawnerInterval = %.1f, want fallback 500", got)
+	}
+}
+func TestNativeRNGSeedAndBoundedSequence(t *testing.T) {
+	rng := newNativeRNG()
+	for _, test := range []struct{ bound, want uint32 }{{100, 1}, {10, 6}, {3, 0}, {524287, 243767}} {
+		if got := rng.bounded(test.bound); got != test.want {
+			t.Fatalf("native RNG bounded(%d) = %d, want %d", test.bound, got, test.want)
+		}
+	}
+}
+func TestPlayStateOpeningsShareNativeRNG(t *testing.T) {
+	a := &app{}
+	first := &playState{rng: a.nativeRNGForPlay()}
+	if got := first.rng.bounded(100); got != 1 {
+		t.Fatalf("first play-state RNG bounded(100) = %d, want 1", got)
+	}
+	second := &playState{rng: a.nativeRNGForPlay()}
+	if first.rng != second.rng {
+		t.Fatal("play-state openings received different RNG state")
+	}
+	if got := second.rng.bounded(10); got != 6 {
+		t.Fatalf("second play-state RNG bounded(10) = %d, want continued stream value 6", got)
+	}
+}
+func TestChooseSpawnTypeUsesNativeChanceWeights(t *testing.T) {
+	rng := newNativeRNG()
+	types := []formats.SpawnType{{Name: "first", Chance: 1}, {Name: "second", Chance: 9}}
+	for _, want := range []string{"first", "second", "second", "second"} {
+		got, ok := chooseSpawnType(types, &rng)
+		if !ok || got.Name != want {
+			t.Fatalf("chooseSpawnType = %#v, %t, want %q", got, ok, want)
+		}
 	}
 }
 
@@ -439,6 +490,40 @@ func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
 	}
 	if play.scriptText2Y != 149 || play.scriptText2Size != 24 {
 		t.Fatalf("regular DrawText2 state = y %.1f size %.1f, want y 149 size 24", play.scriptText2Y, play.scriptText2Size)
+	}
+}
+
+func TestScriptCameoCallsRegisterTextureAndControlDialoguePortrait(t *testing.T) {
+	play := &playState{scriptTextures: map[int]*scriptTexture{}}
+	host := &playScriptHost{play: play}
+	for _, texture := range []struct {
+		id   float64
+		name string
+	}{{0, "Cameos/wrongcameo"}, {7, "Cameos/barrycameo"}} {
+		if _, err := host.Call("LoadTexture", []scripting.Value{texture.id, texture.name}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := host.Call("SetTextureVisible", []scripting.Value{texture.id, true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := host.Call("RegisterCameo", []scripting.Value{float64(0), float64(7)}); err != nil {
+		t.Fatal(err)
+	}
+	if play.scriptTextures[0].cameo != -1 || play.scriptTextures[7].cameo != 0 || play.scriptCameos[0] != 7 {
+		t.Fatalf("RegisterCameo(0, 7) registered textures %#v and mapping %#v, want cameo 0 -> texture 7", play.scriptTextures, play.scriptCameos)
+	}
+	if _, err := host.Call("CameoShow", []scripting.Value{false}); err != nil {
+		t.Fatal(err)
+	}
+	if got := (&app{play: play}).dialogueCameo(0); got != "" {
+		t.Fatalf("dialogue cameo while hidden = %q, want empty", got)
+	}
+	if _, err := host.Call("CameoShow", []scripting.Value{true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := (&app{play: play}).dialogueCameo(0), commonSDTexture("Cameos/barrycameo"); got != want {
+		t.Fatalf("dialogue cameo = %q, want registered texture %q", got, want)
 	}
 }
 

@@ -26,6 +26,7 @@ import (
 )
 
 type app struct {
+	rng                                  *nativeRNG
 	pack                                 *content.Pack
 	levels                               []formats.LevelInfo
 	variables                            formats.FrontendVariables
@@ -183,6 +184,7 @@ type playState struct {
 	scriptFadeBlack                                        bool
 	scriptShowSkip                                         bool
 	scriptCameoVisible                                     bool
+	scriptCameos                                           map[int]int
 	scriptZombieTargetX, scriptZombieTargetY               float64
 	scriptHasZombieTarget                                  bool
 	scriptCameraFollow                                     bool
@@ -203,6 +205,7 @@ type playState struct {
 	waveIndex                                              int
 	waveElapsed                                            float64
 	waveSpawned                                            []int
+	rng                                                    *nativeRNG
 	zombies                                                []zombieState
 	health                                                 float64
 	maxHealth                                              float64
@@ -233,6 +236,33 @@ const zombieRenderAnchor = .35
 const nativeZombieDefaultRenderSize = 48.0
 const playerRenderAnchor = 25.0
 const nativePlayerFlashDuration = 0.4
+
+type nativeRNG struct{ state [6]uint32 }
+
+func newNativeRNG() nativeRNG {
+	return nativeRNG{state: [6]uint32{0xdeadbeef, 0, 0x6c078965, 0x5d588b65, 0x00269ec3, 0}}
+}
+
+func (a *app) nativeRNGForPlay() *nativeRNG {
+	if a.rng == nil {
+		rng := newNativeRNG()
+		a.rng = &rng
+	}
+	return a.rng
+}
+
+func (r *nativeRNG) bounded(bound uint32) uint32 {
+	product := uint64(r.state[2]) * uint64(r.state[0])
+	low := uint32(product)
+	carry := uint32((uint64(r.state[4]) + uint64(low)) >> 32)
+	value := r.state[5] + r.state[2]*r.state[1] + r.state[0]*r.state[3] + uint32(product>>32) + carry
+	r.state[0] = r.state[4] + low
+	r.state[1] = value
+	if bound-1 < 0xfffffffe {
+		return uint32(uint64(value) * uint64(bound) >> 32)
+	}
+	return value
+}
 
 func nativeZombieRenderSize(size float64) float64 {
 	if size > 0 {
@@ -1511,7 +1541,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 			}
 		}
 		a.drawScriptEntities(target, true)
-		a.drawBarryShadow(target, screenX, screenY, scale)
+		a.drawBarryShadow(target, screenX, screenY-24*scale, scale)
 		a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
@@ -1650,14 +1680,18 @@ func (a *app) drawDialogue(screen *ebiten.Image) {
 }
 
 func (a *app) dialogueCameo(index int) string {
-	switch index {
-	case 0:
-		return "Common0/Textures/Cameos/barrycameo_SD"
-	case 1:
-		return "Common0/Textures/Cameos/professorbrainscameo_SD"
-	default:
+	if a.play == nil || !a.play.scriptCameoVisible {
 		return ""
 	}
+	textureID, ok := a.play.scriptCameos[index]
+	if !ok {
+		return ""
+	}
+	texture := a.play.scriptTextures[textureID]
+	if texture == nil || texture.cameo != index || !texture.visible || texture.name == "" {
+		return ""
+	}
+	return commonSDTexture(texture.name)
 }
 
 func (a *app) wrapDialogue(value string, maxWidth, scale float64) string {
@@ -2387,7 +2421,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1}
+	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, rng: a.nativeRNGForPlay()}
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2764,7 +2798,7 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 		return
 	}
 	point := points[ordinal%len(points)]
-	entry, ok := chooseSpawnType(spawner.Types, ordinal)
+	entry, ok := chooseSpawnType(spawner.Types, p.rng)
 	if !ok {
 		return
 	}
@@ -2842,27 +2876,28 @@ func bulletHitsZombie(previousX, previousY, x, y float64, zombie zombieState) bo
 	return zombie.x >= left-halfWidth && zombie.x <= right+halfWidth && zombie.y >= top-halfHeight && zombie.y <= bottom+halfHeight
 }
 
-func chooseSpawnType(types []formats.SpawnType, ordinal int) (formats.SpawnType, bool) {
-	total := 0.0
+func chooseSpawnType(types []formats.SpawnType, rng *nativeRNG) (formats.SpawnType, bool) {
+	total := uint32(0)
 	for _, entry := range types {
 		if entry.Chance > 0 {
-			total += entry.Chance
+			total += uint32(int64(entry.Chance))
 		}
 	}
-	if total <= 0 {
+	if total == 0 {
 		return formats.SpawnType{}, false
 	}
-	value := math.Mod(float64(ordinal), total)
+	value := rng.bounded(total)
 	for _, entry := range types {
 		if entry.Chance <= 0 {
 			continue
 		}
-		if value < entry.Chance {
+		chance := uint32(int64(entry.Chance))
+		if value < chance {
 			return entry, true
 		}
-		value -= entry.Chance
+		value -= chance
 	}
-	return types[len(types)-1], true
+	return formats.SpawnType{}, false
 }
 
 func (p *playState) spawnPoints(index int) []formats.Vec2 {
@@ -3145,6 +3180,9 @@ func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
 		return 0, 0, 0, false
 	}
 	offset := barryMuzzleOffsets[column]
+	if dx != 0 && dy == 0 {
+		offset.y = 0
+	}
 	if flipX {
 		offset.x = -offset.x
 	}

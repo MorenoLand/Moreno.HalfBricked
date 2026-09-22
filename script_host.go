@@ -562,6 +562,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		return scripting.CallResult{}, err
 	case "UnloadTextures":
 		h.play.scriptTextures = map[int]*scriptTexture{}
+		h.play.scriptCameos = map[int]int{}
 		return scripting.CallResult{}, nil
 	case "LoadTexture":
 		id, err := scriptID(args, 0)
@@ -575,15 +576,30 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptTextures[id] = &scriptTexture{id: id, name: name, scaleX: 1, scaleY: 1, alpha: 1, cameo: -1}
 		return scripting.CallResult{}, nil
 	case "RegisterCameo":
-		texture, err := h.textureArg(args)
+		cameoID, err := scriptID(args, 0)
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		texture.cameo, err = scriptID(args, 1)
-		return scripting.CallResult{}, err
+		textureID, err := scriptID(args, 1)
+		if err != nil {
+			return scripting.CallResult{}, err
+		}
+		texture := h.play.scriptTextures[textureID]
+		if texture == nil {
+			texture = &scriptTexture{id: textureID, scaleX: 1, scaleY: 1, alpha: 1, cameo: -1}
+			h.play.scriptTextures[textureID] = texture
+		}
+		texture.cameo = cameoID
+		if h.play.scriptCameos == nil {
+			h.play.scriptCameos = map[int]int{}
+		}
+		h.play.scriptCameos[cameoID] = textureID
+		return scripting.CallResult{}, nil
 	case "CameoShow":
 		show, err := scriptBool(args, 0)
-		h.play.scriptCameoVisible = show
+		if err == nil {
+			h.play.scriptCameoVisible = show
+		}
 		return scripting.CallResult{}, err
 	case "GetCameoY":
 		return scriptValues(0), nil
