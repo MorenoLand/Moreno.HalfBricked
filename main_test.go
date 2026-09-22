@@ -347,6 +347,14 @@ func TestNativeSpriteDirectionFoldsNativeRotation(t *testing.T) {
 		}
 	}
 }
+func TestWaveSpawnerIntervalUsesNativeDelayAndCount(t *testing.T) {
+	if got := waveSpawnerInterval(1000, 100, 3); got != 300 {
+		t.Fatalf("waveSpawnerInterval = %.1f, want 300", got)
+	}
+	if got := waveSpawnerInterval(100, 200, 1); got != 500 {
+		t.Fatalf("invalid waveSpawnerInterval = %.1f, want fallback 500", got)
+	}
+}
 
 func TestMakeZombieInvulnerableSetsDamageGate(t *testing.T) {
 	play := &playState{

@@ -2692,10 +2692,7 @@ func (p *playState) updateWaves() {
 		if spawner.Index < 1 || spawner.Index > 13 || spawner.Count <= 0 || len(spawner.Types) == 0 {
 			continue
 		}
-		interval := (wave.RunTime - spawner.DelayTime) / float64(spawner.Count)
-		if interval <= 0 {
-			interval = 500
-		}
+		interval := waveSpawnerInterval(wave.RunTime, spawner.DelayTime, spawner.Count)
 		for p.waveSpawned[index] < spawner.Count && p.waveElapsed >= spawner.DelayTime+float64(p.waveSpawned[index])*interval {
 			p.spawnZombie(spawner, p.waveSpawned[index])
 			p.waveSpawned[index]++
@@ -2721,6 +2718,13 @@ func (p *playState) updateWaves() {
 			p.waveSpawned = nil
 		}
 	}
+}
+func waveSpawnerInterval(runTime, delayTime float64, count int) float64 {
+	interval := (runTime - delayTime) / float64(count)
+	if interval <= 0 {
+		return 500
+	}
+	return interval
 }
 
 func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
