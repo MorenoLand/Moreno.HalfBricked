@@ -1595,6 +1595,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	screenX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 	screenY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+	if entity.kind == "pickup" {
+		a.drawPickupBox(screen, screenX, screenY, zoom)
+	}
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
 	scaleX, scaleY := entity.scaleX*zoom, entity.scaleY*zoom
@@ -1617,6 +1620,18 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, texture.SubImage(rect).(*ebiten.Image), options)
+}
+func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64) {
+	texture, err := a.Texture("Common0/Textures/crate_SD")
+	if err != nil {
+		return
+	}
+	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-w/2, -h/2)
+	options.GeoM.Scale(zoom, zoom)
+	options.GeoM.Translate(x, y)
+	a.drawImage(screen, texture, options)
 }
 
 func (a *app) drawScriptTextures(screen *ebiten.Image) {
