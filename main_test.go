@@ -576,7 +576,7 @@ func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
 	}
 }
 
-func TestScriptCameoCallsRegisterTextureAndControlDialoguePortrait(t *testing.T) {
+func TestRegisteredDialoguePortraitSurvivesHiddenScriptCameos(t *testing.T) {
 	play := &playState{scriptTextures: map[int]*scriptTexture{}}
 	host := &playScriptHost{play: play}
 	for _, texture := range []struct {
@@ -599,8 +599,8 @@ func TestScriptCameoCallsRegisterTextureAndControlDialoguePortrait(t *testing.T)
 	if _, err := host.Call("CameoShow", []scripting.Value{false}); err != nil {
 		t.Fatal(err)
 	}
-	if got := (&app{play: play}).dialogueCameo(0); got != "" {
-		t.Fatalf("dialogue cameo while hidden = %q, want empty", got)
+	if got, want := (&app{play: play}).dialogueCameo(0), commonSDTexture("Cameos/barrycameo"); got != want {
+		t.Fatalf("dialogue cameo while script cameos are hidden = %q, want registered portrait %q", got, want)
 	}
 	if _, err := host.Call("CameoShow", []scripting.Value{true}); err != nil {
 		t.Fatal(err)

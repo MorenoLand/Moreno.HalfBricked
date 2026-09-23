@@ -1699,7 +1699,7 @@ func dialogueTextLayout(panelX, panelWidth int, cameoResolved bool) (float64, fl
 }
 
 func (a *app) dialogueCameo(index int) string {
-	if a.play == nil || !a.play.scriptCameoVisible {
+	if a.play == nil {
 		return ""
 	}
 	textureID, ok := a.play.scriptCameos[index]
