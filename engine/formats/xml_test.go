@@ -39,12 +39,13 @@ func TestParseWavesKeepsNativeSpawnAttributes(t *testing.T) {
 
 func TestLevelXMLKeepsProgressionMetadata(t *testing.T) {
 	var document levelsDocument
-	if err := xml.Unmarshal([]byte(`<Levels><Level levelName="World0Level2" nextLevel="World1Level0" unlockLevels="World0Survival0;World0Survival1" levelFlags="STORY|ENDWORLD"/></Levels>`), &document); err != nil {
+	if err := xml.Unmarshal([]byte(`<Levels><Level levelName="World0Level2" nextLevel="World1Level0" unlockLevels="World0Survival0;World0Survival1" levelFlags="STORY|ENDWORLD" music="Music_Caveman" voiceoverPrefix="VO_Caveman" conversationXmls="banter_000;chat_000;chat_cutscene_000" leaderboardIdSD="383483" leaderboardIdHD="990246"/></Levels>`), &document); err != nil {
 		t.Fatal(err)
 	}
 	level := document.Levels[0]
 	unlockLevels, flags := splitFlags(level.UnlockLevels), splitFlags(level.Flags)
-	if level.NextLevel != "World1Level0" || len(unlockLevels) != 2 || unlockLevels[0] != "World0Survival0" || unlockLevels[1] != "World0Survival1" || len(flags) != 2 || flags[0] != "STORY" || flags[1] != "ENDWORLD" {
+	conversations := splitFlags(level.ConversationXMLs)
+	if level.NextLevel != "World1Level0" || len(unlockLevels) != 2 || unlockLevels[0] != "World0Survival0" || unlockLevels[1] != "World0Survival1" || len(flags) != 2 || flags[0] != "STORY" || flags[1] != "ENDWORLD" || level.Music != "Music_Caveman" || level.VoiceoverPrefix != "VO_Caveman" || len(conversations) != 3 || conversations[0] != "banter_000" || conversations[2] != "chat_cutscene_000" || level.LeaderboardIDSD != "383483" || level.LeaderboardIDHD != "990246" {
 		t.Fatalf("progression metadata = %#v", level)
 	}
 }
