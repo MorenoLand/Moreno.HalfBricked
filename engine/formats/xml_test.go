@@ -36,3 +36,15 @@ func TestParseWavesKeepsNativeSpawnAttributes(t *testing.T) {
 		t.Fatalf("spawn attributes = %#v", spawn)
 	}
 }
+
+func TestLevelXMLKeepsProgressionMetadata(t *testing.T) {
+	var document levelsDocument
+	if err := xml.Unmarshal([]byte(`<Levels><Level levelName="World0Level2" nextLevel="World1Level0" unlockLevels="World0Survival0;World0Survival1" levelFlags="STORY|ENDWORLD"/></Levels>`), &document); err != nil {
+		t.Fatal(err)
+	}
+	level := document.Levels[0]
+	unlockLevels, flags := splitFlags(level.UnlockLevels), splitFlags(level.Flags)
+	if level.NextLevel != "World1Level0" || len(unlockLevels) != 2 || unlockLevels[0] != "World0Survival0" || unlockLevels[1] != "World0Survival1" || len(flags) != 2 || flags[0] != "STORY" || flags[1] != "ENDWORLD" {
+		t.Fatalf("progression metadata = %#v", level)
+	}
+}

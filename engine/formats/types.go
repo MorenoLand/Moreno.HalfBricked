@@ -20,6 +20,8 @@ type LevelInfo struct {
 	ID            string   `json:"id"`
 	DisplayName   string   `json:"displayName"`
 	BaseFile      string   `json:"baseFile"`
+	NextLevel     string   `json:"nextLevel"`
+	UnlockLevels  []string `json:"unlockLevels"`
 	WorldIndex    int      `json:"worldIndex"`
 	Flags         []string `json:"flags"`
 	Description   string   `json:"description"`

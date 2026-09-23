@@ -17,7 +17,9 @@ type levelsDocument struct {
 type levelXML struct {
 	DisplayName   string `xml:"displayName,attr"`
 	LevelName     string `xml:"levelName,attr"`
+	NextLevel     string `xml:"nextLevel,attr"`
 	BaseFile      string `xml:"baseFileName,attr"`
+	UnlockLevels  string `xml:"unlockLevels,attr"`
 	WorldIndex    string `xml:"worldIndex,attr"`
 	Flags         string `xml:"levelFlags,attr"`
 	Description   string `xml:"description,attr"`
@@ -131,7 +133,7 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		for _, item := range doc.Levels {
 			world, _ := strconv.Atoi(item.WorldIndex)
 			flags := splitFlags(item.Flags)
-			candidate := LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, WorldIndex: world, Flags: flags, Description: item.Description, PostcardImage: item.PostcardImage, SourceXML: filepath.ToSlash(rel)}
+			candidate := LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, NextLevel: strings.TrimSpace(item.NextLevel), UnlockLevels: splitFlags(item.UnlockLevels), WorldIndex: world, Flags: flags, Description: item.Description, PostcardImage: item.PostcardImage, SourceXML: filepath.ToSlash(rel)}
 			current, exists := entries[item.LevelName]
 			if !exists || (!hasLevelFile(root, current) && hasLevelFile(root, candidate)) {
 				entries[item.LevelName] = candidate
