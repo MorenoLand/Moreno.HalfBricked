@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
@@ -50,6 +51,9 @@ func NewPack(source AssetSource) (*Pack, error) {
 	if manifest.SchemaVersion != 1 {
 		return nil, fmt.Errorf("unsupported cache schema %d", manifest.SchemaVersion)
 	}
+	if err := hydrateLevelMetadata(source, &manifest); err != nil {
+		return nil, err
+	}
 	pack := &Pack{source: source, manifest: manifest, levels: make(map[string]formats.Level)}
 	if path, ok := manifestPath(manifest.Files, "Common0/Xml/Common0_Variables.xml"); ok {
 		r, err := source.Open(path)
@@ -85,6 +89,12 @@ func (p *Pack) Load(id string) (formats.Level, error) {
 	}
 	if err := level.Validate(); err != nil {
 		return formats.Level{}, err
+	}
+	for _, info := range p.manifest.Levels {
+		if strings.EqualFold(info.ID, id) {
+			level.Info = info
+			break
+		}
 	}
 	p.levels[id] = level
 	return level, nil
@@ -144,12 +154,8 @@ func (p *Pack) ScriptSource(path string) (string, error) {
 	return string(source), nil
 }
 func (p *Pack) Conversation(world int, name string) (formats.Conversation, error) {
-	candidates := []string{fmt.Sprintf("Common0/Dialog/chat_%03d.xml", world), fmt.Sprintf("DLC1/Dialog/chat_%03d.xml", world)}
-	for _, candidate := range candidates {
-		path, ok := p.SourcePath(candidate)
-		if !ok {
-			continue
-		}
+	paths, missing := p.conversationFiles(world)
+	for _, path := range paths {
 		r, err := p.source.Open(path)
 		if err != nil {
 			return formats.Conversation{}, err
@@ -165,7 +171,57 @@ func (p *Pack) Conversation(world int, name string) (formats.Conversation, error
 			}
 		}
 	}
+	if len(missing) != 0 {
+		return formats.Conversation{}, fmt.Errorf("conversation %q for world %d not found; missing declared dialog XML: %s", name, world, strings.Join(missing, ", "))
+	}
 	return formats.Conversation{}, fmt.Errorf("conversation %q for world %d not found", name, world)
+}
+
+func (p *Pack) conversationFiles(world int) ([]string, []string) {
+	keys := make([]string, 0, len(p.manifest.Files))
+	for key := range p.manifest.Files {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	paths, missing := []string{}, []string{}
+	seenNames, seenPaths := map[string]bool{}, map[string]bool{}
+	for _, level := range p.manifest.Levels {
+		if level.WorldIndex != world {
+			continue
+		}
+		for _, name := range level.ConversationXMLs {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
+			nameKey := strings.ToLower(base)
+			if seenNames[nameKey] {
+				continue
+			}
+			seenNames[nameKey] = true
+			filename := strings.ToLower(base + ".xml")
+			matches := []string{}
+			for _, key := range keys {
+				parts := strings.Split(strings.ToLower(filepath.ToSlash(key)), "/")
+				if len(parts) < 2 || parts[len(parts)-2] != "dialog" || parts[len(parts)-1] != filename {
+					continue
+				}
+				matches = append(matches, p.manifest.Files[key])
+			}
+			if len(matches) == 0 {
+				missing = append(missing, name)
+				continue
+			}
+			for _, path := range matches {
+				if !seenPaths[path] {
+					paths = append(paths, path)
+					seenPaths[path] = true
+				}
+			}
+		}
+	}
+	return paths, missing
 }
 func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
 	if p.weaponsOK {

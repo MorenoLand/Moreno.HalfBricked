@@ -137,9 +137,7 @@ func ParseLevelCatalog(root string) ([]LevelInfo, error) {
 		}
 		rel, _ := filepath.Rel(filepath.Join(root, "assets"), path)
 		for _, item := range doc.Levels {
-			world, _ := strconv.Atoi(item.WorldIndex)
-			flags := splitFlags(item.Flags)
-			candidate := LevelInfo{ID: item.LevelName, DisplayName: item.DisplayName, BaseFile: item.BaseFile, NextLevel: strings.TrimSpace(item.NextLevel), UnlockLevels: splitFlags(item.UnlockLevels), Music: item.Music, VoiceoverPrefix: item.VoiceoverPrefix, ConversationXMLs: splitFlags(item.ConversationXMLs), LeaderboardID: item.LeaderboardID, LeaderboardIDSD: item.LeaderboardIDSD, LeaderboardIDHD: item.LeaderboardIDHD, WorldIndex: world, Flags: flags, Description: item.Description, PostcardImage: item.PostcardImage, SourceXML: filepath.ToSlash(rel)}
+			candidate := levelInfoFromXML(item, filepath.ToSlash(rel))
 			current, exists := entries[item.LevelName]
 			if !exists || (!hasLevelFile(root, current) && hasLevelFile(root, candidate)) {
 				entries[item.LevelName] = candidate

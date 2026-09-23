@@ -13,6 +13,7 @@ type FrontendVariable struct {
 	Kind, Name, Value string
 	Vec2              Vec2
 	Float             float64
+	Flags             []string
 }
 type FrontendVariables map[string]FrontendVariable
 
@@ -34,6 +35,7 @@ func ParseVariables(reader io.Reader) (FrontendVariables, error) {
 		var item struct {
 			Name  string `xml:"name,attr"`
 			Value string `xml:"value,attr"`
+			Flags string `xml:"flags,attr"`
 		}
 		if err := decoder.DecodeElement(&item, &start); err != nil {
 			return nil, err
@@ -41,7 +43,7 @@ func ParseVariables(reader io.Reader) (FrontendVariables, error) {
 		if item.Name == "" {
 			return nil, fmt.Errorf("variable without a name")
 		}
-		variable := FrontendVariable{Kind: start.Name.Local, Name: item.Name, Value: item.Value}
+		variable := FrontendVariable{Kind: start.Name.Local, Name: item.Name, Value: item.Value, Flags: splitFlags(item.Flags)}
 		switch variable.Kind {
 		case "Vec2":
 			parts := strings.Split(item.Value, ",")
