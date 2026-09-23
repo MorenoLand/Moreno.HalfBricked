@@ -2,6 +2,7 @@ package content
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -31,16 +32,19 @@ type LevelRepository interface {
 }
 
 type Pack struct {
-	source    AssetSource
-	manifest  PackManifest
-	levels    map[string]formats.Level
-	variables formats.FrontendVariables
-	weapons   formats.WeaponCatalog
-	weaponErr error
-	weaponsOK bool
-	sprites   formats.SpriteCatalog
-	spriteErr error
-	spritesOK bool
+	source          AssetSource
+	manifest        PackManifest
+	levels          map[string]formats.Level
+	variables       formats.FrontendVariables
+	weapons         formats.WeaponCatalog
+	weaponErr       error
+	weaponsOK       bool
+	zombieWeapons   formats.ZombieWeaponCatalog
+	zombieWeaponErr error
+	zombieWeaponsOK bool
+	sprites         formats.SpriteCatalog
+	spriteErr       error
+	spritesOK       bool
 }
 
 func NewPack(source AssetSource) (*Pack, error) {
@@ -244,6 +248,72 @@ func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
 		p.weaponErr = fmt.Errorf("%s: %w", path, p.weaponErr)
 	}
 	return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr
+}
+func (p *Pack) ZombieWeapons() (formats.ZombieWeaponCatalog, error) {
+	if p.zombieWeaponsOK {
+		return append(formats.ZombieWeaponCatalog(nil), p.zombieWeapons...), p.zombieWeaponErr
+	}
+	p.zombieWeaponsOK = true
+	keys := make([]string, 0, len(p.manifest.Files))
+	for key := range p.manifest.Files {
+		if strings.HasSuffix(strings.ToLower(filepath.Base(filepath.ToSlash(key))), "_manifest.xml") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	seen := map[string]bool{}
+	for _, key := range keys {
+		path := p.manifest.Files[key]
+		r, err := p.source.Open(path)
+		if err != nil {
+			p.zombieWeaponErr = fmt.Errorf("%s: %w", path, err)
+			return nil, p.zombieWeaponErr
+		}
+		var packageManifest struct {
+			XMLInfo []struct {
+				Attributes []xml.Attr `xml:",any,attr"`
+			} `xml:"XmlInfo"`
+		}
+		err = xml.NewDecoder(r).Decode(&packageManifest)
+		r.Close()
+		if err != nil {
+			p.zombieWeaponErr = fmt.Errorf("%s: %w", path, err)
+			return nil, p.zombieWeaponErr
+		}
+		for _, info := range packageManifest.XMLInfo {
+			for _, attribute := range info.Attributes {
+				if !strings.EqualFold(attribute.Name.Local, "zombieWeapon") {
+					continue
+				}
+				name := strings.TrimSpace(attribute.Value)
+				if name == "" {
+					continue
+				}
+				if filepath.Ext(name) == "" {
+					name += ".xml"
+				}
+				wanted := filepath.ToSlash(filepath.Join(filepath.Dir(key), name))
+				weaponPath, ok := manifestPath(p.manifest.Files, wanted)
+				if !ok || seen[strings.ToLower(filepath.ToSlash(weaponPath))] {
+					continue
+				}
+				seen[strings.ToLower(filepath.ToSlash(weaponPath))] = true
+				weaponXML, err := p.source.Open(weaponPath)
+				if err != nil {
+					p.zombieWeaponErr = fmt.Errorf("%s: %w", weaponPath, err)
+					return nil, p.zombieWeaponErr
+				}
+				catalog, parseErr := formats.ParseZombieWeapons(weaponXML)
+				weaponXML.Close()
+				if parseErr != nil {
+					p.zombieWeaponErr = fmt.Errorf("%s: %w", weaponPath, parseErr)
+					return nil, p.zombieWeaponErr
+				}
+				p.zombieWeapons = append(p.zombieWeapons, catalog...)
+			}
+		}
+	}
+	return append(formats.ZombieWeaponCatalog(nil), p.zombieWeapons...), nil
 }
 func (p *Pack) Sprites() (formats.SpriteCatalog, error) {
 	if p.spritesOK {

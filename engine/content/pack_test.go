@@ -54,3 +54,36 @@ func TestPackUsesDeclaredLevelAndConversationXML(t *testing.T) {
 		t.Fatalf("missing/unlisted dialog error = %v, want declared chat_cutscene_000 gap", err)
 	}
 }
+
+func TestPackLoadsZombieWeaponsFromPackageManifests(t *testing.T) {
+	commonXML := `<WeaponData><Weapon><Gun_Type>PISTOL</Gun_Type><Recoil>250</Recoil><Rate_Of_Fire>250</Rate_Of_Fire><Spread>0</Spread><Ammo>99999999</Ammo><Ammo_Per_Shot>1</Ammo_Per_Shot><Life>0.75</Life><Speed>600</Speed><Bullet_Type>NORMAL</Bullet_Type></Weapon></WeaponData>`
+	dlcXML := `<WeaponData><Weapon><Gun_Type>DYNOMITE</Gun_Type><Recoil>1000</Recoil><Rate_Of_Fire>1000</Rate_Of_Fire><Spread>5</Spread><Ammo>5</Ammo><Ammo_Per_Shot>1</Ammo_Per_Shot><Life>1</Life><Speed>350</Speed><Bullet_Type>DYNOMITE</Bullet_Type></Weapon></WeaponData>`
+	source := memoryAssetSource{
+		manifest: PackManifest{SchemaVersion: 1, Files: map[string]string{
+			"Common0/Xml/Common0_Manifest.xml":      "source/Common0/Xml/Common0_Manifest.xml",
+			"Common0/Xml/Common0_ZombieWeapons.xml": "source/Common0/Xml/Common0_ZombieWeapons.xml",
+			"DLC1/XML/DLC1_Manifest.xml":            "source/DLC1/XML/DLC1_Manifest.xml",
+			"DLC1/XML/DLC1_ZombieWeapons.xml":       "source/DLC1/XML/DLC1_ZombieWeapons.xml",
+		}},
+		files: map[string]string{
+			"source/Common0/Xml/Common0_Manifest.xml":      `<PackageManifest><XmlInfo zombieWeapon="Common0_ZombieWeapons"/></PackageManifest>`,
+			"source/Common0/Xml/Common0_ZombieWeapons.xml": commonXML,
+			"source/DLC1/XML/DLC1_Manifest.xml":            `<PackageManifest><XmlInfo zombieweapon="DLC1_ZombieWeapons"/></PackageManifest>`,
+			"source/DLC1/XML/DLC1_ZombieWeapons.xml":       dlcXML,
+		},
+	}
+	pack, err := NewPack(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := pack.ZombieWeapons()
+	if err != nil || len(catalog) != 2 {
+		t.Fatalf("ZombieWeapons() = %#v, %v", catalog, err)
+	}
+	if catalog[0].GunType != "PISTOL" || catalog[0].RecoilSeconds != .25 || catalog[0].RateOfFire != .25 || catalog[0].SpreadUnits != 0 || catalog[0].AmmoPerShot != 1 {
+		t.Fatalf("Common0 zombie weapon = %#v", catalog[0])
+	}
+	if catalog[1].GunType != "DYNOMITE" || catalog[1].RecoilSeconds != 1 || catalog[1].RateOfFire != 1 || catalog[1].SpreadUnits != 910 || catalog[1].Speed != 350 {
+		t.Fatalf("DLC1 zombie weapon = %#v", catalog[1])
+	}
+}

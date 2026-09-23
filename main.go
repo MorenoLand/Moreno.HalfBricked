@@ -42,6 +42,7 @@ type app struct {
 	titleScreen                          bool
 	unlocked                             map[string]bool
 	weapons                              formats.WeaponCatalog
+	zombieWeapons                        formats.ZombieWeaponCatalog
 	sprites                              formats.SpriteCatalog
 	capture                              *engine.Capture
 	captureLimit                         int
@@ -285,6 +286,10 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
+	zombieWeapons, err := pack.ZombieWeapons()
+	if err != nil {
+		return nil, err
+	}
 	sprites, err := pack.Sprites()
 	if err != nil {
 		return nil, err
@@ -299,7 +304,7 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	} else {
 		sound = engine.NewSoundSystem(pack)
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
