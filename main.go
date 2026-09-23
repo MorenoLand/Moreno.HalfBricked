@@ -2583,6 +2583,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.flash = math.Max(0, p.flash-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	fired := false
+	scriptFacingLocked := p.scriptWalking || (p.dialogueIndex >= 0 && p.dialogueIndex < len(p.dialogue))
 	p.updateZombies()
 	if p.updatePlayerDeath() {
 		return false
@@ -2689,7 +2690,9 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		dx, dy = p.leftDeflectX, p.leftDeflectY
 	}
 	if mobile && p.stick == 2 && p.shootControl && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
-		p.angle, p.flipX = barryDirection(p.rightDeflectX, p.rightDeflectY)
+		if !scriptFacingLocked {
+			p.angle, p.flipX = barryDirection(p.rightDeflectX, p.rightDeflectY)
+		}
 		if p.shootCooldown <= 0 {
 			fired = p.fire(p.rightDeflectX, p.rightDeflectY)
 		}
@@ -2699,7 +2702,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		aimDX := worldX - p.x
 		aimDY := worldY - p.y
-		if math.Hypot(aimDX, aimDY) > .001 {
+		if math.Hypot(aimDX, aimDY) > .001 && !scriptFacingLocked {
 			p.angle, p.flipX = barryDirection(aimDX, aimDY)
 		}
 		firing := (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn && !p.secondaryPointerDown
@@ -2748,7 +2751,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			}
 			p.x, p.y = candidateX, candidateY
 		}
-		if mobile && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
+		if mobile && !scriptFacingLocked && (p.stick != 2 || math.Hypot(p.rightDeflectX, p.rightDeflectY) <= .5) {
 			p.angle, p.flipX = barryDirection(dx, dy)
 		}
 	}

@@ -624,6 +624,14 @@ func TestDialogueTextLayoutReservesPortraitSpaceForResolvedCameo(t *testing.T) {
 	}
 }
 
+func TestActiveDialoguePreventsManualPlayerRotation(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: make([]uint32, 400)}}, Zoom: 1}, x: 100, y: 100, health: 1, maxHealth: 1, tileSize: 32, shootControl: true, angle: 0, dialogue: []dialogueLine{{text: "cutscene"}}}
+	play.Update(400, 100, false, false, false)
+	if play.angle != 0 {
+		t.Fatalf("active dialogue changed facing to angle %d, want scripted angle 0", play.angle)
+	}
+}
+
 func TestSpriteAnimationFrameUsesAnimationFPSAndFrameCount(t *testing.T) {
 	idle := formats.SpriteAnimation{Frames: 4, FPS: 8, Loop: true}
 	run := formats.SpriteAnimation{Frames: 4, FPS: 10, Loop: true}
