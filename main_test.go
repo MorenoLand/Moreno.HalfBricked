@@ -89,6 +89,64 @@ func TestZombieDeathAnimationUsesXMLCatalog(t *testing.T) {
 	}
 }
 
+func TestBulletUpdateAppliesNativeDamageAndStartsZombieDeath(t *testing.T) {
+	collision := make([]uint32, 64)
+	for i := range collision {
+		collision[i] = math.MaxUint32
+	}
+	play := &playState{
+		world:     &viewer.Viewer{Level: formats.Level{Width: 8, Height: 8, Layers: map[formats.LayerKind][]uint32{formats.LayerC: collision}}, Zoom: 1},
+		tileSize:  32,
+		health:    1,
+		maxHealth: 1,
+		zombies:   []zombieState{{x: 96, y: 96, health: 100, size: formats.Vec2{X: 32, Y: 32}}},
+		bullets:   []bullet{{x: 96, y: 96, life: 1}},
+	}
+	if play.isSolid(96, 96) || !bulletHitsZombie(96, 96, 96, 96, play.zombies[0]) {
+		t.Fatal("bullet fixture must be in a non-solid tile and overlap the zombie")
+	}
+	play.Update(0, 0, false, false, false)
+	if len(play.bullets) != 0 {
+		t.Fatalf("overlapping bullet count = %d, want consumed hit", len(play.bullets))
+	}
+	if zombie := play.zombies[0]; zombie.health != -400 || !zombie.dying || zombie.deathAge != 0 {
+		t.Fatalf("zombie after native 500 hit = health %.1f dying %t deathAge %.3f, want -400/true/0", zombie.health, zombie.dying, zombie.deathAge)
+	}
+}
+
+func TestBulletUpdateContinuesPastInvulnerableZombie(t *testing.T) {
+	collision := make([]uint32, 64)
+	for i := range collision {
+		collision[i] = math.MaxUint32
+	}
+	play := &playState{
+		world:     &viewer.Viewer{Level: formats.Level{Width: 8, Height: 8, Layers: map[formats.LayerKind][]uint32{formats.LayerC: collision}}, Zoom: 1},
+		tileSize:  32,
+		health:    1,
+		maxHealth: 1,
+		zombies: []zombieState{
+			{x: 96, y: 96, health: 100, invulnerable: true, size: formats.Vec2{X: 32, Y: 32}},
+			{x: 96, y: 96, health: 100, size: formats.Vec2{X: 32, Y: 32}},
+		},
+		bullets: []bullet{{x: 96, y: 96, life: 1}},
+	}
+	for _, zombie := range play.zombies {
+		if !bulletHitsZombie(96, 96, 96, 96, zombie) {
+			t.Fatal("bullet fixture must overlap both zombies")
+		}
+	}
+	play.Update(0, 0, false, false, false)
+	if len(play.bullets) != 0 {
+		t.Fatalf("overlapping bullet count = %d, want consumed hit", len(play.bullets))
+	}
+	if zombie := play.zombies[0]; zombie.health != 100 || zombie.dying {
+		t.Fatalf("invulnerable first target = health %.1f dying %t, want 100/false", zombie.health, zombie.dying)
+	}
+	if zombie := play.zombies[1]; zombie.health != -400 || !zombie.dying || zombie.deathAge != 0 {
+		t.Fatalf("vulnerable second target = health %.1f dying %t deathAge %.3f, want -400/true/0", zombie.health, zombie.dying, zombie.deathAge)
+	}
+}
+
 func TestSpawnEntityDistinguishesNativePickupNames(t *testing.T) {
 	play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}}
 	host := &playScriptHost{play: play}

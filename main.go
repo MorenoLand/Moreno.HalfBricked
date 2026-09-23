@@ -2623,7 +2623,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			}
 			if p.zombies[index].invulnerable {
 				hit = true
-				break
+				continue
 			}
 			p.zombies[index].health -= 500
 			p.zombies[index].hitFlash = zombieHitFlashDuration
@@ -2632,7 +2632,6 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				p.zombies[index].deathAge = 0
 			}
 			hit = true
-			break
 		}
 		if !hit {
 			activeBullets = append(activeBullets, b)
