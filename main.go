@@ -402,9 +402,9 @@ func (a *app) Update() error {
 	}
 	if a.play != nil {
 		pointerX, pointerY := a.pointer()
-		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
-		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
-		a.play.secondaryPointerDown = a.play.grenades > 0 && a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryPointerDown = a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {
 				a.play.paused = false
@@ -2332,6 +2332,9 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 	}
 }
 func (p *playState) secondaryButtonContains(x, y float64) bool {
+	if p.grenades <= 0 {
+		return false
+	}
 	buttonX, buttonY := 416.0, 208.0
 	if p.rightBaseX > 0 && p.rightBaseY > 0 {
 		buttonX, buttonY = p.rightBaseX, p.rightBaseY-48
@@ -2702,7 +2705,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			fired = p.fire(p.rightDeflectX, p.rightDeflectY)
 		}
 	}
-	if !mobile && p.shootControl && !p.secondaryPointerDown {
+	if !mobile && p.shootControl && !p.secondaryButtonContains(float64(pointerX), float64(pointerY)) {
 		worldX := (float64(pointerX)-p.world.ViewportX)/p.world.Zoom + p.world.CameraX
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		aimDX := worldX - p.x

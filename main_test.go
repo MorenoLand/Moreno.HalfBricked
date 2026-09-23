@@ -271,6 +271,17 @@ func TestLevelSelectBackReturnsToMainMenu(t *testing.T) {
 	}
 }
 
+func TestSecondaryButtonBoundsMatchVisibleGrenadeControl(t *testing.T) {
+	play := &playState{grenades: 1}
+	if !play.secondaryButtonContains(416, 208) || play.secondaryButtonContains(350, 208) {
+		t.Fatal("grenade button hitbox does not match its visible bounds")
+	}
+	play.grenades = 0
+	if play.secondaryButtonContains(416, 208) {
+		t.Fatal("hidden grenade button still consumes the aiming pointer")
+	}
+}
+
 func TestBarryAimDirectionMatchesFacingColumns(t *testing.T) {
 	for _, test := range []struct {
 		angle int
