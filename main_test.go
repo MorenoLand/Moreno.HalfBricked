@@ -527,6 +527,61 @@ func TestScriptCameoCallsRegisterTextureAndControlDialoguePortrait(t *testing.T)
 	}
 }
 
+func TestDialogueTextLayoutKeepsPanelPaddingWithoutCameo(t *testing.T) {
+	textX, textWidth := dialogueTextLayout(12, 456, false)
+	if textX != 24 || textWidth != 432 {
+		t.Fatalf("no-cameo layout = x %.0f width %.0f, want x 24 width 432", textX, textWidth)
+	}
+}
+
+func TestDialogueTextLayoutReservesPortraitSpaceForResolvedCameo(t *testing.T) {
+	textX, textWidth := dialogueTextLayout(12, 456, true)
+	if textX != 99 || textWidth != 357 {
+		t.Fatalf("resolved-cameo layout = x %.0f width %.0f, want x 99 width 357", textX, textWidth)
+	}
+}
+
+func TestSpriteAnimationFrameUsesAnimationFPSAndFrameCount(t *testing.T) {
+	idle := formats.SpriteAnimation{Frames: 4, FPS: 8, Loop: true}
+	run := formats.SpriteAnimation{Frames: 4, FPS: 10, Loop: true}
+	if got := spriteAnimationFrame(idle, .3, -1); got != 2 {
+		t.Fatalf("idle frame = %d, want 2 at 8 fps", got)
+	}
+	if got := spriteAnimationFrame(run, .3, -1); got != 3 {
+		t.Fatalf("run frame = %d, want 3 at 10 fps", got)
+	}
+	if got := spriteAnimationFrame(idle, .5, -1); got != 0 {
+		t.Fatalf("looped idle frame = %d, want 0", got)
+	}
+}
+
+func TestDoPlayerSpawnPreservesExplicitScriptPosition(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 2, Height: 2, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {0, 0, 0, 2}}}}, tileSize: 32, scriptWalking: true}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("SetPlayerPos", []scripting.Value{float64(530), float64(431)}); err != nil {
+		t.Fatal(err)
+	}
+	if !play.scriptPlayerPosSet {
+		t.Fatal("SetPlayerPos did not mark the explicit spawn position")
+	}
+	if _, err := host.Call("DoPlayerSpawn", nil); err != nil {
+		t.Fatal(err)
+	}
+	if play.x != 530 || play.y != 431 || play.spawnX != 530 || play.spawnY != 431 || play.scriptWalking || play.scriptPlayerPosSet {
+		t.Fatalf("spawn state = player (%.1f,%.1f), spawn (%.1f,%.1f), walking %t, explicit %t; want (530,431), stopped, flag cleared", play.x, play.y, play.spawnX, play.spawnY, play.scriptWalking, play.scriptPlayerPosSet)
+	}
+}
+
+func TestDoPlayerSpawnUsesCollisionMarkerWithoutExplicitPosition(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 2, Height: 2, Layers: map[formats.LayerKind][]uint32{formats.LayerC: {0, 0, 2, 0}}}}, tileSize: 32, x: 530, y: 431, scriptWalking: true}
+	if _, err := (&playScriptHost{play: play}).Call("DoPlayerSpawn", nil); err != nil {
+		t.Fatal(err)
+	}
+	if play.x != 16 || play.y != 48 || play.spawnX != 16 || play.spawnY != 48 || play.scriptWalking || play.scriptPlayerPosSet {
+		t.Fatalf("spawn state = player (%.1f,%.1f), spawn (%.1f,%.1f), walking %t, explicit %t; want marker center (16,48), stopped, flag clear", play.x, play.y, play.spawnX, play.spawnY, play.scriptWalking, play.scriptPlayerPosSet)
+	}
+}
+
 func TestWalkPlayerToUsesNativeRangeCheck(t *testing.T) {
 	play := &playState{x: 70, y: 0, scriptEntities: map[int]*scriptEntity{}}
 	host := &playScriptHost{play: play}

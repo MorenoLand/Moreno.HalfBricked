@@ -211,6 +211,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, err
 		}
 		h.play.x, h.play.y = x, y
+		h.play.scriptPlayerPosSet = true
 		return scripting.CallResult{}, nil
 	case "GetPlayerX":
 		return scriptValues(h.play.x), nil
@@ -710,19 +711,27 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 	case "NormalControlStyle":
 		return scriptValues(true), nil
 	case "DoPlayerSpawn":
-		layer := h.play.world.Level.Layers[formats.LayerC]
-		for y := 0; y < h.play.world.Level.Height; y++ {
-			for x := 0; x < h.play.world.Level.Width; x++ {
-				if layer[y*h.play.world.Level.Width+x] == 2 {
-					h.play.x = float64(x*h.play.tileSize + h.play.tileSize/2)
-					h.play.y = float64(y*h.play.tileSize + h.play.tileSize/2)
-					h.play.spawnX, h.play.spawnY = h.play.x, h.play.y
-					h.play.scriptWalking = false
-					return scripting.CallResult{}, nil
+		if !h.play.scriptPlayerPosSet {
+			layer := h.play.world.Level.Layers[formats.LayerC]
+			found := false
+			for y := 0; y < h.play.world.Level.Height && !found; y++ {
+				for x := 0; x < h.play.world.Level.Width; x++ {
+					if layer[y*h.play.world.Level.Width+x] == 2 {
+						h.play.x = float64(x*h.play.tileSize + h.play.tileSize/2)
+						h.play.y = float64(y*h.play.tileSize + h.play.tileSize/2)
+						found = true
+						break
+					}
 				}
 			}
+			if !found {
+				return scripting.CallResult{}, fmt.Errorf("player spawn marker (collision value 3) not found")
+			}
 		}
-		return scripting.CallResult{}, fmt.Errorf("player spawn marker (collision value 3) not found")
+		h.play.spawnX, h.play.spawnY = h.play.x, h.play.y
+		h.play.scriptWalking = false
+		h.play.scriptPlayerPosSet = false
+		return scripting.CallResult{}, nil
 	case "StopPlayerShootControl":
 		h.play.shootControl = false
 		return scripting.CallResult{}, nil

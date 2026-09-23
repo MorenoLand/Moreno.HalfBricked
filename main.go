@@ -168,6 +168,7 @@ type playState struct {
 	scriptWaitActive                                       bool
 	scriptWaitStarts                                       int
 	scriptWalking                                          bool
+	scriptPlayerPosSet                                     bool
 	scriptWalkX, scriptWalkY                               float64
 	scriptWalkRange                                        float64
 	scriptLevelToLoad                                      string
@@ -1665,18 +1666,36 @@ func (a *app) drawDialogue(screen *ebiten.Image) {
 		return
 	}
 	line := a.play.dialogue[a.play.dialogueIndex]
-	target := image.Rect(0, logicalHeight-65, logicalWidth, logicalHeight)
+	panelWidth, panelHeight := logicalWidth-2, logicalHeight*19/100
+	panelX, panelBottom := (logicalWidth-panelWidth)/2, logicalHeight-5
+	panelTop := panelBottom - panelHeight
+	target := image.Rect(panelX, panelTop, panelX+panelWidth, panelBottom)
 	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
 		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), target)
 	}
-	textX := 12.0
+	cameoResolved := false
 	if line.cameo >= 0 {
-		textX = 88
 		if cameo := a.dialogueCameo(line.cameo); cameo != "" {
-			a.drawTexture(screen, cameo, 28, logicalHeight-58, .45)
+			if texture, err := a.Texture(cameo); err == nil {
+				options := &ebiten.DrawImageOptions{}
+				options.GeoM.Scale(.55, .55)
+				options.GeoM.Translate(28, float64(panelTop+15))
+				a.drawImage(screen, texture, options)
+				cameoResolved = true
+			}
 		}
 	}
-	a.text(screen, a.wrapDialogue(line.text, logicalWidth-textX-12, .45), textX, logicalHeight-57, .45)
+	textX, textWidth := dialogueTextLayout(panelX, panelWidth, cameoResolved)
+	a.text(screen, a.wrapDialogue(line.text, textWidth, .45), textX, float64(panelTop+8), .45)
+}
+
+func dialogueTextLayout(panelX, panelWidth int, cameoResolved bool) (float64, float64) {
+	const padding, portraitReserve = 12, 87
+	textX := panelX + padding
+	if cameoResolved {
+		textX = panelX + portraitReserve
+	}
+	return float64(textX), float64(panelX + panelWidth - textX - padding)
 }
 
 func (a *app) dialogueCameo(index int) string {
@@ -1946,13 +1965,46 @@ func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle
 func (a *app) drawBarry(screen *ebiten.Image, x, y, scale float64, frame, angle int, flipX bool) {
 	renderY := y - playerRenderAnchor*scale
 	bodySheet := "Common0/Textures/Characters/barryidle_SD"
+	bodyAnimation := "Idle"
 	if a.play != nil && a.play.moving {
 		bodySheet = "Common0/Textures/Characters/barryrun_SD"
+		bodyAnimation = "Run"
 	}
-	a.drawBarryPart(screen, bodySheet, x, renderY, scale, frame, angle, flipX)
+	bodyFrame := frame
+	if a.play != nil {
+		if sprite, ok := a.play.sprites.Find("Barry"); ok {
+			if animation, ok := sprite.Animation(bodyAnimation); ok {
+				bodyFrame = spriteAnimationFrame(animation, a.play.time, frame)
+			}
+		}
+	}
+	a.drawBarryPart(screen, bodySheet, x, renderY, scale, bodyFrame, angle, flipX)
 	if a.play != nil && angle != 8 && a.play.weapon.TextureGun != "" {
-		a.drawBarryPart(screen, commonSDTexture(a.play.weapon.TextureGun), x, renderY, scale, frame, angle, flipX)
+		weaponFrame := bodyFrame
+		if sprite, ok := a.play.sprites.Find(a.play.weapon.TextureGun); ok {
+			if animation, ok := sprite.Animation("Idle"); ok {
+				weaponFrame = spriteAnimationFrame(animation, a.play.time, bodyFrame)
+			}
+		}
+		a.drawBarryPart(screen, commonSDTexture(a.play.weapon.TextureGun), x, renderY, scale, weaponFrame, angle, flipX)
 	}
+}
+
+func spriteAnimationFrame(animation formats.SpriteAnimation, elapsed float64, fallback int) int {
+	if animation.Frames <= 0 || animation.FPS <= 0 {
+		return fallback
+	}
+	frame := int(elapsed * animation.FPS)
+	if frame < 0 {
+		frame = 0
+	}
+	if animation.Loop {
+		return frame % animation.Frames
+	}
+	if frame >= animation.Frames {
+		return animation.Frames - 1
+	}
+	return frame
 }
 
 func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
@@ -2421,7 +2473,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, rng: a.nativeRNGForPlay()}
+	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
