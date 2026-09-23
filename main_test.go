@@ -448,6 +448,31 @@ func TestWaveSpawnerIntervalUsesNativeDelayAndCount(t *testing.T) {
 		t.Fatalf("invalid waveSpawnerInterval = %.1f, want fallback 500", got)
 	}
 }
+func TestWaveSpawnedZombieAndPortalDoNotAdvanceOnCreationUpdate(t *testing.T) {
+	collision := make([]uint32, 32)
+	for index := range collision {
+		collision[index] = math.MaxUint32
+	}
+	collision[9] = 3
+	rng := newNativeRNG()
+	play := &playState{
+		world: &viewer.Viewer{Level: formats.Level{Width: 8, Height: 4, Layers: map[formats.LayerKind][]uint32{formats.LayerC: collision}}, Zoom: 1},
+		x:     240, y: 112, health: 1, maxHealth: 1, tileSize: 32, radius: playerCollisionRadius, rng: &rng,
+	}
+	play.world.Level.Waves = []formats.Wave{{RunTime: 1000, EndWaveZombies: 10, Spawners: []formats.Spawner{{Count: 1, Index: 1, Types: []formats.SpawnType{{Name: "zombie", Chance: 1, Speed: formats.Vec2{X: 60}, Strength: 100}}}}}}
+
+	play.Update(0, 0, false, false, false)
+
+	if len(play.zombies) != 1 || len(play.portals) != 1 {
+		t.Fatalf("wave update spawned %d zombies and %d portals, want one each", len(play.zombies), len(play.portals))
+	}
+	if play.zombies[0].x != 48 || play.zombies[0].y != 48 {
+		t.Errorf("new zombie advanced on its creation update to (%.3f, %.3f), want spawn point (48, 48)", play.zombies[0].x, play.zombies[0].y)
+	}
+	if play.portals[0].age != 0 || play.portals[0].size != 0 || play.portals[0].animationTimer != 100 {
+		t.Errorf("new portal advanced on its creation update: age %.3f size %.3f timer %.1f, want 0/0/100", play.portals[0].age, play.portals[0].size, play.portals[0].animationTimer)
+	}
+}
 func TestNativeRNGSeedAndBoundedSequence(t *testing.T) {
 	rng := newNativeRNG()
 	for _, test := range []struct{ bound, want uint32 }{{100, 1}, {10, 6}, {3, 0}, {524287, 243767}} {

@@ -2583,9 +2583,6 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.flash = math.Max(0, p.flash-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	fired := false
-	if p.scriptRuntime == nil || p.scriptRuntime.Done() {
-		p.updateWaves()
-	}
 	p.updateZombies()
 	if p.updatePlayerDeath() {
 		return false
@@ -2791,6 +2788,9 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	}
 	p.time += 1.0 / 60.0
 	p.updateCamera()
+	if p.scriptRuntime == nil || p.scriptRuntime.Done() {
+		p.updateWaves()
+	}
 	return fired
 }
 
