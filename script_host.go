@@ -1021,11 +1021,8 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 		if spriteErr != nil {
 			return scripting.CallResult{}, spriteErr
 		}
-		switch int(spriteIndex) {
-		case 2:
-			texture = "Characters/professor"
-		case 3:
-			texture = "Characters/princeworker"
+		if loadedTexture := h.play.scriptTextures[int(spriteIndex)]; loadedTexture != nil && loadedTexture.name != "" {
+			texture = loadedTexture.name
 		}
 	}
 	renderSize := nativeZombieRenderSize(size)

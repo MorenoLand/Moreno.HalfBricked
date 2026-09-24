@@ -317,28 +317,20 @@ func TestSetZombieTextureUsesLoadedNumericSlot(t *testing.T) {
 	}
 }
 
-func TestSpawnZombieUsesNativeSpriteIndex(t *testing.T) {
-	for _, test := range []struct {
-		index scripting.Value
-		want  string
-	}{
-		{2, "Characters/professor"},
-		{3, "Characters/princeworker"},
-	} {
-		play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}}
-		host := &playScriptHost{play: play}
-		if _, err := host.spawnZombie([]scripting.Value{100, 120, 32, 0, test.index, 0, 0}); err != nil {
-			t.Fatal(err)
-		}
-		if got := play.zombies[0].texture; got != test.want {
-			t.Fatalf("spawn sprite index %v = %q, want %q", test.index, got, test.want)
-		}
-		if got := play.scriptEntities[1].texture; got != test.want {
-			t.Fatalf("script sprite index %v = %q, want %q", test.index, got, test.want)
-		}
-		if got := play.zombies[0].size; got.X != 64 || got.Y != 64 {
-			t.Fatalf("script sprite index %v render size = %#v, want 64x64", test.index, got)
-		}
+func TestSpawnZombieKeepsDefaultWithoutLoadedTextureSlot(t *testing.T) {
+	play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.spawnZombie([]scripting.Value{100, 120, 32, 0, 2, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if got := play.zombies[0].texture; got != "cavezombie" {
+		t.Fatalf("spawn without loaded texture slot = %q, want default cavezombie", got)
+	}
+	if got := play.scriptEntities[1].texture; got != "cavezombie" {
+		t.Fatalf("script entity without loaded texture slot = %q, want default cavezombie", got)
+	}
+	if got := play.zombies[0].size; got.X != 64 || got.Y != 64 {
+		t.Fatalf("default zombie render size = %#v, want 64x64", got)
 	}
 }
 
@@ -434,11 +426,24 @@ func TestNativeSpriteDirectionFoldsNativeRotation(t *testing.T) {
 		degrees       float64
 		columns, want int
 		flip          bool
-	}{{0, 9, 4, false}, {90, 9, 0, false}, {180, 9, 4, true}, {270, 9, 8, false}, {0, 5, 2, false}} {
+	}{{0, 9, 4, false}, {90, 9, 0, false}, {180, 9, 4, true}, {270, 9, 8, false}, {0, 5, 2, false}, {90, 5, 0, false}, {180, 5, 2, true}} {
 		got, flip := nativeSpriteDirection(test.degrees, test.columns)
 		if got != test.want || flip != test.flip {
 			t.Fatalf("nativeSpriteDirection(%.1f,%d)=(%d,%t), want (%d,%t)", test.degrees, test.columns, got, flip, test.want, test.flip)
 		}
+	}
+}
+func TestSpawnZombieUsesLoadedTextureSlot(t *testing.T) {
+	play := &playState{scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("LoadTexture", []scripting.Value{float64(2), "Characters/professoridle"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.Call("SpawnZombie", []scripting.Value{float64(400), float64(448), float64(32), float64(0), float64(2), float64(0), float64(0)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := play.zombies[0].texture; got != "Characters/professoridle" {
+		t.Fatalf("spawned zombie texture = %q, want loaded texture slot 2", got)
 	}
 }
 func TestPickupCrateTextureUsesNativeSpecialTypes(t *testing.T) {
