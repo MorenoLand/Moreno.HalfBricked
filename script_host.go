@@ -1029,7 +1029,7 @@ func (h *playScriptHost) spawnZombie(args []scripting.Value) (scripting.CallResu
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "zombie", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, size: formats.Vec2{X: renderSize, Y: renderSize}, texture: texture, scriptID: id, alpha: 1, fps: h.play.spriteFPS(texture, ""), scriptControlled: true})
+	h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: speed, health: 100, rawPoints: 100, size: formats.Vec2{X: renderSize, Y: renderSize}, texture: texture, scriptID: id, alpha: 1, fps: h.play.spriteFPS(texture, ""), scriptControlled: true})
 	return scriptValues(id), nil
 }
 
@@ -1105,6 +1105,7 @@ func (h *playScriptHost) loadScriptLevel(name string) error {
 	h.play.waveIndex = 0
 	h.play.waveElapsed = 0
 	h.play.waveSpawned = nil
+	h.play.levelZombieTotal = levelZombieCount(level.Waves, h.app.mode == 1)
 	h.play.scriptEntities = map[int]*scriptEntity{}
 	h.play.scriptNextEntity = 1
 	return nil

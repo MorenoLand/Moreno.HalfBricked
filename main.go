@@ -106,6 +106,7 @@ type bloodPop struct {
 type zombieState struct {
 	x, y             float64
 	speed, health    float64
+	rawPoints        int
 	size             formats.Vec2
 	texture          string
 	animation        string
@@ -211,6 +212,8 @@ type playState struct {
 	zombies                                                []zombieState
 	health                                                 float64
 	maxHealth                                              float64
+	levelKills, levelZombieTotal                           int
+	progressOpacity                                        float64
 	score                                                  int
 	lives                                                  int
 	multiplier                                             int
@@ -725,7 +728,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
-		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet", alpha: 1}}
+		a.play.zombies = []zombieState{{x: a.play.x + 120, y: a.play.y, speed: 0, health: 100, rawPoints: 100, size: formats.Vec2{X: 29, Y: 31}, texture: "girlzombiesheet", alpha: 1}}
 		a.play.angle, a.play.flipX = barryDirection(1, 0)
 		a.play.fire(1, 0)
 		return nil
@@ -741,7 +744,7 @@ func (a *app) setCaptureState(state string) error {
 		id := a.play.scriptNextEntity
 		a.play.scriptNextEntity++
 		a.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "girlzombie", x: a.play.x + 96, y: a.play.y, scaleX: 1, scaleY: 1, alpha: 1, texture: "girlzombiesheet"}
-		a.play.zombies = []zombieState{{x: a.play.x + 96, y: a.play.y, speed: 0, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", scriptID: id, alpha: 1, fps: a.play.spriteFPS("girlzombiesheet", "")}}
+		a.play.zombies = []zombieState{{x: a.play.x + 96, y: a.play.y, speed: 0, health: 100, rawPoints: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", scriptID: id, alpha: 1, fps: a.play.spriteFPS("girlzombiesheet", "")}}
 		host := &playScriptHost{app: a, play: a.play}
 		_, err := host.Call("KillZombie", []scripting.Value{id})
 		return err
@@ -1587,7 +1590,11 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 }
 
 func (a *app) drawGameHUD(screen *ebiten.Image) {
-	if a.play == nil || !a.play.hudVisible {
+	if a.play == nil {
+		return
+	}
+	a.drawLevelProgress(screen)
+	if !a.play.hudVisible {
 		return
 	}
 	scoreX, scoreXOK := a.variables.FloatValue("HUD_SCORE_X_VAR")
@@ -1809,6 +1816,7 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 			death = fmt.Sprintf("%s %d@%.1f loaded %t", animation.Texture, animation.Frames, animation.FPS, err == nil)
 		}
 		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d pops %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals), len(a.play.bloodPops)), fmt.Sprintf("death0 %s", death), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("player %.1f,%.1f walk %t target %.1f,%.1f dialogue %d/%d", a.play.x, a.play.y, a.play.scriptWalking, a.play.scriptWalkX, a.play.scriptWalkY, a.play.dialogueIndex, len(a.play.dialogue)), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
+		lines = append(lines, fmt.Sprintf("score %d kills %d/%d meter %.2f", a.play.score, a.play.levelKills, a.play.levelZombieTotal, a.play.progressOpacity))
 		for index, portal := range a.play.portals {
 			if index >= 3 {
 				break
@@ -2482,6 +2490,7 @@ func (a *app) openPlay() error {
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
 	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
+	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2588,6 +2597,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		}
 		return false
 	}
+	p.updateProgressOpacity(1.0 / 60.0)
 	p.flash = math.Max(0, p.flash-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	fired := false
@@ -2646,15 +2656,21 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.bullets = activeBullets
 	alive := p.zombies[:0]
 	for _, zombie := range p.zombies {
-		if zombie.dying {
-			if zombie.deathAge < zombieDeathDelay {
-				alive = append(alive, zombie)
-			} else {
-				p.bloodPops = append(p.bloodPops, bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3})
-			}
-		} else if zombie.health > 0 {
+		if zombie.dying && zombie.deathAge < zombieDeathDelay {
 			alive = append(alive, zombie)
-		} else {
+			continue
+		}
+		if !zombie.dying && zombie.health > 0 {
+			alive = append(alive, zombie)
+			continue
+		}
+		p.levelKills = int(int32(p.levelKills) + 1)
+		if p.hudVisible {
+			points := int32(zombie.rawPoints) / 10 * 10
+			award := (points / 20) * int32(p.multiplier)
+			p.score = int(int32(p.score) + award)
+		}
+		if !zombie.spawnAway {
 			p.bloodPops = append(p.bloodPops, bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3})
 		}
 	}
@@ -2875,9 +2891,10 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	if speed <= 0 {
 		speed = 70
 	}
-	health := entry.Strength
-	if health <= 0 {
-		health = 100
+	health, rawPoints := 100.0, 0
+	if entry.Strength >= 0 {
+		rawPoints = int(entry.Strength)
+		health = float64(rawPoints)
 	}
 	texture := entry.Texture
 	if texture == "" {
@@ -2893,7 +2910,7 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	id := p.scriptNextEntity
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, size: formats.Vec2{X: nativeZombieDefaultRenderSize, Y: nativeZombieDefaultRenderSize}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, rawPoints: rawPoints, size: formats.Vec2{X: nativeZombieDefaultRenderSize, Y: nativeZombieDefaultRenderSize}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
 }
 
 func (p *playState) addPortal(x, y float64) {
