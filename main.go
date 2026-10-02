@@ -148,6 +148,7 @@ type playState struct {
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
 	bullets                                                []bullet
 	shootCooldown                                          float64
+	secondaryShootCooldown                                 float64
 	paused                                                 bool
 	shouldQuit                                             bool
 	weapon                                                 formats.Weapon
@@ -229,7 +230,7 @@ type playState struct {
 const playerBaseSpeed = 180.0
 const playerCollisionRadius = 16.0
 
-var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-8.5, 25}, {2.5, 24}, {8.5, 22}, {17.5, 20}, {22, 12}, {23.5, 7}, {21.5, -2}, {18.5, -7}}
+var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-6, 24}, {4, 26}, {13, 24}, {22, 17}, {27, 11}, {30, 2}, {28, -10}, {24, -18}, {10, -22}, {-22, -22}, {-26, -14}, {-28, -1}, {-28, 7}, {-25, 15}, {-18, 21}, {-8, 25}}
 
 const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
@@ -240,7 +241,9 @@ const portalRotationLerp = .05
 const zombieRenderAnchor = .35
 const nativeZombieDefaultRenderSize = 48.0
 const playerRenderAnchor = 25.0
-const nativePlayerFlashDuration = 0.4
+const nativeWeaponFlashDuration = .16
+const nativeProjectileRenderAnchor = 20.0
+const nativeFireAimDistance = 96.0
 
 type nativeRNG struct{ state [6]uint32 }
 
@@ -405,8 +408,8 @@ func (a *app) Update() error {
 	}
 	if a.play != nil {
 		pointerX, pointerY := a.pointer()
-		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
-		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyG) || inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
 		a.play.secondaryPointerDown = a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {
@@ -695,6 +698,10 @@ func (a *app) setCaptureState(state string) error {
 	case "main-menu":
 		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
 		a.menuSpawnTime, a.titleSoundStage = .2, 0
+	case "main-menu-hit":
+		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
+		a.menuSpawnTime, a.titleSoundStage = 1, 0
+		return a.beginMenuClick(1)
 	case "level-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 	case "play":
@@ -709,7 +716,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		return nil
-	case "play-fire":
+	case "play-fire", "play-fire-left":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
 			return err
@@ -717,8 +724,12 @@ func (a *app) setCaptureState(state string) error {
 		a.play.closeScript()
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
-		a.play.angle, a.play.flipX = barryDirection(1, 0)
-		a.play.fire(1, 0)
+		direction := 1.0
+		if strings.EqualFold(normalized, "play-fire-left") {
+			direction = -1
+		}
+		a.play.angle, a.play.flipX = barryDirection(direction, 0)
+		a.play.fire(direction, 0)
 		return nil
 	case "play-combat":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
@@ -748,6 +759,41 @@ func (a *app) setCaptureState(state string) error {
 		host := &playScriptHost{app: a, play: a.play}
 		_, err := host.Call("KillZombie", []scripting.Value{id})
 		return err
+	case "play-zombie-shadow":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.zombies = []zombieState{{x: a.play.x - 48, y: a.play.y + 64, health: 100, rawPoints: 100, size: formats.Vec2{X: 48, Y: 48}, texture: "girlzombiesheet", alpha: 1}}
+		return nil
+	case "play-tutorial-images":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = false
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		host := &playScriptHost{app: a, play: a.play}
+		for _, item := range []struct {
+			id                            int
+			x, y, v, height, scale, alpha float64
+		}{{3, 416, 108, .5, .35, .35, 125}, {6, 64, 112, 0, .35, .36, 255}, {9, 64, 200, .36, .14, .15, 255}, {10, 416, 200, .85, .15, .15, 125}} {
+			for _, call := range []struct {
+				name string
+				args []scripting.Value
+			}{{"LoadTexture", []scripting.Value{item.id, "Tutorial_Image"}}, {"SetTexturePos", []scripting.Value{item.id, item.x, item.y}}, {"SetTextureUVs", []scripting.Value{item.id, 0, item.v, 1, item.height}}, {"SetTextureScale", []scripting.Value{item.id, 1, item.scale}}, {"SetTextureAlpha", []scripting.Value{item.id, item.alpha}}, {"SetTextureVisible", []scripting.Value{item.id, true}}} {
+				if _, err := host.Call(call.name, call.args); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	case "play-grenade":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
@@ -759,6 +805,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.grenades = 1
 		a.play.zombies = []zombieState{{x: a.play.x, y: a.play.y + 140, speed: 0, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", alpha: 1}}
+		a.play.angle, a.play.flipX = barryDirection(0, 1)
 		a.play.fireSecondary(0, 1)
 		return nil
 	case "play-pickup":
@@ -920,6 +967,9 @@ func (a *app) drawMenuClick(screen *ebiten.Image, button menuButton, click menuC
 			}
 			a.drawImage(screen, zombie, options)
 		}
+	}
+	if click.age >= zombieHitFlashDuration {
+		a.drawBloodPopSprite(screen, button.cx, button.cy-8, .9, click.index%3, click.age-zombieHitFlashDuration)
 	}
 	flash, err := a.Texture("Common0/Textures/Button_Screen_Flash")
 	if err != nil {
@@ -1536,6 +1586,8 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		scale = 1
 	}
 	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
+		a.drawBarryShadow(target, screenX, screenY-24*scale, scale)
+		a.drawZombieShadows(target)
 		for _, portal := range a.play.portals {
 			a.drawPortal(target, portal)
 		}
@@ -1550,7 +1602,6 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 			}
 		}
 		a.drawScriptEntities(target, true)
-		a.drawBarryShadow(target, screenX, screenY-24*scale, scale)
 		a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 		if a.play.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
@@ -1935,7 +1986,7 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 		}
 		texW, texH := float64(bulletImg.Bounds().Dx()), float64(bulletImg.Bounds().Dy())
 		sx := (b.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
-		sy := (b.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+		sy := (b.y-nativeProjectileRenderAnchor-a.play.world.CameraY)*zoom + a.play.world.ViewportY
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-texW/2, -texH/2)
 		options.GeoM.Rotate(b.angle)
@@ -2096,36 +2147,16 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 }
 
 func (a *app) drawBloodPop(screen *ebiten.Image, pop bloodPop) {
-	if a.play == nil || pop.variant < 0 || pop.variant > 2 {
+	if a.play == nil {
 		return
 	}
-	animation, ok := zombieDeathAnimation(a.sprites, pop.variant)
-	if !ok || animation.Frames <= 0 || animation.FPS <= 0 {
-		return
-	}
-	texture, err := a.Texture(animation.Texture)
-	if err != nil {
-		return
-	}
-	frames := animation.Frames
-	cellWidth := texture.Bounds().Dx() / frames
-	cellHeight := texture.Bounds().Dy()
-	frame := int(math.Floor(pop.age * animation.FPS))
-	if cellWidth <= 0 || cellHeight <= 0 || frame < 0 || frame >= frames {
-		return
-	}
-	source := texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image)
 	zoom := a.play.world.Zoom
 	if zoom <= 0 {
 		zoom = 1
 	}
-	screenX := (pop.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
-	screenY := (pop.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
-	options.GeoM.Scale(zoom, zoom)
-	options.GeoM.Translate(screenX, screenY)
-	a.drawImage(screen, source, options)
+	x := (pop.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
+	y := (pop.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+	a.drawBloodPopSprite(screen, x, y, zoom, pop.variant, pop.age)
 }
 
 func zombieDeathAnimation(catalog formats.SpriteCatalog, variant int) (formats.SpriteAnimation, bool) {
@@ -2234,7 +2265,7 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	} else {
 		options.GeoM.Scale(scale, scale)
 	}
-	options.GeoM.Translate(x, y-16*scale)
+	options.GeoM.Translate(x, y-playerRenderAnchor*scale)
 	a.drawImage(screen, source, options)
 }
 func (a *app) drawBarryShadow(screen *ebiten.Image, x, y, scale float64) {
@@ -2600,6 +2631,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	p.updateProgressOpacity(1.0 / 60.0)
 	p.flash = math.Max(0, p.flash-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
+	p.secondaryShootCooldown = math.Max(0, p.secondaryShootCooldown-1.0/60.0)
 	fired := false
 	scriptFacingLocked := p.scriptWalking || (p.dialogueIndex >= 0 && p.dialogueIndex < len(p.dialogue))
 	p.updateZombies()
@@ -2734,7 +2766,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			fired = p.fire(aimDX, aimDY)
 		}
 	}
-	if p.shootControl && p.grenades > 0 && p.secondaryButtonJustPressed && p.shootCooldown <= 0 {
+	if p.shootControl && p.grenades > 0 && p.secondaryButtonJustPressed && p.secondaryShootCooldown <= 0 {
 		dx, dy := barryAimDirection(p.angle, p.flipX)
 		fired = p.fireSecondary(dx, dy)
 	}
@@ -3203,6 +3235,7 @@ func (p *playState) fire(dx, dy float64) bool {
 	offsetX, offsetY, _, _ := muzzleTransform(dirX, dirY)
 	bx := p.x + offsetX
 	by := p.y + offsetY
+	dirX, dirY = p.projectileDirection(dirX, dirY, offsetX, offsetY)
 	bvx := dirX * p.weapon.Speed
 	bvy := dirY * p.weapon.Speed
 	bAngle := math.Atan2(dirY, dirX) + math.Pi/2
@@ -3214,7 +3247,7 @@ func (p *playState) fire(dx, dy float64) bool {
 		life:  p.weapon.Life,
 		angle: bAngle,
 	})
-	p.flash = nativePlayerFlashDuration
+	p.flash = nativeWeaponFlashDuration
 	p.shootCooldown = p.weapon.RateOfFire
 	return true
 }
@@ -3228,9 +3261,11 @@ func (p *playState) fireSecondary(dx, dy float64) bool {
 		return false
 	}
 	dirX, dirY := dx/dist, dy/dist
-	p.bullets = append(p.bullets, bullet{x: p.x, y: p.y, vx: dirX * weapon.Speed, vy: dirY * weapon.Speed, life: weapon.Life, angle: math.Atan2(dirY, dirX) + math.Pi/2, kind: "grenade"})
+	offsetX, offsetY, _, _ := muzzleTransform(dirX, dirY)
+	dirX, dirY = p.projectileDirection(dirX, dirY, offsetX, offsetY)
+	p.bullets = append(p.bullets, bullet{x: p.x + offsetX, y: p.y + offsetY, vx: dirX * weapon.Speed, vy: dirY * weapon.Speed, life: weapon.Life, angle: math.Atan2(dirY, dirX) + math.Pi/2, kind: "grenade"})
 	p.grenades--
-	p.shootCooldown = weapon.RateOfFire
+	p.secondaryShootCooldown = weapon.RateOfFire
 	return true
 }
 func (p *playState) detonateGrenade(x, y float64) {
@@ -3255,21 +3290,21 @@ func (p *playState) detonateGrenade(x, y float64) {
 
 func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
 	column, flipX := barryDirection(dx, dy)
-	if column >= len(barryMuzzleOffsets) {
+	if flipX && column != 0 {
+		column = 16 - column
+	}
+	if column >= len(barryMuzzleOffsets) || math.Hypot(dx, dy) < .0001 {
 		return 0, 0, 0, false
 	}
 	offset := barryMuzzleOffsets[column]
-	if dx != 0 && dy == 0 {
-		offset.y = 0
+	return offset.x, offset.y, math.Atan2(dy, dx), true
+}
+func (p *playState) projectileDirection(dx, dy, offsetX, offsetY float64) (float64, float64) {
+	if p.stick != 2 {
+		dx, dy = dx*nativeFireAimDistance-offsetX, dy*nativeFireAimDistance-offsetY
 	}
-	if flipX {
-		offset.x = -offset.x
-	}
-	direction := int(math.Round((math.Pi/2-math.Atan2(dy, dx))/(math.Pi/4))) % 8
-	if direction < 0 {
-		direction += 8
-	}
-	return offset.x, offset.y, math.Pi/2 - float64(direction)*math.Pi/4, true
+	length := math.Hypot(dx, dy)
+	return dx / length, dy / length
 }
 
 func (p *playState) isSolid(x, y float64) bool {
@@ -3565,7 +3600,7 @@ func main() {
 	silent := flag.Bool("silent", false, "disable music and sound effects")
 	captureDir := flag.String("capture-dir", "", "write rendered state screenshots to this directory")
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
-	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, level-select, play, play-ready, play-fire, play-combat, play-zombie-death, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
+	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, main-menu-hit, level-select, play, play-ready, play-fire, play-fire-left, play-combat, play-zombie-death, play-zombie-shadow, play-tutorial-images, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")

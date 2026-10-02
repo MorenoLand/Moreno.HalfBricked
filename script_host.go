@@ -867,9 +867,6 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, nil
 		}
 		dx, dy := barryAimDirection(h.play.angle, h.play.flipX)
-		if h.play.scriptHasAim {
-			dx, dy = h.play.scriptAimX-h.play.x, h.play.scriptAimY-h.play.y
-		}
 		if secondary {
 			if h.play.fireSecondary(dx, dy) {
 				if weapon, ok := h.play.weapons.Find("GRENADE"); ok {
@@ -1665,6 +1662,29 @@ func pickupCrateTexture(name string) string {
 	}
 }
 
+func (t *scriptTexture) geometry(bounds image.Rectangle) (image.Rectangle, float64, float64) {
+	x, y := bounds.Min.X+int(float32(t.u1)*float32(bounds.Dx())), bounds.Min.Y+int(float32(t.v1)*float32(bounds.Dy()))
+	width, height := int(float32(t.u2)*float32(bounds.Dx())), int(float32(t.v2)*float32(bounds.Dy()))
+	if width == 0 {
+		width = bounds.Dx()
+	}
+	if height == 0 {
+		height = bounds.Dy()
+	}
+	source := image.Rect(x, y, x+width, y+height).Intersect(bounds)
+	if source.Empty() {
+		return source, 0, 0
+	}
+	return source, t.scaleX * float64(bounds.Dx()) / float64(source.Dx()), t.scaleY * float64(bounds.Dy()) / float64(source.Dy())
+}
+func (t *scriptTexture) screenTransform(bounds image.Rectangle, frontendX, frontendY float64) (image.Rectangle, ebiten.GeoM) {
+	rect, scaleX, scaleY := t.geometry(bounds)
+	var transform ebiten.GeoM
+	transform.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
+	transform.Scale(scaleX*frontendX, scaleY*frontendX)
+	transform.Translate(t.x*frontendX, t.y*frontendY)
+	return rect, transform
+}
 func (a *app) drawScriptTextures(screen *ebiten.Image) {
 	if a.play == nil {
 		return
@@ -1683,35 +1703,17 @@ func (a *app) drawScriptTextures(screen *ebiten.Image) {
 		if err != nil {
 			continue
 		}
-		source := texture
-		if textureState.u2 > textureState.u1 && textureState.v2 > textureState.v1 {
-			bounds := texture.Bounds()
-			x0 := int(math.Round(textureState.u1 * float64(bounds.Dx())))
-			y0 := int(math.Round(textureState.v1 * float64(bounds.Dy())))
-			x1 := int(math.Round(textureState.u2 * float64(bounds.Dx())))
-			y1 := int(math.Round(textureState.v2 * float64(bounds.Dy())))
-			x0, y0 = max(0, x0), max(0, y0)
-			x1, y1 = min(bounds.Dx(), x1), min(bounds.Dy(), y1)
-			if x1 > x0 && y1 > y0 {
-				source = texture.SubImage(image.Rect(x0, y0, x1, y1)).(*ebiten.Image)
-			}
+		frontendX, frontendY := a.renderScale()
+		rect, transform := textureState.screenTransform(texture.Bounds(), frontendX, frontendY)
+		if rect.Empty() {
+			continue
 		}
-		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-		bounds := source.Bounds()
-		options.GeoM.Translate(-float64(bounds.Dx())/2, -float64(bounds.Dy())/2)
-		scaleX, scaleY := textureState.scaleX, textureState.scaleY
-		if scaleX == 0 {
-			scaleX = 1
-		}
-		if scaleY == 0 {
-			scaleY = 1
-		}
-		options.GeoM.Scale(scaleX, scaleY)
+		source := texture.SubImage(rect).(*ebiten.Image)
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest, GeoM: transform}
 		if textureState.alpha < 1 {
 			options.ColorScale.ScaleAlpha(float32(math.Max(0, textureState.alpha)))
 		}
-		options.GeoM.Translate(textureState.x, textureState.y)
-		a.drawImage(screen, source, options)
+		screen.DrawImage(source, options)
 	}
 }
 

@@ -366,28 +366,18 @@ func TestPlayerRenderAnchorUsesNativeOffset(t *testing.T) {
 	}
 }
 
-func TestMuzzleTransformHorizontalOffsetsAreSymmetric(t *testing.T) {
-	x, y, _, ok := muzzleTransform(1, 0)
-	if !ok || x != 22 || y != 0 {
-		t.Fatalf("right-horizontal muzzle offset = (%.1f, %.1f), %t; want (22, 0), true", x, y, ok)
-	}
-	x, y, _, ok = muzzleTransform(1, .1)
-	if !ok || x != 22 || y != 12 {
-		t.Fatalf("slightly-down-right muzzle offset = (%.1f, %.1f), %t; want unchanged (22, 12), true", x, y, ok)
-	}
-	x, y, _, ok = muzzleTransform(-1, 0)
-	if !ok || x != -22 || y != 0 {
-		t.Fatalf("left-horizontal muzzle offset = (%.1f, %.1f), %t; want symmetric (-22, 0), true", x, y, ok)
-	}
-	x, y, _, ok = muzzleTransform(-1, .1)
-	if !ok || x != -22 || y != 12 {
-		t.Fatalf("slightly-down-left muzzle offset = (%.1f, %.1f), %t; want unchanged (-22, 12), true", x, y, ok)
+func TestMuzzleTransformUsesNativeSpawnOffsets(t *testing.T) {
+	for _, test := range []struct{ dx, dy, x, y float64 }{{1, 0, 27, 11}, {-1, 0, -28, 7}, {0, 1, -6, 24}, {0, -1, 10, -22}, {1, .1, 27, 11}, {-1, .1, -28, 7}} {
+		x, y, _, ok := muzzleTransform(test.dx, test.dy)
+		if !ok || x != test.x || y != test.y {
+			t.Fatalf("muzzle (%g,%g) = (%g,%g), %t; want (%g,%g)", test.dx, test.dy, x, y, ok, test.x, test.y)
+		}
 	}
 }
 
-func TestPlayerFlashDurationUsesNativeWeaponTimer(t *testing.T) {
-	if nativePlayerFlashDuration != 0.4 {
-		t.Fatalf("player flash duration = %.2f, want native 0.4", nativePlayerFlashDuration)
+func TestWeaponFlashDurationUsesNativeWeaponTimer(t *testing.T) {
+	if nativeWeaponFlashDuration != .16 {
+		t.Fatalf("weapon flash duration = %.2f, want native .16", nativeWeaponFlashDuration)
 	}
 }
 
