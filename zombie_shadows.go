@@ -111,10 +111,11 @@ func (a *app) drawZombieShadows(screen *ebiten.Image) {
 	if w <= 0 || h <= 0 {
 		return
 	}
+	frontendX, frontendY := a.renderScale()
 	for _, shadow := range shadows {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-w/2, -h/2)
-		options.GeoM.Scale(shadow.width/w, shadow.height/h)
+		options.GeoM.Scale(shadow.width/w, shadow.height/h*frontendX/frontendY)
 		options.GeoM.Translate(shadow.x, shadow.y)
 		options.ColorScale.ScaleAlpha(float32(shadow.alpha) / 255)
 		a.drawImage(screen, texture, options)

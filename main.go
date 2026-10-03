@@ -32,6 +32,7 @@ type app struct {
 	variables                            formats.FrontendVariables
 	page                                 int
 	menuSelection                        int
+	options                              optionsMenu
 	world                                int
 	level                                int
 	mode                                 int
@@ -310,13 +311,13 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	} else {
 		sound = engine.NewSoundSystem(pack)
 	}
-	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, options: newOptionsMenu(!silent, !silent), weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	return game, nil
 }
 func (a *app) playSound(path string, volume float64) {
-	if a == nil || a.silent || a.sound == nil {
+	if a == nil || a.silent || !a.options.sound || a.sound == nil {
 		return
 	}
 	a.sound.Play(path, volume)
@@ -385,6 +386,24 @@ func (a *app) Update() error {
 	}
 	if a.menuClick != nil {
 		return a.updateMenuClick()
+	}
+	if a.page == 3 && !a.titleScreen && a.play == nil && a.view == nil {
+		action := optionsNone
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			action = optionsBack
+		}
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := a.pointer()
+			action = optionsHit(a.variables, float64(x), float64(y))
+		}
+		var musicEnabled func(bool)
+		if a.sound != nil {
+			musicEnabled = a.sound.MusicEnabled
+		}
+		if a.options.activate(action, musicEnabled) {
+			a.page = 0
+		}
+		return nil
 	}
 	if a.titleScreen {
 		if a.titleCocking {
@@ -641,6 +660,8 @@ func (a *app) captureState() string {
 		return "main-menu"
 	case 2:
 		return "level-select"
+	case 3:
+		return "options"
 	default:
 		return "frontend"
 	}
@@ -702,6 +723,8 @@ func (a *app) setCaptureState(state string) error {
 		a.titleScreen, a.page, a.menuSelection, a.world, a.mode, a.level = false, 0, 1, 0, 0, 0
 		a.menuSpawnTime, a.titleSoundStage = 1, 0
 		return a.beginMenuClick(1)
+	case "options":
+		a.titleScreen, a.page = false, 3
 	case "level-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 	case "play":
@@ -793,6 +816,20 @@ func (a *app) setCaptureState(state string) error {
 				}
 			}
 		}
+		return nil
+	case "play-ground-gap":
+		if err := a.selectCaptureLevel("World0Survival0"); err != nil {
+			return err
+		}
+		a.titleScreen, a.page = false, 2
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.x, a.play.y = 912, 176
+		a.play.world.CameraX, a.play.world.CameraY, a.play.world.Zoom = 672, 16, 1
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		a.play.hudVisible = true
 		return nil
 	case "play-grenade":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
@@ -922,6 +959,9 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 			}
 			a.drawMarqueeButton(screen, button, index == a.menuSelection)
 		}
+	} else if a.page == 3 {
+		a.drawBackdrop(screen)
+		a.drawOptionsMenu(screen, &a.options)
 	} else {
 		a.drawLevelSelect(screen)
 	}
@@ -1116,8 +1156,12 @@ func (a *app) drawLevelCardAt(screen *ebiten.Image, item formats.LevelInfo, x, y
 	if err != nil {
 		return
 	}
+	cardRect := image.Rect(0, 0, 128, 80)
+	if !cardRect.In(texture.Bounds()) {
+		return
+	}
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Translate(-64, -64)
+	options.GeoM.Translate(-64, -40)
 	options.GeoM.Scale(1, 1)
 	options.GeoM.Translate(x, y)
 	if !selected {
@@ -1126,7 +1170,8 @@ func (a *app) drawLevelCardAt(screen *ebiten.Image, item formats.LevelInfo, x, y
 	if !unlocked {
 		options.ColorScale.ScaleAlpha(.58)
 	}
-	a.drawImage(screen, texture, options)
+	a.drawImage(screen, texture.SubImage(cardRect).(*ebiten.Image), options)
+	a.drawCatalogLevelBadges(screen, item, x, y, 128, 80)
 }
 
 func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
@@ -1215,7 +1260,7 @@ func buttonTextRect(row int) (image.Rectangle, bool) {
 	case 0:
 		return image.Rect(0, 0, 128, 32), true
 	case 6:
-		return image.Rect(0, 96, 128, 112), true
+		return image.Rect(0, 92, 128, 114), true
 	case 8:
 		return image.Rect(0, 128, 128, 148), true
 	case 9:
@@ -1490,6 +1535,8 @@ func (a *app) activate() error {
 			a.mode, a.page, a.world, a.level = 0, 2, 0, 0
 		case 1:
 			a.mode, a.page, a.world, a.level = 1, 2, 0, 0
+		case 2:
+			a.page = 3
 		case 4:
 			return ebiten.Termination
 		}
@@ -1652,16 +1699,24 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	if !scoreXOK {
 		scoreX = logicalWidth / 2
 	}
-	scoreY, scoreYOK := a.variables.FloatValue("HUD_SCORE_Y_VAR")
+	scoreYName, scoreYDefault := "HUD_SCORE_Y_VAR", 26.0
+	if a.mode == 0 {
+		scoreYName, scoreYDefault = "HUD_STORYSCORE_Y_VAR", 17
+	}
+	scoreY, scoreYOK := a.variables.FloatValue(scoreYName)
 	if !scoreYOK {
-		scoreY = 26
+		scoreY = scoreYDefault
 	}
 	scoreScale := .75
 	if scoreSize, ok := a.variables.FloatValue("HUD_SCORE_SIZE_VAR"); ok && a.font != nil && a.font.LineHeight > 0 {
 		scoreScale = scoreSize / float64(a.font.LineHeight)
 	}
 	scoreText := fmt.Sprintf("%010d", a.play.score)
-	a.text(screen, scoreText, scoreX-a.fontTextWidth(scoreText, scoreScale)/2, scoreY, scoreScale)
+	if a.font != nil {
+		frontendX, frontendY := a.renderScale()
+		x, y, size := scoreTextGeometry(scoreX, scoreY, a.fontTextWidth(scoreText, scoreScale), float64(a.font.LineHeight)*scoreScale, scoreScale, frontendX, frontendY)
+		a.font.DrawScaled(screen, scoreText, x, y, size, size)
+	}
 	multiplierX, multiplierXOK := a.variables.FloatValue("HUD_SCORE_MULTI_X_VAR")
 	if !multiplierXOK {
 		multiplierX = 305
@@ -1915,10 +1970,13 @@ func debugTileLine(active *viewer.Viewer, kind formats.LayerKind, tileX, tileY i
 		return fmt.Sprintf("%s out of bounds", strings.ToUpper(string(kind)))
 	}
 	raw := values[tileY*active.Level.Width+tileX]
-	if raw == math.MaxUint32 || int32(raw) < 0 {
+	if kind != formats.LayerG && int32(raw) < 0 {
 		return fmt.Sprintf("%s %08X empty", strings.ToUpper(string(kind)), raw)
 	}
 	accepted := "draw"
+	if kind == formats.LayerG && int32(raw) < 0 {
+		accepted = "draw-repeat"
+	}
 	if (kind == formats.LayerD || kind == formats.LayerHB) && raw == 0 {
 		accepted = "skip-zero"
 	}
@@ -1941,9 +1999,9 @@ func debugTileLine(active *viewer.Viewer, kind formats.LayerKind, tileX, tileY i
 		bounds := active.Atlas.Bounds()
 		columns, rows := bounds.Dx()/tileSize, bounds.Dy()/tileSize
 		tileID := int(raw & 0xffff)
-		if columns > 0 && rows > 0 && tileID < columns*rows {
+		if columns > 0 && rows > 0 {
 			sourceX := tileID%columns*tileSize + tileSize/2
-			sourceY := tileID/columns*tileSize + tileSize/2
+			sourceY := (tileID/columns)%rows*tileSize + tileSize/2
 			r, g, b, a := active.Atlas.At(sourceX, sourceY).RGBA()
 			atlasInfo = fmt.Sprintf(" src=%d,%d rgba=%02X%02X%02X%02X", sourceX, sourceY, r>>8, g>>8, b>>8, a>>8)
 		}
@@ -2117,25 +2175,14 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if renderHeight <= 0 {
 		renderHeight = 48
 	}
-	screenY := (zombie.y-renderHeight*zombieRenderAnchor-a.play.world.CameraY)*scale + a.play.world.ViewportY
+	frontendX, frontendY := a.renderScale()
+	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY - renderHeight*zombieRenderAnchor*scale*frontendX/frontendY
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
-	scaleX, scaleY := .5*scale, .5*scale
-	if zombie.size.X > 0 {
-		scaleX = zombie.size.X / float64(rect.Dx()) * scale
-	}
-	if zombie.size.Y > 0 {
-		scaleY = zombie.size.Y / float64(rect.Dy()) * scale
-	}
-	if zombie.flipY {
-		scaleY = -scaleY
-	}
-	if flipX {
-		options.GeoM.Scale(-scaleX, scaleY)
-	} else {
-		options.GeoM.Scale(scaleX, scaleY)
-	}
+	scaleX, scaleY := zombieSpriteScale(zombie.size.X, zombie.size.Y, rect, scale, frontendX, frontendY)
+	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, zombie.flipY)
+	options.GeoM.Scale(scaleX, scaleY)
 	if zombie.hitFlash > 0 {
 		options.ColorScale.Scale(1.5, .18, .18, 1)
 	}
@@ -3050,7 +3097,7 @@ func (p *playState) updateZombies() {
 			entity = p.scriptEntities[zombie.scriptID]
 			if entity != nil && entity.walking {
 				targetX, targetY = entity.targetX, entity.targetY
-			} else if p.scriptHasZombieTarget {
+			} else if p.scriptHasZombieTarget && p.scriptRuntime != nil && !p.scriptRuntime.Done() {
 				targetX, targetY = p.scriptZombieTargetX, p.scriptZombieTargetY
 			}
 		}
@@ -3083,7 +3130,8 @@ func (p *playState) updateZombies() {
 				}
 				zombie.x, zombie.y = candidateX, candidateY
 			}
-		} else if distance <= collisionDistance && (entity == nil || !entity.walking) && (!zombie.scriptControlled || p.scriptCollideZombies) {
+		}
+		if math.Hypot(p.x-zombie.x, p.y-zombie.y) <= collisionDistance && (entity == nil || !entity.walking) && (!zombie.scriptControlled || p.scriptCollideZombies) {
 			p.health = math.Max(0, p.health-dt*.08)
 		}
 		if entity != nil {

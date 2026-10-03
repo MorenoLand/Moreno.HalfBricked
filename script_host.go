@@ -1627,19 +1627,19 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if scaleY == 0 {
 		scaleY = zoom
 	}
-	if entity.flipY {
-		scaleY = -scaleY
-	}
-	if flipX {
-		options.GeoM.Scale(-scaleX, scaleY)
-	} else {
-		options.GeoM.Scale(scaleX, scaleY)
-	}
+	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, entity.flipY)
+	options.GeoM.Scale(scaleX, scaleY)
 	if entity.alpha < 1 {
 		options.ColorScale.ScaleAlpha(float32(math.Max(0, entity.alpha)))
 	}
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, texture.SubImage(rect).(*ebiten.Image), options)
+}
+func scriptEntityRenderScale(x, y float64, directionFlip, scriptVFlip bool) (float64, float64) {
+	if directionFlip != scriptVFlip {
+		x = -x
+	}
+	return x, y
 }
 func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64, name string) {
 	texture, err := a.Texture(pickupCrateTexture(name))

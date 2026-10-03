@@ -184,7 +184,7 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
 			id := v.Level.Layers[kind][y*v.Level.Width+x]
-			if id == math.MaxUint32 || int32(id) < 0 || ((kind == formats.LayerD || kind == formats.LayerHB) && id == 0) {
+			if !rendersTileWord(kind, id) {
 				continue
 			}
 			if v.Atlas == nil {
@@ -211,16 +211,19 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 	}
 	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest, DisableMipmaps: true})
 }
+func rendersTileWord(kind formats.LayerKind, id uint32) bool {
+	return kind == formats.LayerG || (int32(id) >= 0 && ((kind != formats.LayerD && kind != formats.LayerHB) || id != 0))
+}
 func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Vertex, bool) {
 	var vertices [4]ebiten.Vertex
 	bounds := v.Atlas.Bounds()
 	cols := bounds.Dx() / tileSize
 	rows := bounds.Dy() / tileSize
 	tileID := id & 0xffff
-	if cols <= 0 || rows <= 0 || uint64(tileID) >= uint64(cols*rows) {
+	if cols <= 0 || rows <= 0 {
 		return vertices, false
 	}
-	tileX, tileY := int(tileID)%cols, int(tileID)/cols
+	tileX, tileY := int(tileID)%cols, (int(tileID)/cols)%rows
 	sourceX0 := float32(tileX * tileSize)
 	sourceY0 := float32(tileY * tileSize)
 	sourceX1 := float32((tileX + 1) * tileSize)

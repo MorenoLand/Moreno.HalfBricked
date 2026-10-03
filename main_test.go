@@ -34,10 +34,10 @@ func TestPortalCellReuseResetsNativeLifetime(t *testing.T) {
 	}
 }
 
-func TestButtonTextRectsUseNativeAtlasRows(t *testing.T) {
+func TestButtonTextRectsPreserveAtlasGlyphs(t *testing.T) {
 	got, ok := buttonTextRect(6)
-	if !ok || got != image.Rect(0, 96, 128, 112) {
-		t.Fatalf("quit text rect = %v, want (0,96)-(128,112)", got)
+	if !ok || got != image.Rect(0, 92, 128, 114) {
+		t.Fatalf("quit text rect = %v, want complete glyph (0,92)-(128,114)", got)
 	}
 }
 func TestMainMenuHitUsesNativeButtonSize(t *testing.T) {
