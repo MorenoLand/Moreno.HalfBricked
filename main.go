@@ -831,7 +831,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.hudVisible = true
 		return nil
-	case "play-grenade":
+	case "play-grenade", "play-grenade-explosion":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
 			return err
@@ -842,6 +842,10 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.grenades = 1
 		a.play.zombies = []zombieState{{x: a.play.x, y: a.play.y + 140, speed: 0, health: 100, size: formats.Vec2{X: 32, Y: 32}, texture: "girlzombiesheet", alpha: 1}}
+		if strings.EqualFold(normalized, "play-grenade-explosion") {
+			a.play.detonateGrenade(a.play.x, a.play.y+80)
+			return nil
+		}
 		a.play.angle, a.play.flipX = barryDirection(0, 1)
 		a.play.fireSecondary(0, 1)
 		return nil
@@ -2054,28 +2058,7 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 	}
 }
 func (a *app) drawExplosion(screen *ebiten.Image, explosion explosionState) {
-	texture, err := a.Texture("Common0/Textures/explosion2_SD")
-	if err != nil {
-		return
-	}
-	const frames = 4
-	cellWidth := texture.Bounds().Dx() / frames
-	cellHeight := texture.Bounds().Dy()
-	frame := int(explosion.age / .05)
-	if cellWidth <= 0 || cellHeight <= 0 || frame < 0 || frame >= frames {
-		return
-	}
-	zoom := a.play.world.Zoom
-	if zoom <= 0 {
-		zoom = 1
-	}
-	screenX := (explosion.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
-	screenY := (explosion.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
-	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-	options.GeoM.Translate(-float64(cellWidth)/2, -float64(cellHeight)/2)
-	options.GeoM.Scale(zoom, zoom)
-	options.GeoM.Translate(screenX, screenY)
-	a.drawImage(screen, texture.SubImage(image.Rect(frame*cellWidth, 0, (frame+1)*cellWidth, cellHeight)).(*ebiten.Image), options)
+	a.drawNativeGrenadeExplosion(screen, explosion)
 }
 func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle {
 	x0 := int(math.Round(float64(col) * float64(texW) / float64(numCols)))
@@ -2413,9 +2396,16 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 	if image, err := a.Texture("Common0/Textures/grenade_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
-		options.GeoM.Translate(x+offset.X, y+offset.Y)
+		iconX, iconY := secondaryIconPosition(x, y, offset, a.mobile)
+		options.GeoM.Translate(iconX, iconY)
 		a.drawImage(screen, image, options)
 	}
+}
+func secondaryIconPosition(x, y float64, offset formats.Vec2, mobile bool) (float64, float64) {
+	if mobile {
+		return x + offset.X, y + offset.Y
+	}
+	return x, y
 }
 func (p *playState) secondaryButtonContains(x, y float64) bool {
 	if p.grenades <= 0 {
@@ -3221,7 +3211,7 @@ func (p *playState) updateExplosions() {
 	active := p.explosions[:0]
 	for _, explosion := range p.explosions {
 		explosion.age += 1.0 / 60.0
-		if explosion.age < .2 {
+		if explosion.age <= nativeGrenadeExplosionDuration {
 			active = append(active, explosion)
 		}
 	}
