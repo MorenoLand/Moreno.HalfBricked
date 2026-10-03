@@ -208,6 +208,9 @@ type playState struct {
 	scriptHasAim                                           bool
 	scriptLastCallback                                     string
 	waveIndex                                              int
+	wavesFinished, exitScriptStarted                       bool
+	levelInfo                                              formats.LevelInfo
+	levelStartScore                                        int
 	waveElapsed                                            float64
 	waveSpawned                                            []int
 	rng                                                    *nativeRNG
@@ -481,7 +484,7 @@ func (a *app) Update() error {
 			a.setMenuMusic()
 			return nil
 		}
-		return nil
+		return a.updateLevelCompletion()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if a.page == 2 {
@@ -831,6 +834,19 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.hudVisible = true
 		return nil
+	case "play-level-exit":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.waveIndex = len(a.play.world.Level.Waves) - 1
+		wave := a.play.world.Level.Waves[a.play.waveIndex]
+		a.play.waveElapsed = wave.RunTime + wave.EndWaveTime
+		a.play.levelKills = a.play.levelZombieTotal
+		a.play.updateWaves()
+		return a.updateLevelCompletion()
 	case "play-grenade", "play-grenade-explosion":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
@@ -2559,6 +2575,7 @@ func (a *app) openPlay() error {
 	spawnX, spawnY := spawnPosition(level, tileSize)
 	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
 	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
+	play.levelInfo = level.Info
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2928,6 +2945,8 @@ func (p *playState) updateWaves() {
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
+		} else {
+			p.waveIndex, p.wavesFinished = next, true
 		}
 	}
 }
