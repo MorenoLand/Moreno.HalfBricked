@@ -69,23 +69,32 @@ func (s *SoundSystem) SetMusic(path string, loopPointSamples int64) error {
 }
 
 func (s *SoundSystem) Play(path string, volume float64) {
+	_, _ = s.PlayTracked(path, volume, -1)
+}
+func (s *SoundSystem) PlayTracked(path string, volume float64, loopPointSamples int64) (*audio.Player, error) {
 	if s == nil || s.context == nil {
-		return
+		return nil, io.ErrClosedPipe
 	}
 	data, err := s.bytes(path)
 	if err != nil {
-		return
+		return nil, err
 	}
-	stream, err := vorbis.Decode(s.context, bytes.NewReader(data))
+	stream, err := vorbis.DecodeF32(bytes.NewReader(data))
 	if err != nil {
-		return
+		return nil, err
 	}
-	player, err := s.context.NewPlayer(stream)
+	var source io.Reader = stream
+	if loopPointSamples >= 0 {
+		intro, length := musicLoopBounds(loopPointSamples, stream.Length())
+		source = audio.NewInfiniteLoopWithIntroF32(stream, intro, length)
+	}
+	player, err := s.context.NewPlayerF32(source)
 	if err != nil {
-		return
+		return nil, err
 	}
 	player.SetVolume(volume)
 	player.Play()
+	return player, nil
 }
 
 func (s *SoundSystem) MusicEnabled(enabled bool) {

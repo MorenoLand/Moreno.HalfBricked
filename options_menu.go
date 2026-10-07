@@ -6,7 +6,12 @@ import (
 	"image"
 )
 
-type optionsMenu struct{ sound, music bool }
+type optionsMenu struct {
+	sound, music         bool
+	controls             optionsControls
+	compact, padDragging bool
+	padDragDistance      float32
+}
 type optionsAction uint8
 
 const (
@@ -14,19 +19,43 @@ const (
 	optionsSound
 	optionsMusic
 	optionsBack
+	optionsDefault
+	optionsNormal
+	optionsInvert
+	optionsVisible
+	optionsHidden
+	optionsLeftFixed
+	optionsRightFixed
+	optionsLeftFloating
+	optionsRightFloating
+	optionsPad
 )
 
-func newOptionsMenu(sound, music bool) optionsMenu { return optionsMenu{sound: sound, music: music} }
+func newOptionsMenu(sound, music bool) optionsMenu {
+	return optionsMenu{sound: sound, music: music, controls: nativeOptionsDefaults(false)}
+}
 func optionsHit(variables formats.FrontendVariables, x, y float64) optionsAction {
 	for _, control := range []struct {
 		action optionsAction
 		name   string
-	}{{optionsSound, "SOUND"}, {optionsMusic, "MUSIC"}, {optionsBack, "BACK"}} {
+	}{{optionsSound, "SOUND"}, {optionsMusic, "MUSIC"}, {optionsDefault, "DEFAULT"}, {optionsBack, "BACK"}} {
 		position, positionOK := variables.Vec2Value("OPTIONS_" + control.name + "_ICON_POS_VAR")
 		size, sizeOK := variables.Vec2Value("OPTIONS_" + control.name + "_ICON_SIZE_VAR")
 		if positionOK && sizeOK && x >= position.X-size.X/2 && x <= position.X+size.X/2 && y >= position.Y-size.Y/2 && y <= position.Y+size.Y/2 {
 			return control.action
 		}
+	}
+	for _, control := range optionsControlLabels {
+		position, ok := variables.Vec2Value("OPTIONS_" + control.name + "_TEXT_POS_VAR")
+		size, sizeOK := variables.Vec2Value("OPTIONS_TEXT_BUTTONS_SIZE_VAR")
+		if ok && sizeOK && x >= position.X-size.X/2 && x <= position.X+size.X/2 && y >= position.Y-size.Y/2 && y <= position.Y+size.Y/2 {
+			return control.action
+		}
+	}
+	position, ok := variables.Vec2Value("OPTIONS_SIZE_CENTER_POS_VAR")
+	size, sizeOK := variables.Vec2Value("OPTIONS_SIZE_CENTER_SIZE_VAR")
+	if ok && sizeOK && x >= position.X-size.X/2 && x <= position.X+size.X/2 && y >= position.Y-size.Y/2 && y <= position.Y+size.Y/2 {
+		return optionsPad
 	}
 	return optionsNone
 }
@@ -41,6 +70,14 @@ func (menu *optionsMenu) activate(action optionsAction, musicEnabled func(bool))
 		}
 	case optionsBack:
 		return true
+	case optionsDefault:
+		menu.sound, menu.music, menu.controls = true, true, nativeOptionsDefaults(menu.compact)
+		menu.padDragging = false
+		if musicEnabled != nil {
+			musicEnabled(true)
+		}
+	default:
+		menu.controls.apply(action)
 	}
 	return false
 }
@@ -56,14 +93,20 @@ func optionsSoundRect(music, enabled bool) image.Rectangle {
 }
 func (a *app) drawOptionsMenu(screen *ebiten.Image, menu *optionsMenu) {
 	if texture, err := a.Texture("Common0/Textures/TutorialBoxes"); err == nil {
-		for _, name := range []string{"SOUND", "EXIT"} {
+		for _, name := range []string{"CONTROL", "SOUND", "EXIT"} {
 			position, positionOK := a.variables.Vec2Value("OPTIONS_" + name + "_BOX_OUTER_POS_VAR")
 			size, sizeOK := a.variables.Vec2Value("OPTIONS_" + name + "_BOX_OUTER_SIZE_VAR")
 			if positionOK && sizeOK {
 				a.drawOptionsBox(screen, texture, position, size)
 			}
 		}
+		position, positionOK := a.variables.Vec2Value("OPTIONS_CONTROL_BOX_INNER_POS_VAR")
+		size, sizeOK := a.variables.Vec2Value("OPTIONS_CONTROL_BOX_INNER_SIZE_VAR")
+		if positionOK && sizeOK {
+			a.drawOptionsBoxStyle(screen, texture, position, size, 1)
+		}
 	}
+	a.drawOptionsControls(screen, menu)
 	for _, control := range []struct {
 		name           string
 		music, enabled bool
@@ -100,7 +143,11 @@ func (a *app) drawOptionsMenu(screen *ebiten.Image, menu *optionsMenu) {
 	}
 }
 func (a *app) drawOptionsBox(screen, texture *ebiten.Image, position, size formats.Vec2) {
+	a.drawOptionsBoxStyle(screen, texture, position, size, 0)
+}
+func (a *app) drawOptionsBoxStyle(screen, texture *ebiten.Image, position, size formats.Vec2, style int) {
 	quarter := texture.Bounds().Dy() / 4
+	sourceX := (style & 0x3ff) * 64
 	x, y := size.X/2-8, size.Y/2-8
 	w, h := size.X/2-16, (size.Y-32)/2
 	for _, quad := range []struct {
@@ -110,10 +157,10 @@ func (a *app) drawOptionsBox(screen, texture *ebiten.Image, position, size forma
 		{33, quarter, 16, 16, -x, y, 16, 16}, {48, quarter, 14, 16, -w / 2, y, w, 16}, {48, quarter, 14, 16, w / 2, y, -w, 16}, {33, quarter, 16, 16, x, y, -16, 16},
 		{1, 1, 16, 16, -x, -y, 16, 16}, {16, 1, 14, 16, -w / 2, -y, w, 16}, {16, 1, 14, 16, w / 2, -y, -w, 16}, {1, 1, 16, 16, x, -y, -16, 16},
 		{1, quarter, 16, 14, -x, -h / 2, 16, h}, {1, quarter, 16, 14, x, -h / 2, -16, h},
-		{33, quarter + 2, 16, 15, -x, h / 2, 16, h}, {33, quarter + 2, 16, 15, x, h / 2, -16, h},
+		{33, 2, 16, 15, -x, h / 2, 16, h}, {33, 2, 16, 15, x, h / 2, -16, h},
 		{16, quarter, 14, 14, 0, 0, size.X - 32, size.Y - 32},
 	} {
-		rect := image.Rect(quad.sx, quad.sy, quad.sx+quad.sw, quad.sy+quad.sh)
+		rect := image.Rect(sourceX+quad.sx, quad.sy, sourceX+quad.sx+quad.sw, quad.sy+quad.sh)
 		if !rect.In(texture.Bounds()) {
 			continue
 		}

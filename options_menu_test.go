@@ -71,3 +71,19 @@ func TestOptionsXMLHitRegions(t *testing.T) {
 		}
 	}
 }
+func TestOptionsNativeControlHitRegions(t *testing.T) {
+	variables := formats.FrontendVariables{}
+	variables["OPTIONS_TEXT_BUTTONS_SIZE_VAR"] = formats.FrontendVariable{Kind: "Vec2", Vec2: formats.Vec2{X: 96, Y: 24}}
+	for index, label := range optionsControlLabels {
+		position := formats.Vec2{X: 74, Y: float64(40 + index*28)}
+		variables["OPTIONS_"+label.name+"_TEXT_POS_VAR"] = formats.FrontendVariable{Kind: "Vec2", Vec2: position}
+		if got := optionsHit(variables, position.X, position.Y); got != label.action {
+			t.Fatalf("%s hit %d", label.name, got)
+		}
+	}
+	variables["OPTIONS_SIZE_CENTER_POS_VAR"] = formats.FrontendVariable{Kind: "Vec2", Vec2: formats.Vec2{X: 372, Y: 150}}
+	variables["OPTIONS_SIZE_CENTER_SIZE_VAR"] = formats.FrontendVariable{Kind: "Vec2", Vec2: formats.Vec2{X: 160, Y: 160}}
+	if optionsHit(variables, 372, 150) != optionsPad {
+		t.Fatal("pad drag hit missing")
+	}
+}

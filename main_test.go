@@ -577,8 +577,8 @@ func TestDrawScriptTextUsesNativeFlags(t *testing.T) {
 	if _, err := host.drawScriptText([]scripting.Value{240, 149, "small", false}, true); err != nil {
 		t.Fatal(err)
 	}
-	if play.scriptText2Y != 149 || play.scriptText2Size != 24 {
-		t.Fatalf("regular DrawText2 state = y %.1f size %.1f, want y 149 size 24", play.scriptText2Y, play.scriptText2Size)
+	if play.scriptText2Y != 153 || play.scriptText2Size != 30 {
+		t.Fatalf("paired DrawText2 state = y %.1f size %.1f, want y 153 size 30", play.scriptText2Y, play.scriptText2Size)
 	}
 }
 

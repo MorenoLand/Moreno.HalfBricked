@@ -1254,6 +1254,32 @@ func (h *playScriptHost) drawScriptText(args []scripting.Value, second bool) (sc
 	if err != nil {
 		return scripting.CallResult{}, err
 	}
+	if second {
+		large := len(args) == 3
+		if len(args) == 4 {
+			large, err = scriptBool(args, 3)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
+		size := h.play.scriptText1Size
+		if large {
+			if h.app != nil && h.app.font != nil && h.app.font.LineHeight > 0 {
+				width := h.app.fontTextWidth(text, size/float64(h.app.font.LineHeight))
+				if width > 450 {
+					size *= 450 / width
+				}
+			}
+			h.play.scriptText1Y = float64(int(float32(136) - float32(size)*float32(.525)))
+			y = float64(int(float32(136) + float32(size)*float32(.525)))
+		} else {
+			y = float64(int(float32(h.play.scriptText1Y) + float32(size)))
+		}
+		h.play.scriptText1Size = size
+		h.play.scriptText2, h.play.scriptText2X, h.play.scriptText2Y, h.play.scriptText2Size = text, float64(int(x)), y, size
+		h.play.scriptTextVisible = true
+		return scripting.CallResult{}, nil
+	}
 	large := len(args) == 3
 	if len(args) >= 4 {
 		large, err = scriptBool(args, 3)
@@ -1286,6 +1312,13 @@ func (h *playScriptHost) drawScriptText(args []scripting.Value, second bool) (sc
 	return scripting.CallResult{}, nil
 }
 
+func (p *playState) enterAfterScript() bool {
+	if p.scriptRuntime != nil && !p.scriptRuntime.Done() {
+		return false
+	}
+	p.moveControl, p.shootControl = true, true
+	return true
+}
 func (p *playState) updateScript() error {
 	if p.scriptRuntime == nil {
 		return nil
@@ -1408,6 +1441,11 @@ func (p *playState) spawnPickup(name string, point formats.Vec2) {
 
 func (p *playState) collectPickup(name string) {
 	name = strings.ToUpper(strings.TrimSpace(name))
+	if weapon, ok := p.weapons.Find(strings.TrimPrefix(name, "P_")); ok {
+		if path, found := pickupParityVoice(p.levelInfo.VoiceoverPrefix, weapon.SFXVO); found {
+			p.pickupVoices = append(p.pickupVoices, path)
+		}
+	}
 	switch name {
 	case "P_GRENADE":
 		if weapon, ok := p.weapons.Find("GRENADE"); ok {
@@ -1418,7 +1456,7 @@ func (p *playState) collectPickup(name string) {
 	default:
 		if strings.HasPrefix(name, "P_") {
 			if weapon, ok := p.weapons.Find(strings.TrimPrefix(name, "P_")); ok {
-				p.weapon = weapon
+				p.equipWeapon(weapon)
 			}
 		}
 	}
@@ -1574,12 +1612,25 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	if entity.kind == "pickup" {
 		columns, rows = 1, 1
-		if strings.EqualFold(entity.texture, "p_grenade") {
-			texturePath = "Common0/Textures/grenade_SD"
+		if binding, ok := pickupParityBinding(entity.texture); ok {
+			texturePath, columns = "Common0/Textures/Weapons_Primary_SD", 8
+			if binding.Secondary {
+				texturePath = "Common0/Textures/Weapons_Secondary_SD"
+			}
+		}
+		if _, ok := pickupPrimaryCell(entity.texture); ok {
+			texturePath, columns = "Common0/Textures/Weapons_Primary_SD", 8
 		}
 	}
 	texture, err := a.Texture(texturePath)
 	if err != nil {
+		if entity.kind == "pickup" {
+			zoom := a.play.world.Zoom
+			if zoom <= 0 {
+				zoom = 1
+			}
+			a.drawPickupBox(screen, (entity.x-a.play.world.CameraX)*zoom+a.play.world.ViewportX, (entity.y-a.play.world.CameraY)*zoom+a.play.world.ViewportY, zoom, entity.texture)
+		}
 		return
 	}
 	angle := clamp(entity.angle, 0, 8)
@@ -1588,7 +1639,13 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 		col = int(math.Round(float64(angle) * float64(columns-1) / 8))
 	}
 	if entity.kind == "pickup" {
-		columns, rows, col, frame = 1, 1, 0, 0
+		col, frame = 0, 0
+		if binding, ok := pickupParityBinding(entity.texture); ok {
+			col = binding.Cell
+		}
+		if cell, ok := pickupPrimaryCell(entity.texture); ok {
+			col = cell
+		}
 	}
 	flipX := entity.flipX
 	if entity.rotationSet {
@@ -1627,6 +1684,11 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if scaleY == 0 {
 		scaleY = zoom
 	}
+	if entity.kind == "pickup" {
+		size := pickupDrawSize(entity.texture)
+		scaleX, scaleY = size*zoom/float64(rect.Dx()), size*zoom/float64(rect.Dy())
+		screenY -= size * 0.375 * zoom
+	}
 	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, entity.flipY)
 	options.GeoM.Scale(scaleX, scaleY)
 	if entity.alpha < 1 {
@@ -1649,8 +1711,9 @@ func (a *app) drawPickupBox(screen *ebiten.Image, x, y, zoom float64, name strin
 	w, h := float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-w/2, -h/2)
-	options.GeoM.Scale(zoom, zoom)
-	options.GeoM.Translate(x, y)
+	size := pickupDrawSize(name)
+	options.GeoM.Scale(size*zoom/w, size*zoom/h)
+	options.GeoM.Translate(x, y-size*0.375*zoom)
 	a.drawImage(screen, texture, options)
 }
 func pickupCrateTexture(name string) string {
@@ -1660,6 +1723,31 @@ func pickupCrateTexture(name string) string {
 	default:
 		return "Common0/Textures/crate_SD"
 	}
+}
+func pickupDrawSize(name string) float64 {
+	if pickupCrateTexture(name) == "Common0/Textures/Special_Crate" {
+		return 80
+	}
+	return 50
+}
+func pickupPrimaryCell(name string) (int, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "p_shotgun":
+		return 1, true
+	case "p_uzi":
+		return 2, true
+	case "p_minigun":
+		return 3, true
+	case "p_sniper":
+		return 4, true
+	case "p_flamer":
+		return 5, true
+	case "p_buzzsaw":
+		return 6, true
+	case "p_dual_pistol":
+		return 7, true
+	}
+	return 0, false
 }
 
 func (t *scriptTexture) geometry(bounds image.Rectangle) (image.Rectangle, float64, float64) {
@@ -1848,6 +1936,9 @@ func (a *app) scriptSoundPath(name string) string {
 	}
 	wanted := strings.ToLower(strings.TrimSuffix(filepath.Base(filepath.ToSlash(name)), filepath.Ext(name)))
 	wanted = strings.TrimPrefix(wanted, "sfx_")
+	if nativeName := nativeWeaponSoundBasename(name); nativeName != "" {
+		wanted = nativeName
+	}
 	for key, path := range a.pack.Manifest().Files {
 		if !strings.EqualFold(filepath.Ext(key), ".ogg") {
 			continue

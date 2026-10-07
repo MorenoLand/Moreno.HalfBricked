@@ -33,6 +33,10 @@ type app struct {
 	page                                 int
 	menuSelection                        int
 	options                              optionsMenu
+	statistics                           statsData
+	statsScreen                          *statsMenu
+	statsClock                           float32
+	profileWritable                      bool
 	world                                int
 	level                                int
 	mode                                 int
@@ -49,6 +53,7 @@ type app struct {
 	captureLimit                         int
 	captureAutoDialogue                  bool
 	sound                                *engine.SoundSystem
+	weaponPlayback                       weaponPlayback
 	images                               map[string]*ebiten.Image
 	sources                              map[string]image.Image
 	view                                 *viewer.Viewer
@@ -79,11 +84,12 @@ const logicalWidth = 480
 const logicalHeight = 320
 
 type bullet struct {
-	x, y   float64
-	vx, vy float64
-	life   float64
-	angle  float64
-	kind   string
+	x, y       float64
+	vx, vy     float64
+	life       float64
+	angle      float64
+	kind       string
+	projectile *nativeWeaponProjectile
 }
 
 type explosionState struct {
@@ -149,6 +155,8 @@ type playState struct {
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
 	bullets                                                []bullet
 	shootCooldown                                          float64
+	shotSound                                              string
+	pickupVoices                                           []string
 	secondaryShootCooldown                                 float64
 	paused                                                 bool
 	shouldQuit                                             bool
@@ -209,8 +217,13 @@ type playState struct {
 	scriptLastCallback                                     string
 	waveIndex                                              int
 	wavesFinished, exitScriptStarted                       bool
+	entryControlsRestored                                  bool
 	levelInfo                                              formats.LevelInfo
 	levelStartScore                                        int
+	controls                                               optionsControls
+	controlWidth, controlHeight                            int
+	statistics                                             *statsData
+	statsPositionX, statsPositionY                         float64
 	waveElapsed                                            float64
 	waveSpawned                                            []int
 	rng                                                    *nativeRNG
@@ -317,6 +330,13 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, options: newOptionsMenu(!silent, !silent), weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
+	game.statistics = newStatsData()
+	game.options = newOptionsMenu(true, true)
+	game.profileWritable = true
+	if err := game.loadPlayerProfile(); err != nil {
+		return nil, err
+	}
+	game.sound.MusicEnabled(!silent && game.options.music)
 	return game, nil
 }
 func (a *app) playSound(path string, volume float64) {
@@ -359,6 +379,7 @@ func (a *app) Update() error {
 		return nil
 	}
 	a.menuTime += 1.0 / 60.0
+	a.updateStatsClock()
 	if a.titleCocking {
 		a.titleSoundElapsed += 1.0 / 60.0
 		if a.titleSoundStage == 1 && a.titleSoundElapsed >= 8.0/60.0 {
@@ -390,6 +411,15 @@ func (a *app) Update() error {
 	if a.menuClick != nil {
 		return a.updateMenuClick()
 	}
+	if a.page == 4 && a.statsScreen != nil {
+		back := inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+		if a.statsScreen.update(1.0/60.0, back, false, false) == statsMainMenu {
+			a.statsScreen = nil
+			a.page = 0
+			return a.savePlayerProfile()
+		}
+		return nil
+	}
 	if a.page == 3 && !a.titleScreen && a.play == nil && a.view == nil {
 		action := optionsNone
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
@@ -401,10 +431,15 @@ func (a *app) Update() error {
 		}
 		var musicEnabled func(bool)
 		if a.sound != nil {
-			musicEnabled = a.sound.MusicEnabled
+			musicEnabled = func(enabled bool) { a.sound.MusicEnabled(enabled && !a.silent) }
+		}
+		x, y := a.pointer()
+		if center, ok := a.variables.Vec2Value("OPTIONS_SIZE_CENTER_POS_VAR"); ok {
+			a.options.dragPad(float64(x), float64(y), center.X, center.Y, action == optionsPad, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
 		}
 		if a.options.activate(action, musicEnabled) {
 			a.page = 0
+			return a.savePlayerProfile()
 		}
 		return nil
 	}
@@ -429,6 +464,10 @@ func (a *app) Update() error {
 		return nil
 	}
 	if a.play != nil {
+		statsPlay, previousKills, previousLives := a.play, a.play.levelKills, a.play.lives
+		defer a.recordPlayStats(statsPlay, previousKills, previousLives)
+		defer a.flushPickupVoices(statsPlay)
+		a.play.controlWidth, a.play.controlHeight = a.outputWidth, a.outputHeight
 		pointerX, pointerY := a.pointer()
 		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
 		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyG) || inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
@@ -473,12 +512,17 @@ func (a *app) Update() error {
 				return err
 			}
 		}
+		if !a.play.entryControlsRestored && !a.play.exitScriptStarted {
+			a.play.entryControlsRestored = a.play.enterAfterScript()
+		}
 		if a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile) {
-			if path := a.scriptSoundPath(a.play.weapon.SFXShoot); path != "" {
-				a.playSound(path, .8)
-			}
+			a.playWeaponSound(a.play.shotSound)
+		}
+		if a.play.paused || !a.play.shootControl || (a.mobile && a.play.stick != 2) || (!a.mobile && !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && !ebiten.IsKeyPressed(ebiten.KeySpace)) {
+			a.stopWeaponPlayback()
 		}
 		if a.play.shouldQuit {
+			a.stopWeaponPlayback()
 			a.play.closeScript()
 			a.play = nil
 			a.setMenuMusic()
@@ -665,6 +709,8 @@ func (a *app) captureState() string {
 		return "level-select"
 	case 3:
 		return "options"
+	case 4:
+		return "stats"
 	default:
 		return "frontend"
 	}
@@ -728,6 +774,9 @@ func (a *app) setCaptureState(state string) error {
 		return a.beginMenuClick(1)
 	case "options":
 		a.titleScreen, a.page = false, 3
+	case "stats":
+		a.titleScreen, a.page = false, 4
+		a.statsScreen = newStatsMenu(&a.statistics)
 	case "level-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 	case "play":
@@ -742,7 +791,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		return nil
-	case "play-fire", "play-fire-left":
+	case "play-fire", "play-fire-left", "play-shotgun", "play-uzi", "play-flamer", "play-sniper":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
 			return err
@@ -751,12 +800,38 @@ func (a *app) setCaptureState(state string) error {
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		direction := 1.0
+		if strings.EqualFold(normalized, "play-shotgun") {
+			a.play.collectPickup("p_shotgun")
+		}
+		if strings.EqualFold(normalized, "play-uzi") {
+			a.play.collectPickup("p_uzi")
+		}
+		if strings.EqualFold(normalized, "play-flamer") {
+			a.play.collectPickup("p_flamer")
+		}
+		if strings.EqualFold(normalized, "play-sniper") {
+			a.play.collectPickup("p_sniper")
+		}
 		if strings.EqualFold(normalized, "play-fire-left") {
 			direction = -1
 		}
 		a.play.angle, a.play.flipX = barryDirection(direction, 0)
 		a.play.fire(direction, 0)
 		return nil
+	case "play-native-title":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		host := &playScriptHost{app: a, play: a.play}
+		if _, err := host.Call("DrawText1", []scripting.Value{240, 20, "SHOOT IT UP IN DINOSAUR TIMES,"}); err != nil {
+			return err
+		}
+		_, err := host.Call("DrawText2", []scripting.Value{240, 40, "STEAKFRIES!"})
+		return err
 	case "play-combat":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
@@ -887,7 +962,15 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x, Y: a.play.y})
 		return nil
-	case "play-secondary":
+	case "play-secondary", "play-controls-visible", "play-controls-hidden":
+		if strings.EqualFold(normalized, "play-controls-visible") {
+			a.mobile = true
+			a.options.activate(optionsVisible, nil)
+		}
+		if strings.EqualFold(normalized, "play-controls-hidden") {
+			a.mobile = true
+			a.options.activate(optionsHidden, nil)
+		}
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
 			return err
@@ -982,6 +1065,8 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	} else if a.page == 3 {
 		a.drawBackdrop(screen)
 		a.drawOptionsMenu(screen, &a.options)
+	} else if a.page == 4 && a.statsScreen != nil {
+		a.drawStatsMenu(screen, a.statsScreen, a.menuTime)
 	} else {
 		a.drawLevelSelect(screen)
 	}
@@ -1557,6 +1642,8 @@ func (a *app) activate() error {
 			a.mode, a.page, a.world, a.level = 1, 2, 0, 0
 		case 2:
 			a.page = 3
+		case 3:
+			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
 		case 4:
 			return ebiten.Termination
 		}
@@ -1941,7 +2028,7 @@ func (a *app) drawDebugPanel(screen *ebiten.Image) {
 			_, err := a.Texture(animation.Texture)
 			death = fmt.Sprintf("%s %d@%.1f loaded %t", animation.Texture, animation.Frames, animation.FPS, err == nil)
 		}
-		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d pops %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals), len(a.play.bloodPops)), fmt.Sprintf("death0 %s", death), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("player %.1f,%.1f walk %t target %.1f,%.1f dialogue %d/%d", a.play.x, a.play.y, a.play.scriptWalking, a.play.scriptWalkX, a.play.scriptWalkY, a.play.dialogueIndex, len(a.play.dialogue)), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType))
+		lines = append(lines, fmt.Sprintf("wave %d/%d elapsed %.0f zombies %d portals %d pops %d", a.play.waveIndex+1, waveCount, a.play.waveElapsed, len(a.play.zombies), len(a.play.portals), len(a.play.bloodPops)), fmt.Sprintf("death0 %s", death), fmt.Sprintf("spawned %v", a.play.waveSpawned), fmt.Sprintf("player %.1f,%.1f walk %t target %.1f,%.1f dialogue %d/%d", a.play.x, a.play.y, a.play.scriptWalking, a.play.scriptWalkX, a.play.scriptWalkY, a.play.dialogueIndex, len(a.play.dialogue)), fmt.Sprintf("health %.2f lives %d weapon %s", a.play.health, a.play.lives, a.play.weapon.GunType), fmt.Sprintf("controls move %t shoot %t entered %t", a.play.moveControl, a.play.shootControl, a.play.entryControlsRestored))
 		lines = append(lines, fmt.Sprintf("score %d kills %d/%d meter %.2f", a.play.score, a.play.levelKills, a.play.levelZombieTotal, a.play.progressOpacity))
 		for index, portal := range a.play.portals {
 			if index >= 3 {
@@ -2052,6 +2139,12 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 	}
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.bullets {
+		if b.projectile != nil {
+			if b.projectile.EntityType != 0x12 {
+				a.drawWeaponProjectile(screen, *b.projectile)
+			}
+			continue
+		}
 		textureName := "Common0/Textures/bullet_SD"
 		scale := zoom
 		if b.kind == "grenade" {
@@ -2348,18 +2441,18 @@ func (a *app) drawPlayControls(screen *ebiten.Image) {
 	}
 	a.drawGrenadeButton(screen)
 	showScriptSticks := a.play.scriptRuntime == nil || a.play.scriptRuntime.Done() || a.play.scriptAllowThumbsticks
-	showLeftStick := a.mobile && (showScriptSticks || a.play.scriptForceThumbStick[0])
-	showRightStick := a.mobile && (showScriptSticks || a.play.scriptForceThumbStick[1])
+	showLeftStick := a.play.controls.Visible && (showScriptSticks || a.play.scriptForceThumbStick[0])
+	showRightStick := a.play.controls.Visible && (showScriptSticks || a.play.scriptForceThumbStick[1])
 	if showLeftStick {
 		if a.play.stick == 1 {
 			a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", a.play.leftBaseX, a.play.leftBaseY, a.play.leftDeflectX, a.play.leftDeflectY)
 		} else {
 			baseX, baseY := a.play.scriptThumbStickX[0], a.play.scriptThumbStickY[0]
 			if baseX == 0 {
-				baseX = 64
+				baseX = a.play.leftBaseX
 			}
 			if baseY == 0 {
-				baseY = 256
+				baseY = a.play.leftBaseY
 			}
 			a.drawStick(screen, "Common0/Textures/Analog_Nub_Move_SD", baseX, baseY, 0, 0)
 		}
@@ -2370,10 +2463,10 @@ func (a *app) drawPlayControls(screen *ebiten.Image) {
 		} else {
 			baseX, baseY := a.play.scriptThumbStickX[1], a.play.scriptThumbStickY[1]
 			if baseX == 0 {
-				baseX = 416
+				baseX = a.play.rightBaseX
 			}
 			if baseY == 0 {
-				baseY = 256
+				baseY = a.play.rightBaseY
 			}
 			a.drawStick(screen, "Common0/Textures/Analog_Nub_Gun_SD", baseX, baseY, 0, 0)
 		}
@@ -2395,7 +2488,7 @@ func (a *app) drawGrenadeButton(screen *ebiten.Image) {
 		size = formats.Vec2{X: 64, Y: 32}
 	}
 	x, y := 416.0, 208.0
-	if a.mobile && a.play.rightBaseX > 0 && a.play.rightBaseY > 0 {
+	if a.play.rightBaseX > 0 && a.play.rightBaseY > 0 {
 		x, y = a.play.rightBaseX, a.play.rightBaseY-48
 	}
 	if texture, err := a.Texture("Common0/Textures/SecondaryButton_SD"); err == nil {
@@ -2434,16 +2527,25 @@ func (p *playState) secondaryButtonContains(x, y float64) bool {
 	return x >= buttonX-32 && x <= buttonX+32 && y >= buttonY-16 && y <= buttonY+16
 }
 func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflectX, deflectY float64) {
+	padRadius := float64(a.play.controls.PadRadius)
+	sx, sy := a.renderScale()
 	if image, err := a.Texture("Common0/Textures/Analog_Back_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-		options.GeoM.Scale(.5, .5)
-		options.GeoM.Translate(baseX-float64(image.Bounds().Dx())*.25, baseY-float64(image.Bounds().Dy())*.25)
+		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
+		options.GeoM.Scale(padRadius*2/float64(image.Bounds().Dx()), padRadius*2/float64(image.Bounds().Dy())*sx/sy)
+		options.GeoM.Translate(baseX, baseY)
 		a.drawImage(screen, image, options)
 	}
 	if image, err := a.Texture(name); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-		options.GeoM.Scale(.5, .5)
-		options.GeoM.Translate(baseX+deflectX*32-float64(image.Bounds().Dx())*.25, baseY+deflectY*32-float64(image.Bounds().Dy())*.25)
+		options.GeoM.Translate(-float64(image.Bounds().Dx())/2, -float64(image.Bounds().Dy())/2)
+		options.GeoM.Scale(64/float64(image.Bounds().Dx()), 64/float64(image.Bounds().Dy())*sx/sy)
+		dx, dy := deflectX*padRadius*1.3, deflectY*padRadius*1.3
+		limit := math.Max(0, padRadius-32)
+		if distance := math.Hypot(dx, dy); distance > limit && distance > 0 {
+			dx, dy = dx/distance*limit, dy/distance*limit
+		}
+		options.GeoM.Translate(baseX+dx, baseY+dy*sx/sy)
 		a.drawImage(screen, image, options)
 	}
 }
@@ -2576,6 +2678,9 @@ func (a *app) openPlay() error {
 	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
 	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
 	play.levelInfo = level.Info
+	play.configureControls(a.options.controls, a.outputWidth, a.outputHeight)
+	play.controlWidth, play.controlHeight, play.statistics = a.outputWidth, a.outputHeight, &a.statistics
+	play.statsPositionX, play.statsPositionY = spawnX, spawnY
 	if a.mode == 0 {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		if err != nil {
@@ -2699,11 +2804,27 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 
 	const dt = 1.0 / 60.0
 	activeBullets := p.bullets[:0]
+	var childBullets []bullet
 	for _, b := range p.bullets {
+		if b.projectile != nil && b.projectile.EntityType == 0x12 {
+			remaining, spawn, remove := nativeWeaponMultiTick(b.projectile.Penetration)
+			b.projectile.Penetration = remaining
+			if remove {
+				continue
+			}
+			if spawn {
+				child := nativeWeaponMultiChild(*b.projectile)
+				childBullets = append(childBullets, bullet{x: child.X, y: child.Y, vx: child.VX, vy: child.VY, life: child.Life, projectile: &child})
+			}
+		}
 		previousX, previousY := b.x, b.y
 		b.x += b.vx * dt
 		b.y += b.vy * dt
 		b.life -= dt
+		if b.projectile != nil {
+			b.projectile.X, b.projectile.Y, b.projectile.Life = b.x, b.y, b.life
+			b.projectile.Age += dt
+		}
 		if b.life <= 0 || p.isSolid(b.x, b.y) {
 			if b.kind == "grenade" {
 				p.detonateGrenade(b.x, b.y)
@@ -2711,6 +2832,10 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			continue
 		}
 		hit := false
+		if b.projectile != nil && b.projectile.EntityType == 0x12 {
+			activeBullets = append(activeBullets, b)
+			continue
+		}
 		for index := range p.zombies {
 			if p.zombies[index].health <= 0 {
 				continue
@@ -2727,7 +2852,14 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				hit = true
 				continue
 			}
-			p.zombies[index].health -= 500
+			damage := 500.0
+			if b.projectile != nil && b.projectile.EntityType == 0x13 {
+				b.vx = float64(float32(b.vx) * float32(.85))
+				b.vy = float64(float32(b.vy) * float32(.85))
+				b.projectile.VX, b.projectile.VY = b.vx, b.vy
+				damage = 1
+			}
+			p.zombies[index].health -= damage
 			p.zombies[index].hitFlash = zombieHitFlashDuration
 			if p.zombies[index].health <= 0 {
 				p.zombies[index].dying = true
@@ -2735,11 +2867,14 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			}
 			hit = true
 		}
+		if b.projectile != nil && b.projectile.EntityType == 0x11 {
+			hit = false
+		}
 		if !hit {
 			activeBullets = append(activeBullets, b)
 		}
 	}
-	p.bullets = activeBullets
+	p.bullets = append(activeBullets, childBullets...)
 	alive := p.zombies[:0]
 	for _, zombie := range p.zombies {
 		if zombie.dying && zombie.deathAge < zombieDeathDelay {
@@ -2769,19 +2904,13 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		p.stick = 0
 		p.leftDeflectX, p.leftDeflectY, p.rightDeflectX, p.rightDeflectY = 0, 0, 0, 0
 	} else if p.stick == 0 && pointerJustPressed && !inPauseBtn && !p.secondaryPointerDown {
-		if pointerX < logicalWidth/2 {
-			p.stick = 1
-			p.leftBaseX, p.leftBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
-		} else {
-			p.stick = 2
-			p.rightBaseX, p.rightBaseY = clampFloat(float64(pointerX), 32, logicalWidth-32), clampFloat(float64(pointerY), 32, logicalHeight-32)
-		}
+		p.startControlTouch(float64(pointerX), float64(pointerY))
 	}
 	if mobile && pointerDown && p.stick == 1 {
-		p.leftDeflectX, p.leftDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.leftBaseX, p.leftBaseY)
+		p.updateControlTouch(float64(pointerX), float64(pointerY), p.controlWidth, p.controlHeight)
 	}
 	if mobile && pointerDown && p.stick == 2 {
-		p.rightDeflectX, p.rightDeflectY = stickDeflection(float64(pointerX), float64(pointerY), p.rightBaseX, p.rightBaseY)
+		p.updateControlTouch(float64(pointerX), float64(pointerY), p.controlWidth, p.controlHeight)
 	}
 	dx, dy := 0.0, 0.0
 	if ebiten.IsKeyPressed(ebiten.KeyLeft) || ebiten.IsKeyPressed(ebiten.KeyA) {
@@ -3280,6 +3409,7 @@ func (p *playState) zombieCollisionDisplacement(x, y, radius float64) (float64, 
 	return bestX, bestY, bestPenetration > 0
 }
 
+func (p *playState) equipWeapon(weapon formats.Weapon) { p.weapon = weapon }
 func (p *playState) fire(dx, dy float64) bool {
 	dist := math.Hypot(dx, dy)
 	if dist < 0.0001 {
@@ -3293,6 +3423,41 @@ func (p *playState) fire(dx, dy float64) bool {
 	bx := p.x + offsetX
 	by := p.y + offsetY
 	dirX, dirY = p.projectileDirection(dirX, dirY, offsetX, offsetY)
+	p.shotSound = p.weapon.SFXShoot
+	if p.weapon.GunType == "SHOTGUN" || p.weapon.GunType == "UZI" || p.weapon.GunType == "MINIGUN" || p.weapon.GunType == "SNIPER" || p.weapon.GunType == "FLAMER" {
+		if p.weapon.Ammo <= 0 {
+			if pistol, ok := p.weapons.Find("PISTOL"); ok {
+				p.equipWeapon(pistol)
+				return p.fire(dx, dy)
+			}
+			return false
+		}
+		if p.rng == nil {
+			rng := newNativeRNG()
+			p.rng = &rng
+		}
+		if p.weapon.GunType == "SHOTGUN" || p.weapon.GunType == "SNIPER" {
+			p.shotSound = nativeWeaponSoundRange(p.weapon.SFXStart, p.weapon.SFXEnd, p.rng.bounded(0))
+		}
+		volley, err := nativePrimaryVolley(p.weapon, nativeWeaponDirection(dirX, dirY), p.rng)
+		if err != nil {
+			return false
+		}
+		for _, shot := range volley.Shots {
+			projectile, ok := newNativeWeaponProjectile(shot, p.weapon.BulletType, bx, by, p.rng)
+			if !ok {
+				return false
+			}
+			p.bullets = append(p.bullets, bullet{x: bx, y: by, vx: projectile.VX, vy: projectile.VY, life: projectile.Life, projectile: &projectile})
+		}
+		p.weapon.Ammo -= volley.AmmoConsumed
+		p.flash, p.shootCooldown = nativeWeaponFlashDuration, p.weapon.RateOfFire
+		if p.statistics != nil {
+			p.statistics.ShotsFired++
+			p.statistics.Available["Shots Fired"] = true
+		}
+		return len(volley.Shots) > 0
+	}
 	bvx := dirX * p.weapon.Speed
 	bvy := dirY * p.weapon.Speed
 	bAngle := math.Atan2(dirY, dirX) + math.Pi/2
@@ -3306,6 +3471,10 @@ func (p *playState) fire(dx, dy float64) bool {
 	})
 	p.flash = nativeWeaponFlashDuration
 	p.shootCooldown = p.weapon.RateOfFire
+	if p.statistics != nil {
+		p.statistics.ShotsFired++
+		p.statistics.Available["Shots Fired"] = true
+	}
 	return true
 }
 func (p *playState) fireSecondary(dx, dy float64) bool {
@@ -3322,6 +3491,11 @@ func (p *playState) fireSecondary(dx, dy float64) bool {
 	dirX, dirY = p.projectileDirection(dirX, dirY, offsetX, offsetY)
 	p.bullets = append(p.bullets, bullet{x: p.x + offsetX, y: p.y + offsetY, vx: dirX * weapon.Speed, vy: dirY * weapon.Speed, life: weapon.Life, angle: math.Atan2(dirY, dirX) + math.Pi/2, kind: "grenade"})
 	p.grenades--
+	p.shotSound = weapon.SFXShoot
+	if p.statistics != nil {
+		p.statistics.GrenadesTossed++
+		p.statistics.Available["Grenades Tossed"] = true
+	}
 	p.secondaryShootCooldown = weapon.RateOfFire
 	return true
 }
@@ -3671,6 +3845,9 @@ func main() {
 		log.Fatal(err)
 	}
 	game.captureLimit = *captureFrames
+	if *captureDir != "" {
+		game.profileWritable = false
+	}
 	game.captureAutoDialogue = *captureAutoDialogue
 	if *captureState != "" {
 		if err := game.setCaptureState(*captureState); err != nil {
@@ -3684,6 +3861,11 @@ func main() {
 		game.menuSelection = *captureSelection
 	}
 	defer game.sound.Close()
+	defer func() {
+		if err := game.savePlayerProfile(); err != nil {
+			log.Printf("profile: %v", err)
+		}
+	}()
 	ebiten.SetWindowSize(960, 540)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("HalfBricked")
