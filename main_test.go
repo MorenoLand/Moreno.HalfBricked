@@ -596,22 +596,22 @@ func TestRegisteredDialoguePortraitSurvivesHiddenScriptCameos(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := host.Call("RegisterCameo", []scripting.Value{float64(0), float64(7)}); err != nil {
+	if _, err := host.Call("RegisterCameo", []scripting.Value{float64(7), float64(0)}); err != nil {
 		t.Fatal(err)
 	}
-	if play.scriptTextures[0].cameo != -1 || play.scriptTextures[7].cameo != 0 || play.scriptCameos[0] != 7 {
-		t.Fatalf("RegisterCameo(0, 7) registered textures %#v and mapping %#v, want cameo 0 -> texture 7", play.scriptTextures, play.scriptCameos)
+	if play.scriptTextures[0].cameo != -1 || play.scriptTextures[7].cameo != 0 || play.scriptCameos[7] != 0 {
+		t.Fatalf("RegisterCameo(7, 0) registered textures %#v and mapping %#v, want texture 7 on left", play.scriptTextures, play.scriptCameos)
 	}
 	if _, err := host.Call("CameoShow", []scripting.Value{false}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := (&app{play: play}).dialogueCameo(0), commonSDTexture("Cameos/barrycameo"); got != want {
+	if got, want := (&app{play: play}).dialogueCameo(7), commonSDTexture("Cameos/barrycameo"); got != want {
 		t.Fatalf("dialogue cameo while script cameos are hidden = %q, want registered portrait %q", got, want)
 	}
 	if _, err := host.Call("CameoShow", []scripting.Value{true}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := (&app{play: play}).dialogueCameo(0), commonSDTexture("Cameos/barrycameo"); got != want {
+	if got, want := (&app{play: play}).dialogueCameo(7), commonSDTexture("Cameos/barrycameo"); got != want {
 		t.Fatalf("dialogue cameo = %q, want registered texture %q", got, want)
 	}
 }
@@ -620,6 +620,31 @@ func TestDialogueTextLayoutKeepsPanelPaddingWithoutCameo(t *testing.T) {
 	textX, textWidth := dialogueTextLayout(12, 456, false)
 	if textX != 24 || textWidth != 432 {
 		t.Fatalf("no-cameo layout = x %.0f width %.0f, want x 24 width 432", textX, textWidth)
+	}
+}
+func TestTutorialPortraitSlotsDoNotOverwriteHQ(t *testing.T) {
+	p := &playState{scriptTextures: map[int]*scriptTexture{}}
+	h := &playScriptHost{play: p}
+	for _, item := range []struct {
+		id, side int
+		name     string
+	}{{0, 0, "Cameos/HQcameo"}, {1, 1, "Cameos/HQcameo"}, {7, 0, "Cameos/barrycameo"}, {8, 1, "Cameos/cavezombiecameo"}} {
+		for _, call := range []struct {
+			name string
+			args []scripting.Value
+		}{{"LoadTexture", []scripting.Value{item.id, item.name}}, {"RegisterCameo", []scripting.Value{item.id, item.side}}, {"SetTextureVisible", []scripting.Value{item.id, true}}} {
+			if _, err := h.Call(call.name, call.args); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	a := &app{play: p}
+	if a.dialogueCameo(0) != commonSDTexture("Cameos/HQcameo") || a.dialogueCameo(7) != commonSDTexture("Cameos/barrycameo") {
+		t.Fatal("registration overwrote tutorial speaker")
+	}
+	p.scriptTextures[0].visible = false
+	if a.dialogueCameo(0) != "" {
+		t.Fatal("deliberately hidden portrait displayed")
 	}
 }
 

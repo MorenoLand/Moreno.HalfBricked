@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -156,9 +157,9 @@ func spriteFloat(value string, fallback float64, field, sprite, animation string
 		return fallback, nil
 	}
 	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil || parsed <= 0 {
+	if err != nil || parsed < 0 || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 		if err == nil {
-			err = fmt.Errorf("must be positive")
+			err = fmt.Errorf("must be finite and nonnegative")
 		}
 		return 0, fmt.Errorf("sprite %q animation %q %s %q: %w", sprite, animation, field, value, err)
 	}

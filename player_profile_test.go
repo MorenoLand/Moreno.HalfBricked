@@ -12,7 +12,7 @@ func TestPlayerProfileKeepsOptionsAndMeasuredStats(t *testing.T) {
 	data := newStatsData()
 	data.ZombiesKilled, data.TimePlayed = 9, 12
 	data.Available["Zombies Killed"] = true
-	profile := playerProfile{Options: menu.Settings(), Stats: data, Unlocked: map[string]bool{"World0Level1": true}}
+	profile := playerProfile{Options: menu.Settings(), Stats: data, Unlocked: map[string]bool{"World0Level1": true}, NewDismissed: map[string]bool{"World0Level0": true}}
 	encoded, err := json.Marshal(profile)
 	if err != nil {
 		t.Fatal(err)
@@ -27,6 +27,9 @@ func TestPlayerProfileKeepsOptionsAndMeasuredStats(t *testing.T) {
 	}
 	if restoredMenu.controls.Visible || restoredMenu.controls.Normal || restored.Stats.ZombiesKilled != 9 || restored.Stats.TimePlayed != 12 || !restored.Stats.Available["Zombies Killed"] || !restored.Unlocked["World0Level1"] {
 		t.Fatal("profile lost control settings or measured counters")
+	}
+	if !restored.NewDismissed["World0Level0"] || restored.NewDismissed["World0Level1"] {
+		t.Fatal("profile lost per-level NEW suppression")
 	}
 }
 func TestStatsCountersUseNativeClockAndDistanceThreshold(t *testing.T) {

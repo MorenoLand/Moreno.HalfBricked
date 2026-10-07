@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 )
 
 type playerProfile struct {
-	Options  optionsSettings `json:"options"`
-	Stats    statsData       `json:"stats"`
-	Unlocked map[string]bool `json:"unlocked"`
+	Options            optionsSettings `json:"options"`
+	Stats              statsData       `json:"stats"`
+	Unlocked           map[string]bool `json:"unlocked"`
+	NewDismissed       map[string]bool `json:"newDismissed"`
+	AchievementUnlocks map[string]bool `json:"achievementUnlocks,omitempty"`
 }
 
 func (a *app) loadPlayerProfile() error {
@@ -28,19 +31,22 @@ func (a *app) loadPlayerProfile() error {
 		return err
 	}
 	a.statistics = profile.Stats
+	a.newDismissed = profile.NewDismissed
+	a.achievementUnlocks = profile.AchievementUnlocks
 	if a.statistics.Available == nil {
 		a.statistics.Available = map[string]bool{}
 	}
 	for id, unlocked := range profile.Unlocked {
 		a.unlocked[id] = unlocked
 	}
+	a.awardLocalAchievements(nil)
 	return nil
 }
 func (a *app) savePlayerProfile() error {
 	if !a.profileWritable {
 		return nil
 	}
-	data, err := json.MarshalIndent(playerProfile{Options: a.options.Settings(), Stats: a.statistics, Unlocked: a.unlocked}, "", "  ")
+	data, err := json.MarshalIndent(playerProfile{Options: a.options.Settings(), Stats: a.statistics, Unlocked: a.unlocked, NewDismissed: a.newDismissed, AchievementUnlocks: a.achievementUnlocks}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -88,5 +94,10 @@ func (a *app) recordPlayStats(p *playState, previousKills, previousLives int) {
 	} else {
 		a.statistics.BestStoryScore = max(a.statistics.BestStoryScore, int32(max(0, p.score-p.levelStartScore)))
 		a.statistics.Available["Best Story Level Score"] = true
+	}
+	if a.awardLocalAchievements(nil) {
+		if err := a.savePlayerProfile(); err != nil {
+			log.Printf("achievements: %v", err)
+		}
 	}
 }

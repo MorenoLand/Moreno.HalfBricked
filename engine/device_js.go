@@ -2,21 +2,21 @@
 
 package engine
 
-import (
-	"strings"
-	"syscall/js"
-)
+import "syscall/js"
 
 func IsMobileDevice() bool {
 	navigator := js.Global().Get("navigator")
 	if !navigator.Truthy() {
 		return false
 	}
-	userAgent := strings.ToLower(navigator.Get("userAgent").String())
-	for _, token := range []string{"android", "iphone", "ipad", "ipod", "mobile", "tablet"} {
-		if strings.Contains(userAgent, token) {
-			return true
+	touchPoints, mobile := 0, false
+	if value := navigator.Get("maxTouchPoints"); value.Type() == js.TypeNumber {
+		touchPoints = value.Int()
+	}
+	if data := navigator.Get("userAgentData"); data.Truthy() {
+		if value := data.Get("mobile"); value.Type() == js.TypeBoolean {
+			mobile = value.Bool()
 		}
 	}
-	return false
+	return mobileBrowser(navigator.Get("userAgent").String(), navigator.Get("platform").String(), touchPoints, mobile)
 }

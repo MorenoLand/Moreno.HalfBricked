@@ -27,6 +27,9 @@ func (a *app) updateLevelCompletion() error {
 	}
 	if a.play.exitScriptStarted {
 		if a.play.scriptRuntime != nil && a.play.scriptRuntime.Done() {
+			if err := a.recordStoryCompletion(a.play.levelInfo); err != nil {
+				return err
+			}
 			if resultsVisible(false, nativeCatalogLevelFlags(a.play.levelInfo.Flags)) {
 				a.openLevelResults()
 				return nil
@@ -84,19 +87,32 @@ func (a *app) continueStoryLevel(info formats.LevelInfo) error {
 	if err != nil {
 		return err
 	}
+	if err := a.recordStoryCompletion(info); err != nil {
+		return err
+	}
 	score := a.play.score
+	combatKills := a.play.combatKillCount
 	a.play.closeScript()
 	a.world, a.level = world, level
 	if err := a.openPlay(); err != nil {
 		return err
 	}
 	a.play.score, a.play.levelStartScore = score, score
+	a.play.combatKillCount = combatKills
+	return nil
+}
+func (a *app) recordStoryCompletion(info formats.LevelInfo) error {
+	a.awardLocalAchievements(&info)
 	if a.unlocked == nil {
 		a.unlocked = map[string]bool{}
 	}
-	a.unlocked[info.NextLevel] = true
-	for _, id := range info.UnlockLevels {
-		a.unlocked[id] = true
+	if info.NextLevel != "" {
+		a.unlocked[info.NextLevel] = true
 	}
-	return nil
+	for _, id := range info.UnlockLevels {
+		if id != "" {
+			a.unlocked[id] = true
+		}
+	}
+	return a.savePlayerProfile()
 }

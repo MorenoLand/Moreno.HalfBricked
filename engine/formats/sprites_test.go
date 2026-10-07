@@ -54,3 +54,19 @@ func TestParseSpritesLoadsReferenceDeathCatalog(t *testing.T) {
 		t.Fatalf("death animation = %#v, found %t, want reference defaults", pop, ok)
 	}
 }
+func TestParseSpritesPreservesStaticZeroFPS(t *testing.T) {
+	catalog, err := ParseSprites(strings.NewReader(`<SpriteLibrary><Sprites><Sprite name="Maddog"><Anim name="Still" texture="Textures/Characters/maddog_body_walk_HD" numFrames="4" numAngles="5" fps="0" loop="0"/></Sprite></Sprites></SpriteLibrary>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, _ := catalog.Find("Maddog")
+	animation, ok := definition.Animation("Still")
+	if !ok || animation.FPS != 0 || animation.Frames != 4 || animation.Loop {
+		t.Fatal("static metadata changed")
+	}
+	for _, fps := range []string{"-1", "NaN", "+Inf"} {
+		if _, err := ParseSprites(strings.NewReader(`<SpriteLibrary><Sprites><Sprite name="bad"><Anim name="bad" texture="bad" fps="` + fps + `"/></Sprite></Sprites></SpriteLibrary>`)); err == nil {
+			t.Fatal("invalid FPS accepted")
+		}
+	}
+}

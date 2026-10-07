@@ -21,6 +21,7 @@ var scriptCallbacks = []string{
 }
 
 func init() {
+	scriptCallbacks = append(scriptCallbacks, "HasControllerAttached", "Analytics_SendEvent", "SecondaryPlayersPleaseWait", "SetZombiesActiveDuringScripts", "BrickUI_DisplayScreen", "BrickUI_PlayAnimation", "BrickUI_GetPropertyBool", "BrickUI_RemoveScreen", "BrickUI_SetupTutorialScreen", "Controller_OnEnterScreen", "Controller_OnLeaveScreen")
 	scriptCallbacks = append(scriptCallbacks, "AimControlActive", "DefaultThumbStickFree", "DoPlayerSpawn", "FireGun", "ForceDrawReticule", "ForceDrawThumbStick", "ForceEnableSecondary", "IsSecondaryButtonDown", "KillZombie", "MoveControlActive", "NormalControlStyle", "PickupExists", "SetAllowThumbsticksDuringScripts", "SetPlayerCollideWithZombiesInScripts", "SetThumbStickCentre", "SetThumbStickFree", "SetThumbSticksToCorners", "SpawnZombiesAroundPlayer", "StopPlayerShootControl", "TriggerTutorial", "ZoomCameraOut", "AddRobotBossZombie", "AddWesternBossZombie", "GetPositionWithinRadius", "MakeRexRage", "MakeZombieInvulnerable", "MusicEnabled", "SetRobotRage", "SetWesternBossDead", "ShakeInputTriggered", "UnlockWesternBossAchievement", "Update", "ZoomCameraAndMove", "ZoomCameraIn")
 }
 
@@ -55,20 +56,32 @@ type scriptTexture struct {
 }
 
 type playScriptHost struct {
-	app  *app
-	play *playState
+	app                           *app
+	play                          *playState
+	analyticsEvents               []scriptAnalyticsEvent
+	secondaryPlayersWait          bool
+	ui                            script125UI
+	setZombiesActiveDuringScripts func(bool) error
 }
 
 func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.CallResult, error) {
 	h.play.scriptLastCallback = name
 	switch name {
+	case "HasControllerAttached", "IsXPlayDevice", "GetPlayer", "GetPlayerX", "GetPlayerY":
+		if len(args) != 0 {
+			return scripting.CallResult{}, fmt.Errorf("%s expects no arguments, got %d", name, len(args))
+		}
+	}
+	switch name {
+	case "Analytics_SendEvent", "SecondaryPlayersPleaseWait", "SetZombiesActiveDuringScripts", "BrickUI_DisplayScreen", "BrickUI_PlayAnimation", "BrickUI_GetPropertyBool", "BrickUI_RemoveScreen", "BrickUI_SetupTutorialScreen", "Controller_OnEnterScreen", "Controller_OnLeaveScreen":
+		return h.callScript125(name, args)
 	case "LogMessage":
 		if len(args) > 0 {
 			log.Printf("script: %v", args[0])
 		}
 		return scripting.CallResult{}, nil
-	case "IsXPlayDevice":
-		return scriptValues(h.app.mobile), nil
+	case "HasControllerAttached", "IsXPlayDevice":
+		return scriptValues(len(ebiten.AppendGamepadIDs(nil)) > 0), nil
 	case "Idle":
 		return scripting.CallResult{Yield: true}, nil
 	case "WaitInit":
@@ -394,12 +407,6 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			if entity == nil || (entity.kind != "zombie" && entity.kind != "sprite") || (!strings.EqualFold(entity.entityType, typeName) && !strings.EqualFold(entity.texture, typeName)) {
 				continue
 			}
-			if entity.kind == "zombie" {
-				zombie := h.findZombie(id)
-				if zombie == nil || zombie.health <= 0 || zombie.dying {
-					continue
-				}
-			}
 			return scriptValues(id), nil
 		}
 		return scripting.CallResult{}, fmt.Errorf("entity type %q not found", typeName)
@@ -577,11 +584,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptTextures[id] = &scriptTexture{id: id, name: name, scaleX: 1, scaleY: 1, alpha: 1, cameo: -1}
 		return scripting.CallResult{}, nil
 	case "RegisterCameo":
-		cameoID, err := scriptID(args, 0)
+		textureID, err := scriptID(args, 0)
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		textureID, err := scriptID(args, 1)
+		side, err := scriptID(args, 1)
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
@@ -590,11 +597,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			texture = &scriptTexture{id: textureID, scaleX: 1, scaleY: 1, alpha: 1, cameo: -1}
 			h.play.scriptTextures[textureID] = texture
 		}
-		texture.cameo = cameoID
+		texture.cameo = side
 		if h.play.scriptCameos == nil {
 			h.play.scriptCameos = map[int]int{}
 		}
-		h.play.scriptCameos[cameoID] = textureID
+		h.play.scriptCameos[textureID] = side
 		return scripting.CallResult{}, nil
 	case "CameoShow":
 		show, err := scriptBool(args, 0)
@@ -1399,13 +1406,14 @@ func (p *playState) updateScriptEntities() {
 		fps, frames := 8.0, 4
 		loop := true
 		if animation, ok := findSpriteAnimationByIndex(p.sprites, entity.texture, entity.animation); ok {
-			if animation.FPS > 0 {
-				fps = animation.FPS
-			}
+			fps = animation.FPS
 			if animation.Frames > 0 {
 				frames = animation.Frames
 			}
 			loop = animation.Loop
+		}
+		if fps == 0 {
+			continue
 		}
 		entity.frameTime += 1.0 / 60.0
 		for entity.frameTime >= 1.0/fps {
@@ -1589,7 +1597,7 @@ func findSpriteAnimationByIndex(catalog formats.SpriteCatalog, name string, inde
 }
 
 func (p *playState) spriteFPS(name, preferred string) float64 {
-	if animation, ok := findSpriteAnimation(p.sprites, name, preferred); ok && animation.FPS > 0 {
+	if animation, ok := findSpriteAnimation(p.sprites, name, preferred); ok {
 		return animation.FPS
 	}
 	return 8
@@ -1686,6 +1694,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 		size := pickupDrawSize(entity.texture)
 		scaleX, scaleY = size*zoom/float64(rect.Dx()), size*zoom/float64(rect.Dy())
 		screenY -= size * 0.375 * zoom
+	} else {
+		resolution := a.pack.TextureSourceScale(texturePath)
+		scaleX, scaleY = scaleX/resolution, scaleY/resolution
 	}
 	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, entity.flipY)
 	options.GeoM.Scale(scaleX, scaleY)

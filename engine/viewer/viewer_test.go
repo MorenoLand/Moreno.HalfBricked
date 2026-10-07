@@ -43,3 +43,13 @@ func TestAtlasTileVerticesApplyNativeFlipBits(t *testing.T) {
 		t.Fatalf("flipped tile source = (%v,%v)-(%v,%v), want x 64->32 and y 64->32", vertices[0].SrcX, vertices[1].SrcX, vertices[0].SrcY, vertices[2].SrcY)
 	}
 }
+func TestHDAtlasUsesSourcePixelsAndNativeWorldCells(t *testing.T) {
+	v := &Viewer{Atlas: ebiten.NewImage(512, 512), Level: formats.Level{Width: 25, Height: 24}, TileSet: formats.TileSet{TileSize: 64, TileShift: 6}, Zoom: 1}
+	vertices, ok := v.atlasTileVertices(9, 6, 7, v.tileSize())
+	if !ok || vertices[0].SrcX != 64 || vertices[0].SrcY != 64 || vertices[3].SrcX != 128 || vertices[3].SrcY != 128 {
+		t.Fatalf("HD source crop: %v", vertices)
+	}
+	if vertices[0].DstX != 192 || vertices[0].DstY != 224 || vertices[3].DstX != 224 || vertices[3].DstY != 256 || v.Level.Width*v.tileSize() != 800 || v.Level.Height*v.tileSize() != 768 {
+		t.Fatalf("native world grid: %v", vertices)
+	}
+}

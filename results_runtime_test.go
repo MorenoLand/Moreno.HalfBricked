@@ -7,7 +7,7 @@ import (
 )
 
 func TestEndWorldOutroEntersNativeResultsOnce(t *testing.T) {
-	p := &playState{health: 1, score: 450, levelStartScore: 200, levelKills: 5, exitScriptStarted: true, levelInfo: formats.LevelInfo{Flags: []string{"STORY", "ENDWORLD"}}}
+	p := &playState{health: 1, score: 450, levelStartScore: 200, levelKills: 5, exitScriptStarted: true, levelInfo: formats.LevelInfo{Flags: []string{"STORY", "ENDWORLD"}, NextLevel: "World1Level0", UnlockLevels: []string{"World0Survival1"}}}
 	runtime, err := scripting.New("return", &playScriptHost{play: p}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +25,9 @@ func TestEndWorldOutroEntersNativeResultsOnce(t *testing.T) {
 		t.Fatal("ENDWORLD froze instead of entering results")
 	}
 	original := a.resultsScreen
+	if !a.unlocked["World1Level0"] || !a.unlocked["World0Survival1"] {
+		t.Fatal("results opened before completion unlocks")
+	}
 	a.openLevelResults()
 	if a.resultsScreen != original {
 		t.Fatal("results reinitialized")

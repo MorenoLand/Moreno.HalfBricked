@@ -18,6 +18,24 @@ func TestOptionsNativeDefaults(t *testing.T) {
 		}
 	}
 }
+func TestDeviceVisibilityDefaultsAndSavedChoice(t *testing.T) {
+	for _, mobile := range []bool{false, true} {
+		menu := newOptionsMenu(true, true)
+		menu.useDeviceDefaults(mobile)
+		if menu.controls.Visible != mobile {
+			t.Fatal("wrong device default")
+		}
+		settings := menu.Settings()
+		settings.Visible = !mobile
+		if err := menu.RestoreSettings(settings); err != nil || menu.controls.Visible != !mobile {
+			t.Fatal("saved choice lost")
+		}
+		menu.activate(optionsDefault, nil)
+		if menu.controls.Visible != mobile {
+			t.Fatal("Default ignored device detection")
+		}
+	}
+}
 func TestOptionsControlActions(t *testing.T) {
 	menu := newOptionsMenu(true, true)
 	for _, action := range []optionsAction{optionsInvert, optionsHidden, optionsLeftFixed, optionsRightFixed, optionsNormal, optionsVisible, optionsLeftFloating, optionsRightFloating} {

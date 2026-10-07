@@ -32,7 +32,10 @@ func nativeCatalogLevelFlags(flags []string) uint32 {
 }
 
 func (a *app) drawCatalogLevelBadges(screen *ebiten.Image, item formats.LevelInfo, x, y, width, height float64) {
-	a.drawLevelBadges(screen, levelBadgeState{Locked: !a.levelUnlocked(item), Flags: nativeCatalogLevelFlags(item.Flags)}, x, y, width, height, float64(float32(a.menuTime)*3))
+	a.drawLevelBadges(screen, a.catalogLevelBadgeState(item), x, y, width, height, float64(float32(a.menuTime)*3))
+}
+func (a *app) catalogLevelBadgeState(item formats.LevelInfo) levelBadgeState {
+	return levelBadgeState{Locked: !a.levelUnlocked(item), NewDismissed: a.newDismissed[item.ID], Flags: nativeCatalogLevelFlags(item.Flags)}
 }
 
 func levelBadges(state levelBadgeState, x, y, width, height, tutorialWidth, tutorialHeight, phase float64) []levelBadge {
@@ -55,7 +58,8 @@ func (a *app) drawLevelBadges(screen *ebiten.Image, state levelBadgeState, x, y,
 	tutorialWidth, tutorialHeight := 0., 0.
 	if state.Flags&0x400 != 0 {
 		if texture, err := a.Texture("Common0/Textures/TutorialIcon_SD"); err == nil {
-			tutorialWidth, tutorialHeight = float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy())
+			resolution := a.pack.TextureSourceScale("Common0/Textures/TutorialIcon_SD")
+			tutorialWidth, tutorialHeight = float64(texture.Bounds().Dx())/resolution, float64(texture.Bounds().Dy())/resolution
 		}
 	}
 	for _, badge := range levelBadges(state, x, y, width, height, tutorialWidth, tutorialHeight, phase) {
@@ -64,7 +68,7 @@ func (a *app) drawLevelBadges(screen *ebiten.Image, state levelBadgeState, x, y,
 			continue
 		}
 		if !badge.Source.Empty() {
-			texture = texture.SubImage(badge.Source).(*ebiten.Image)
+			texture = texture.SubImage(resolutionRect(badge.Source, a.pack.TextureSourceScale(badge.Texture))).(*ebiten.Image)
 		}
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(texture.Bounds().Dx())/2, -float64(texture.Bounds().Dy())/2)

@@ -217,17 +217,18 @@ func rendersTileWord(kind formats.LayerKind, id uint32) bool {
 func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Vertex, bool) {
 	var vertices [4]ebiten.Vertex
 	bounds := v.Atlas.Bounds()
-	cols := bounds.Dx() / tileSize
-	rows := bounds.Dy() / tileSize
+	sourceTileSize := v.sourceTileSize()
+	cols := bounds.Dx() / sourceTileSize
+	rows := bounds.Dy() / sourceTileSize
 	tileID := id & 0xffff
 	if cols <= 0 || rows <= 0 {
 		return vertices, false
 	}
 	tileX, tileY := int(tileID)%cols, (int(tileID)/cols)%rows
-	sourceX0 := float32(tileX * tileSize)
-	sourceY0 := float32(tileY * tileSize)
-	sourceX1 := float32((tileX + 1) * tileSize)
-	sourceY1 := float32((tileY + 1) * tileSize)
+	sourceX0 := float32(tileX * sourceTileSize)
+	sourceY0 := float32(tileY * sourceTileSize)
+	sourceX1 := float32((tileX + 1) * sourceTileSize)
+	sourceY1 := float32((tileY + 1) * sourceTileSize)
 	if id&0x00010000 != 0 {
 		sourceX0, sourceX1 = sourceX1, sourceX0
 	}
@@ -413,11 +414,14 @@ func (v *Viewer) visibleBounds(tileSize int) (int, int, int, int) {
 	return minX, minY, maxX, maxY
 }
 func (v *Viewer) tileSize() int {
-	if v.TileSet.TileShift > 0 {
-		return 1 << v.TileSet.TileShift
-	}
+	return 32
+}
+func (v *Viewer) sourceTileSize() int {
 	if v.TileSet.TileSize > 0 {
 		return v.TileSet.TileSize
+	}
+	if v.TileSet.TileShift > 0 {
+		return 1 << v.TileSet.TileShift
 	}
 	return 32
 }

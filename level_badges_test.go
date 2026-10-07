@@ -1,9 +1,20 @@
 package main
 
 import (
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"math"
 	"testing"
 )
+
+func TestCatalogBadgesUseSavedLaunchState(t *testing.T) {
+	a := &app{unlocked: map[string]bool{"played": true, "unplayed": true}, newDismissed: map[string]bool{"played": true}}
+	for _, id := range []string{"played", "unplayed", "locked"} {
+		state := a.catalogLevelBadgeState(formats.LevelInfo{ID: id})
+		if state.NewDismissed != (id == "played") || state.Locked != (id == "locked") {
+			t.Fatalf("%s: %+v", id, state)
+		}
+	}
+}
 
 func TestLevelBadgePredicates(t *testing.T) {
 	for _, item := range []struct {

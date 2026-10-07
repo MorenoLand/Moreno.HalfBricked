@@ -2,4 +2,6 @@
 
 package engine
 
-func IsMobileDevice() bool { return false }
+import "runtime"
+
+func IsMobileDevice() bool { return runtime.GOOS == "android" || runtime.GOOS == "ios" }

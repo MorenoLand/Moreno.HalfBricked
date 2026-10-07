@@ -26,8 +26,37 @@ func TestFixedControlsPreserveConfiguredOrigin(t *testing.T) {
 	if p.stick != 1 || p.leftBaseX != x || p.leftBaseY != y {
 		t.Fatal("fixed base followed touch")
 	}
-	if x != 56 {
-		t.Fatalf("native fixed origin X %g, want 56", x)
+	if x != 50 {
+		t.Fatalf("native fixed origin X %g, want 50", x)
+	}
+}
+func TestFloatingControlsClampScreenPixelOrigin(t *testing.T) {
+	p := &playState{controlWidth: 960, controlHeight: 540}
+	c := nativeOptionsDefaults(false)
+	c.PadRadius = 80
+	p.configureControls(c, 960, 540)
+	p.startControlTouch(0, 320)
+	if p.leftBaseX != 40 || p.leftBaseY != 460.0*logicalHeight/540 {
+		t.Fatalf("unclamped origin %g,%g", p.leftBaseX, p.leftBaseY)
+	}
+	p.updateControlTouch(p.leftBaseX+40, p.leftBaseY, 960, 540)
+	if p.leftDeflectX < .76 || p.leftDeflectX > .78 {
+		t.Fatalf("scaled input radius %g", p.leftDeflectX)
+	}
+}
+func TestSecondaryControlFitsViewportAndMatchesHitbox(t *testing.T) {
+	for _, mobile := range []bool{false, true} {
+		p := &playState{grenades: 1, controlWidth: 2560, controlHeight: 1440, rightBaseX: 479, rightBaseY: 319, mobileControls: mobile, controls: optionsControls{PadRadius: 80}}
+		x, y, width, height := p.secondaryButtonGeometry()
+		if x+width/2 > logicalWidth || x-width/2 < 0 || y+height/2 > logicalHeight || y-height/2 < 0 {
+			t.Fatal("secondary control escaped viewport")
+		}
+		if !p.secondaryButtonContains(x, y) || p.secondaryButtonContains(x+width, y) {
+			t.Fatal("secondary hitbox differs from drawn geometry")
+		}
+		if !mobile && width != 64*logicalWidth/2560.0 {
+			t.Fatal("desktop secondary control was scaled twice")
+		}
 	}
 }
 func TestHiddenControlsContinueAcceptingInput(t *testing.T) {

@@ -122,7 +122,25 @@ func (p *Pack) TexturePath(name string) (string, bool) {
 	}
 	baseName := strings.ToLower(strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))
 	path, ok := p.manifest.Textures[baseName]
+	if !ok && strings.HasSuffix(pathName, "_sd") {
+		_, hasSD := p.SourcePath("Common0/Xml/Common0_Sprites_SD.xml")
+		_, hasHD := p.SourcePath("Common0/Xml/Common0_Sprites_HD.xml")
+		if !hasSD && hasHD {
+			hdName := strings.TrimSuffix(pathName, "_sd") + "_hd"
+			path, ok = p.manifest.Textures[hdName]
+			if !ok {
+				path, ok = p.manifest.Textures[filepath.Base(hdName)]
+			}
+		}
+	}
 	return path, ok
+}
+func (p *Pack) TextureSourceScale(name string) float64 {
+	path, ok := p.TexturePath(name)
+	if ok && strings.HasSuffix(strings.ToLower(strings.TrimSuffix(path, filepath.Ext(path))), "_hd") {
+		return 2
+	}
+	return 1
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) { return p.source.Open(path) }
 func (p *Pack) Script(path string) (formats.Script, error) {
@@ -321,6 +339,9 @@ func (p *Pack) Sprites() (formats.SpriteCatalog, error) {
 	}
 	p.spritesOK = true
 	path, ok := p.SourcePath("Common0/Xml/Common0_Sprites_SD.xml")
+	if !ok {
+		path, ok = p.SourcePath("Common0/Xml/Common0_Sprites_HD.xml")
+	}
 	if !ok {
 		p.spriteErr = fmt.Errorf("sprite catalog not found")
 		return nil, p.spriteErr

@@ -1,6 +1,9 @@
 package formats
 
 import (
+	"bytes"
+	"encoding/xml"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -55,12 +58,29 @@ func TestOriginalWeaponCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	catalog, err := ParseWeapons(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog) != 9 {
-		t.Fatalf("records: %d", len(catalog))
+	catalog, err := ParseWeapons(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declared struct {
+		Weapons []struct {
+			GunType string `xml:"Gun_Type"`
+		} `xml:"Weapon"`
+	}
+	if err := xml.Unmarshal(data, &declared); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) == 0 || len(catalog) != len(declared.Weapons) {
+		t.Fatalf("records: %d, native XML declares %d", len(catalog), len(declared.Weapons))
+	}
+	for _, entry := range declared.Weapons {
+		if _, ok := catalog.Find(entry.GunType); !ok {
+			t.Fatalf("native weapon %s missing", entry.GunType)
+		}
 	}
 	for _, want := range []struct {
 		gun, bullet, start, shoot, end string

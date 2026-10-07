@@ -10,6 +10,7 @@ type optionsMenu struct {
 	sound, music         bool
 	controls             optionsControls
 	compact, padDragging bool
+	defaultVisible       bool
 	padDragDistance      float32
 }
 type optionsAction uint8
@@ -32,7 +33,10 @@ const (
 )
 
 func newOptionsMenu(sound, music bool) optionsMenu {
-	return optionsMenu{sound: sound, music: music, controls: nativeOptionsDefaults(false)}
+	return optionsMenu{sound: sound, music: music, controls: nativeOptionsDefaults(false), defaultVisible: true}
+}
+func (menu *optionsMenu) useDeviceDefaults(mobile bool) {
+	menu.defaultVisible, menu.controls.Visible = mobile, mobile
 }
 func optionsHit(variables formats.FrontendVariables, x, y float64) optionsAction {
 	for _, control := range []struct {
@@ -72,6 +76,7 @@ func (menu *optionsMenu) activate(action optionsAction, musicEnabled func(bool))
 		return true
 	case optionsDefault:
 		menu.sound, menu.music, menu.controls = true, true, nativeOptionsDefaults(menu.compact)
+		menu.controls.Visible = menu.defaultVisible
 		menu.padDragging = false
 		if musicEnabled != nil {
 			musicEnabled(true)
@@ -132,6 +137,7 @@ func (a *app) drawOptionsMenu(screen *ebiten.Image, menu *optionsMenu) {
 	if positionOK && sizeOK {
 		if texture, err := a.Texture("Common0/Textures/Button_Text_SD"); err == nil {
 			rect, ok := buttonTextRect(9)
+			rect = resolutionRect(rect, a.pack.TextureSourceScale("Common0/Textures/Button_Text_SD"))
 			if ok && rect.In(texture.Bounds()) {
 				op := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 				op.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)

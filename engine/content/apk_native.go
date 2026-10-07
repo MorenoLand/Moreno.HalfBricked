@@ -13,7 +13,9 @@ import (
 )
 
 func prepareAPK(apkPath string) (string, error) {
-	output := filepath.Join("bin", "data-cache")
+	return PrepareAPK(apkPath, filepath.Join("bin", "data-cache"))
+}
+func PrepareAPK(apkPath, output string) (string, error) {
 	marker := filepath.Join(output, ".apk-source.sha256")
 	hash, err := HashFile(apkPath)
 	if err != nil {
@@ -24,7 +26,7 @@ func prepareAPK(apkPath string) (string, error) {
 			return output, nil
 		}
 	}
-	stage := filepath.Join("bin", ".apk-assets")
+	stage := filepath.Join(filepath.Dir(output), ".apk-assets")
 	if err := os.MkdirAll(filepath.Dir(stage), 0755); err != nil {
 		return "", err
 	}

@@ -34,7 +34,7 @@ func Import(referenceRoot, outputRoot string) error {
 	if err := os.MkdirAll(filepath.Join(outputRoot, "levels"), 0755); err != nil {
 		return err
 	}
-	manifest := PackManifest{SchemaVersion: 1, SourceVersion: "reference-1.2.1", Levels: levels, ScriptLevels: map[string]string{}, TileSets: tilesets, Textures: map[string]string{}, Files: map[string]string{}}
+	manifest := PackManifest{SchemaVersion: 1, SourceVersion: "reference", Levels: levels, ScriptLevels: map[string]string{}, TileSets: tilesets, Textures: map[string]string{}, Files: map[string]string{}}
 	for _, info := range levels {
 		level, err := formats.ParseLevel(referenceRoot, info)
 		if err != nil {

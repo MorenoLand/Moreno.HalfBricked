@@ -378,9 +378,30 @@ func parseXMLVec2(value, field string, index int) (Vec2, error) {
 }
 
 func ParseTileSets(root string) (map[string]TileSet, error) {
-	path, err := findNamedFile(filepath.Join(root, "assets"), "Common0_TileSets_SD.xml")
+	path, hdPath := "", ""
+	err := filepath.WalkDir(filepath.Join(root, "assets"), func(candidate string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(entry.Name(), "Common0_TileSets_SD.xml") {
+			path = candidate
+		}
+		if strings.EqualFold(entry.Name(), "Common0_TileSets_HD.xml") {
+			hdPath = candidate
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
+	}
+	if path == "" {
+		path = hdPath
+	}
+	if path == "" {
+		return nil, fmt.Errorf("tile catalog missing below %s", filepath.Join(root, "assets"))
 	}
 	f, err := os.Open(path)
 	if err != nil {
