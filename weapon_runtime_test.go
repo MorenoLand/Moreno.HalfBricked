@@ -13,6 +13,9 @@ func TestPrimaryPickupSelectsNativeProjectileAndConsumesAmmo(t *testing.T) {
 		w := formats.Weapon{GunType: item.gun, BulletType: item.bullet, Ammo: 2, Speed: 600, Life: 1, RateOfFire: .1}
 		p := &playState{weapons: formats.WeaponCatalog{w}}
 		p.collectPickup("p_" + item.gun)
+		if item.gun == "MINIGUN" {
+			p.spinAudio.SpinTick(weaponBindings(w), true, .1, false)
+		}
 		if !p.fire(1, 0) || len(p.bullets) != 1 || p.bullets[0].projectile == nil || p.bullets[0].projectile.EntityType != item.entity || p.weapon.Ammo != 1 {
 			t.Fatalf("%s did not use native projectile/ammo", item.gun)
 		}
@@ -30,5 +33,26 @@ func TestPickupQueuesOriginalBarryVoice(t *testing.T) {
 	p.collectPickup("p_uzi")
 	if len(p.pickupVoices) != 2 || p.pickupVoices[0] != "audio/sound/sfx/VO_Caveman_Shotgun.ogg" || p.pickupVoices[1] != "audio/sound/sfx/VO_Caveman_SMG.ogg" {
 		t.Fatal("pickup lost original VO bindings")
+	}
+}
+func TestMinigunRequiresNativeTimerAndResetsAfterShot(t *testing.T) {
+	w := formats.Weapon{GunType: "MINIGUN", BulletType: "NORMAL", Ammo: 2, Speed: 600, Life: .75, RateOfFire: .03, SFXStart: "SFX_MINIGUN_SPIN_UP", SFXShoot: "SFX_MINIGUN", SFXEnd: "SFX_MINIGUN_SPIN_DOWN"}
+	p := &playState{}
+	p.equipWeapon(w)
+	if p.fire(1, 0) {
+		t.Fatal("fresh minigun bypassed eligibility")
+	}
+	p.spinEvents.Add(p.spinAudio.SpinTick(weaponBindings(w), true, .02, false))
+	if p.fire(1, 0) {
+		t.Fatal("minigun fired before rate threshold")
+	}
+	p.spinEvents.Add(p.spinAudio.SpinTick(weaponBindings(w), true, .02, false))
+	if !p.fire(1, 0) || p.spinAudio.SpinTimer != 0 || p.weapon.Ammo != 1 {
+		t.Fatal("native minigun timer/ammo not applied")
+	}
+	p.spinEvents.Add(p.spinAudio.SpinTick(weaponBindings(w), false, .02, false))
+	events := p.spinEvents.Drain()
+	if len(events) < 3 || events[len(events)-1].Sound != w.SFXEnd {
+		t.Fatal("release did not schedule spin-down")
 	}
 }

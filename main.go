@@ -35,6 +35,7 @@ type app struct {
 	options                              optionsMenu
 	statistics                           statsData
 	statsScreen                          *statsMenu
+	resultsScreen                        *resultsMenu
 	statsClock                           float32
 	profileWritable                      bool
 	world                                int
@@ -156,6 +157,9 @@ type playState struct {
 	bullets                                                []bullet
 	shootCooldown                                          float64
 	shotSound                                              string
+	spinAudio                                              weaponAudioState
+	spinEvents                                             weaponAudioQueue
+	spinEndFinished                                        bool
 	pickupVoices                                           []string
 	secondaryShootCooldown                                 float64
 	paused                                                 bool
@@ -420,6 +424,9 @@ func (a *app) Update() error {
 		}
 		return nil
 	}
+	if a.page == 5 && a.resultsScreen != nil {
+		return a.updateResultsMenu()
+	}
 	if a.page == 3 && !a.titleScreen && a.play == nil && a.view == nil {
 		action := optionsNone
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
@@ -467,6 +474,7 @@ func (a *app) Update() error {
 		statsPlay, previousKills, previousLives := a.play, a.play.levelKills, a.play.lives
 		defer a.recordPlayStats(statsPlay, previousKills, previousLives)
 		defer a.flushPickupVoices(statsPlay)
+		defer a.flushSpinAudio(statsPlay)
 		a.play.controlWidth, a.play.controlHeight = a.outputWidth, a.outputHeight
 		pointerX, pointerY := a.pointer()
 		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
@@ -515,10 +523,13 @@ func (a *app) Update() error {
 		if !a.play.entryControlsRestored && !a.play.exitScriptStarted {
 			a.play.entryControlsRestored = a.play.enterAfterScript()
 		}
+		a.play.spinEndFinished = a.weaponPlayback.player == nil || !a.weaponPlayback.player.IsPlaying()
 		if a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile) {
-			a.playWeaponSound(a.play.shotSound)
+			if a.play.weapon.GunType != "MINIGUN" || a.play.shotSound != a.play.weapon.SFXShoot {
+				a.playWeaponSound(a.play.shotSound)
+			}
 		}
-		if a.play.paused || !a.play.shootControl || (a.mobile && a.play.stick != 2) || (!a.mobile && !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && !ebiten.IsKeyPressed(ebiten.KeySpace)) {
+		if a.play.weapon.GunType != "MINIGUN" && (a.play.paused || !a.play.shootControl || (a.mobile && a.play.stick != 2) || (!a.mobile && !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && !ebiten.IsKeyPressed(ebiten.KeySpace))) {
 			a.stopWeaponPlayback()
 		}
 		if a.play.shouldQuit {
@@ -650,6 +661,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.view.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
 		a.view.Draw(screen)
 		a.drawDebugPanel(screen)
+	} else if a.page == 5 && a.resultsScreen != nil {
+		a.drawResultsMenu(screen, a.resultsScreen, a.menuTime)
 	} else if a.play != nil {
 		a.play.world.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
 		a.drawPlay(screen)
@@ -711,6 +724,8 @@ func (a *app) captureState() string {
 		return "options"
 	case 4:
 		return "stats"
+	case 5:
+		return "results"
 	default:
 		return "frontend"
 	}
@@ -777,6 +792,9 @@ func (a *app) setCaptureState(state string) error {
 	case "stats":
 		a.titleScreen, a.page = false, 4
 		a.statsScreen = newStatsMenu(&a.statistics)
+	case "results":
+		a.titleScreen, a.page = false, 5
+		a.resultsScreen = newResultsMenu(resultsData{Flags: 4, Score: 1045})
 	case "level-select":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 	case "play":
@@ -791,7 +809,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.dialogueIndex = len(a.play.dialogue)
 		a.play.hudVisible = true
 		return nil
-	case "play-fire", "play-fire-left", "play-shotgun", "play-uzi", "play-flamer", "play-sniper":
+	case "play-fire", "play-fire-left", "play-shotgun", "play-uzi", "play-flamer", "play-sniper", "play-minigun":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
 			return err
@@ -811,6 +829,10 @@ func (a *app) setCaptureState(state string) error {
 		}
 		if strings.EqualFold(normalized, "play-sniper") {
 			a.play.collectPickup("p_sniper")
+		}
+		if strings.EqualFold(normalized, "play-minigun") {
+			a.play.collectPickup("p_minigun")
+			a.play.spinAudio.SpinTick(weaponBindings(a.play.weapon), true, float32(a.play.weapon.RateOfFire), false)
 		}
 		if strings.EqualFold(normalized, "play-fire-left") {
 			direction = -1
@@ -2692,6 +2714,7 @@ func (a *app) openPlay() error {
 			return fmt.Errorf("%s: %w", entryScriptPath(level.Info), err)
 		}
 	}
+	a.stopWeaponPlayback()
 	a.play = play
 	a.setWorldMusic(level.Info.WorldIndex)
 	a.play.centerCamera()
@@ -2927,6 +2950,10 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	}
 	if mobile && p.stick == 1 {
 		dx, dy = p.leftDeflectX, p.leftDeflectY
+	}
+	if p.weapon.GunType == "MINIGUN" {
+		trigger := p.shootControl && ((mobile && p.stick == 2 && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5) || (!mobile && (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn && !p.secondaryPointerDown))
+		p.spinEvents.Add(p.spinAudio.SpinTick(weaponBindings(p.weapon), trigger, 1.0/60.0, p.spinEndFinished))
 	}
 	if mobile && p.stick == 2 && p.shootControl && math.Hypot(p.rightDeflectX, p.rightDeflectY) > .5 {
 		if !scriptFacingLocked {
@@ -3409,13 +3436,24 @@ func (p *playState) zombieCollisionDisplacement(x, y, radius float64) (float64, 
 	return bestX, bestY, bestPenetration > 0
 }
 
-func (p *playState) equipWeapon(weapon formats.Weapon) { p.weapon = weapon }
+func (p *playState) equipWeapon(weapon formats.Weapon) {
+	if p.weapon.GunType == "MINIGUN" && weaponAudioValid(p.spinAudio.Current) {
+		p.spinEvents.Add([]weaponAudioEvent{{Sound: p.spinAudio.Current, Stop: true}})
+	}
+	p.weapon, p.shootCooldown, p.flash = weapon, 0, 0
+	if weapon.GunType == "MINIGUN" {
+		p.spinAudio.SpinAttach()
+	}
+}
 func (p *playState) fire(dx, dy float64) bool {
 	dist := math.Hypot(dx, dy)
 	if dist < 0.0001 {
 		return false
 	}
 	if p.weapon.Speed <= 0 || p.weapon.Life <= 0 || p.weapon.RateOfFire <= 0 {
+		return false
+	}
+	if p.weapon.GunType == "MINIGUN" && p.spinAudio.SpinTimer < float32(p.weapon.RateOfFire) {
 		return false
 	}
 	dirX, dirY := dx/dist, dy/dist
@@ -3451,6 +3489,9 @@ func (p *playState) fire(dx, dy float64) bool {
 			p.bullets = append(p.bullets, bullet{x: bx, y: by, vx: projectile.VX, vy: projectile.VY, life: projectile.Life, projectile: &projectile})
 		}
 		p.weapon.Ammo -= volley.AmmoConsumed
+		if p.weapon.GunType == "MINIGUN" {
+			p.spinAudio.SpinShot()
+		}
 		p.flash, p.shootCooldown = nativeWeaponFlashDuration, p.weapon.RateOfFire
 		if p.statistics != nil {
 			p.statistics.ShotsFired++

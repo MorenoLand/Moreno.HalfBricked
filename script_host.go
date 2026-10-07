@@ -869,17 +869,15 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		dx, dy := barryAimDirection(h.play.angle, h.play.flipX)
 		if secondary {
 			if h.play.fireSecondary(dx, dy) {
-				if weapon, ok := h.play.weapons.Find("GRENADE"); ok {
-					if path := h.app.scriptSoundPath(weapon.SFXShoot); path != "" {
-						h.app.playSound(path, .8)
-					}
+				if h.app != nil {
+					h.app.playWeaponSound(h.play.shotSound)
 				}
 			}
 			return scripting.CallResult{}, nil
 		}
 		if h.play.fire(dx, dy) {
-			if path := h.app.scriptSoundPath(h.play.weapon.SFXShoot); path != "" {
-				h.app.playSound(path, .8)
+			if h.app != nil {
+				h.app.playWeaponSound(h.play.shotSound)
 			}
 		}
 		return scripting.CallResult{}, nil
@@ -1449,7 +1447,7 @@ func (p *playState) collectPickup(name string) {
 	switch name {
 	case "P_GRENADE":
 		if weapon, ok := p.weapons.Find("GRENADE"); ok {
-			p.grenades += weapon.Ammo
+			p.grenades = weapon.Ammo
 		}
 	case "P_HEALTH":
 		p.health = p.maxHealth

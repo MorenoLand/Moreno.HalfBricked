@@ -20,10 +20,17 @@ func (p *playState) readyForExitScript() bool {
 }
 func (a *app) updateLevelCompletion() error {
 	if a.mode != 0 || a.play == nil {
+		if a.mode == 1 && a.play != nil && a.play.health <= 0 && a.play.lives <= 0 {
+			a.openLevelResults()
+		}
 		return nil
 	}
 	if a.play.exitScriptStarted {
-		if a.play.scriptRuntime != nil && a.play.scriptRuntime.Done() && !hasLevelFlag(a.play.levelInfo, "ENDWORLD") && !hasLevelFlag(a.play.levelInfo, "ENDSTORY") {
+		if a.play.scriptRuntime != nil && a.play.scriptRuntime.Done() {
+			if resultsVisible(false, nativeCatalogLevelFlags(a.play.levelInfo.Flags)) {
+				a.openLevelResults()
+				return nil
+			}
 			return a.continueStoryLevel(a.play.levelInfo)
 		}
 		return nil
