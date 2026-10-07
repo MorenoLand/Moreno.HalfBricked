@@ -2959,7 +2959,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		if !scriptFacingLocked {
 			p.angle, p.flipX = barryDirection(p.rightDeflectX, p.rightDeflectY)
 		}
-		if p.shootCooldown <= 0 {
+		if p.weapon.GunType == "MINIGUN" || p.shootCooldown <= 0 {
 			fired = p.fire(p.rightDeflectX, p.rightDeflectY)
 		}
 	}
@@ -2972,7 +2972,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 			p.angle, p.flipX = barryDirection(aimDX, aimDY)
 		}
 		firing := (pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)) && !inPauseBtn && !p.secondaryPointerDown
-		if p.shootControl && firing && p.shootCooldown <= 0 {
+		if p.shootControl && firing && (p.weapon.GunType == "MINIGUN" || p.shootCooldown <= 0) {
 			fired = p.fire(aimDX, aimDY)
 		}
 	}
