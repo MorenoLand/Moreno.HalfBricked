@@ -70,8 +70,8 @@ func newNativeSecondaryProjectile(shot nativeSecondaryDischarge, x, y float64) (
 	if binding.GunType == "MINE" {
 		p.Lift, p.Width, p.Height, p.Direction, p.Texture = 0, 40, -40, 0xbff4, "Common0/Textures/mine_SD"
 	} else {
-		p.Life = float64(float32(p.Life) * 2)
-		p.Width, p.Height, p.Texture = 20, -20, "Common0/Textures/grenade_SD"
+		p.State, p.Age = 0, float64(float32(p.Life)*.5)
+		p.Width, p.Height, p.Texture = 14, -28, "Common0/Textures/bazooka_SD"
 	}
 	p.VX, p.VY = nativeWeaponVelocity(shot.Direction, float64(p.Speed))
 	return p, true
@@ -79,13 +79,12 @@ func newNativeSecondaryProjectile(shot nativeSecondaryDischarge, x, y float64) (
 func (p *nativeSecondaryProjectile) update(dt float32) (detonated, removed bool) {
 	p.Age = float64(float32(p.Age) + dt)
 	p.Lift = float64(float32(p.Lift) - dt*p.FallSpeed)
-	if p.State == 2 {
-		if p.EntityType == 0x13 {
-			p.FallSpeed += dt * 500
+	if p.State == 2 || p.State == 0 {
+		if p.EntityType == 0x13 && p.State == 0 {
 			p.X = float64(float32(p.X) + dt*float32(p.VX))
 			p.Y = float64(float32(p.Y) + dt*float32(p.VY))
 		}
-		if float32(p.Age) < float32(p.Life) && (p.EntityType != 0x13 || p.Speed >= math.Float32frombits(0x42520001)) {
+		if float32(p.Age) < float32(p.Life) {
 			return false, false
 		}
 		p.State, p.Age, p.FallSpeed = 1, 0, 0
@@ -105,18 +104,14 @@ func (p *nativeSecondaryProjectile) update(dt float32) (detonated, removed bool)
 	return false, float32(p.Age) > .5
 }
 func (p *nativeSecondaryProjectile) groundContact() {
-	if p.EntityType != 0x13 || p.Lift >= 0 {
+	if p.EntityType != 0x13 || p.Lift >= 0 || p.State != 0 {
 		return
 	}
-	p.Lift = 0
-	p.Speed *= .5
-	p.VX, p.VY = float64(float32(p.VX)*.5), float64(float32(p.VY)*.5)
-	p.FallSpeed *= -.5
+	p.State, p.Age, p.FallSpeed = 1, 0, 0
 }
 func (p *nativeSecondaryProjectile) targetContact() int {
-	if p.EntityType == 0x13 {
-		p.Speed *= math.Float32frombits(0x3f733333)
-		p.VX, p.VY = float64(float32(p.VX)*math.Float32frombits(0x3f733333)), float64(float32(p.VY)*math.Float32frombits(0x3f733333))
+	if p.EntityType == 0x13 && p.State == 0 {
+		p.State, p.Age, p.FallSpeed = 1, 0, 0
 	}
 	if p.State != 1 {
 		return 0
@@ -124,18 +119,10 @@ func (p *nativeSecondaryProjectile) targetContact() int {
 	return 5
 }
 func (p *nativeSecondaryProjectile) wallContact(dx, dy float32) {
-	if p.EntityType != 0x13 || p.State != 2 || p.Speed == 0 {
+	if p.EntityType != 0x13 || p.State != 0 {
 		return
 	}
-	p.X, p.Y = float64(float32(p.X)-dx), float64(float32(p.Y)-dy)
-	x, y := float32(p.VX)/p.Speed-dx, float32(p.VY)/p.Speed-dy
-	length := float32(math.Sqrt(float64(x*x + y*y)))
-	if length != 0 {
-		x, y = x/length, y/length
-	}
-	p.Speed *= .75
-	p.VX, p.VY = float64(x*p.Speed), float64(y*p.Speed)
-	p.Direction = nativeWeaponDirection(float64(x), float64(y)) + 0x3ffc
+	p.State, p.Age, p.FallSpeed = 1, 0, 0
 }
 func (p nativeSecondaryProjectile) drawGeometry() nativeWeaponProjectileDraw {
 	if p.State == 1 {

@@ -9,7 +9,7 @@ func TestPrimaryPickupSelectsNativeProjectileAndConsumesAmmo(t *testing.T) {
 	for _, item := range []struct {
 		gun, bullet string
 		entity      uint8
-	}{{"UZI", "NORMAL", 0x10}, {"MINIGUN", "NORMAL", 0x10}, {"SNIPER", "MULTI", 0x12}, {"FLAMER", "FLAME", 0x13}} {
+	}{{"UZI", "NORMAL", 0x10}, {"MINIGUN", "NORMAL", 0x10}, {"SNIPER", "MULTI", 0x12}, {"FLAMER", "FLAME", 0x16}} {
 		w := formats.Weapon{GunType: item.gun, BulletType: item.bullet, Ammo: 2, Speed: 600, Life: 1, RateOfFire: .1}
 		p := &playState{weapons: formats.WeaponCatalog{w}}
 		p.collectPickup("p_" + item.gun)

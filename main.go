@@ -2876,7 +2876,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 				continue
 			}
 			damage := 500.0
-			if b.projectile != nil && b.projectile.EntityType == 0x13 {
+			if b.projectile != nil && b.projectile.EntityType == 0x16 {
 				b.vx = float64(float32(b.vx) * float32(.85))
 				b.vy = float64(float32(b.vy) * float32(.85))
 				b.projectile.VX, b.projectile.VY = b.vx, b.vy

@@ -99,24 +99,23 @@ func TestSecondaryMineNativeLifetime(t *testing.T) {
 }
 func TestSecondaryBazookaNativeInitializationAndMotion(t *testing.T) {
 	p, ok := newNativeSecondaryProjectile(nativeSecondaryDischarge{Weapon: formats.Weapon{GunType: "BAZOOKA", BulletType: "BAZOOKA", Life: 1, Speed: 600}, Direction: 0}, 100, 120)
-	if !ok || p.EntityType != 0x13 || p.WeaponType != 10 || p.Life != 2 || p.Width != 20 || p.Height != -20 || p.Texture != "Common0/Textures/grenade_SD" {
+	if !ok || p.EntityType != 0x13 || p.WeaponType != 10 || p.Life != 1 || p.Age != .5 || p.State != 0 || p.Width != 14 || p.Height != -28 || p.Texture != "Common0/Textures/bazooka_SD" {
 		t.Fatalf("bazooka initialization: %+v", p)
 	}
-	if fired, removed := p.update(.1); fired || removed || p.X != 160 || p.Y != 120 || p.FallSpeed != 50 {
+	if fired, removed := p.update(.1); fired || removed || p.X != 160 || p.Y != 120 || p.FallSpeed != 0 {
 		t.Fatalf("bazooka motion: %+v", p)
 	}
-	if p.targetContact() != 0 || p.State != 2 || p.Speed >= 600 {
-		t.Fatal("flight contact should slow, not apply explosion damage")
+	if p.targetContact() != 5 || p.State != 1 || p.Speed != 600 {
+		t.Fatal("rocket target contact should damage and detonate")
 	}
-	p.Lift, p.FallSpeed = -1, 100
-	before := p.Speed
+	p.State, p.Lift, p.FallSpeed = 0, -1, 100
 	p.groundContact()
-	if p.Lift != 0 || p.Speed != before*.5 || p.FallSpeed != -50 {
-		t.Fatalf("ground bounce: %+v", p)
+	if p.State != 1 || p.FallSpeed != 0 {
+		t.Fatalf("ground detonation: %+v", p)
 	}
-	p.Speed = 0
-	if fired, _ := p.update(.01); !fired {
-		t.Fatal("slow rocket did not detonate")
+	p.State, p.Age = 0, .5
+	if fired, _ := p.update(.5); !fired {
+		t.Fatal("rocket did not detonate at native lifetime")
 	}
 }
 func TestSecondaryNativeTargetEllipse(t *testing.T) {

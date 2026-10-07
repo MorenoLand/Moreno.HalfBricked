@@ -30,7 +30,7 @@ func newNativeWeaponProjectile(shot nativeWeaponShot, bulletType string, x, y fl
 			p.Penetration = 6
 		}
 	case "FLAME":
-		p.EntityType = 0x13
+		p.EntityType = 0x16
 		if rng == nil {
 			return nativeWeaponProjectile{}, false
 		}

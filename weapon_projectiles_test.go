@@ -58,7 +58,7 @@ func TestNativeWeaponProjectileNormalAndMulti(t *testing.T) {
 func TestNativeWeaponProjectileFlameGeometry(t *testing.T) {
 	rng := newNativeRNG()
 	p, ok := newNativeWeaponProjectile(nativeWeaponShot{WeaponType: 5, Speed: 450, Lift: 20}, "FLAME", 0, 0, &rng)
-	if !ok || p.Life < .7 || p.Life > .9 || p.Width < 20 || p.Width > 36 {
+	if !ok || p.EntityType != 0x16 || p.Life < .7 || p.Life > .9 || p.Width < 20 || p.Width > 36 {
 		t.Fatalf("%+v", p)
 	}
 	p.Age, p.VX = .5, -1
