@@ -16,6 +16,12 @@ import (
 type TextureProvider interface {
 	Texture(name string) (*ebiten.Image, error)
 }
+
+// SourceScaleProvider reports the density of a texture's source art (2 for HD
+// assets whose coordinates are authored in SD pixels).
+type SourceScaleProvider interface {
+	TextureSourceScale(name string) float64
+}
 type Viewer struct {
 	Level                      formats.Level
 	TileSet                    formats.TileSet
@@ -148,7 +154,7 @@ func (v *Viewer) Draw(screen *ebiten.Image) {
 	v.DrawWithEntities(screen, nil)
 }
 func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Image)) {
-	screen.Fill(color.RGBA{16, 18, 22, 255})
+	screen.Fill(color.Black)
 	tileSize := v.tileSize()
 	for _, kind := range formats.BaseRenderLayerKinds {
 		if v.Layers[kind] {
@@ -156,13 +162,16 @@ func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Im
 		}
 	}
 	if v.Props {
-		v.drawProps(screen)
+		v.drawProps(screen, false)
 	}
 	if entities != nil {
 		entities(screen)
 	}
 	if v.Layers[formats.LayerH] {
 		v.drawLayer(screen, formats.LayerH, tileSize)
+	}
+	if v.Props {
+		v.drawProps(screen, true)
 	}
 	if v.Layers[formats.LayerC] {
 		v.drawCollision(screen, tileSize)
@@ -192,15 +201,16 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 				continue
 			}
 			tile, ok := v.atlasTileVertices(id, x, y, tileSize)
+			scaleX, scaleY := v.renderScale()
 			if !ok {
 				v.drawFallback(screen, x, y, tileSize, kind)
 				continue
 			}
-			scaleX, scaleY := v.renderScale()
 			for index := range tile {
-				tile[index].DstX *= float32(scaleX)
-				tile[index].DstY *= float32(scaleY)
+				tile[index].DstX = float32(scaleX) * tile[index].DstX
+				tile[index].DstY = float32(scaleY) * tile[index].DstY
 			}
+			snapTileToPixels(&tile)
 			base := uint16(len(vertices))
 			vertices = append(vertices, tile[:]...)
 			indices = append(indices, base, base+1, base+2, base+1, base+3, base+2)
@@ -210,6 +220,17 @@ func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSiz
 		return
 	}
 	screen.DrawTriangles(vertices, indices, v.Atlas, &ebiten.DrawTrianglesOptions{Filter: ebiten.FilterNearest, DisableMipmaps: true})
+}
+// snapTileToPixels rounds a tile's screen-space corners to whole pixels. Each
+// tile's edge is computed from its own position, so neighbouring edges that
+// should coincide can differ in the last float bits (or fall mid-pixel) and let
+// a black hairline show between tiles while the camera moves or zooms. Rounding
+// the shared edge the same way for both neighbours closes the gap.
+func snapTileToPixels(tile *[4]ebiten.Vertex) {
+	for index := range tile {
+		tile[index].DstX = float32(math.Round(float64(tile[index].DstX)))
+		tile[index].DstY = float32(math.Round(float64(tile[index].DstY)))
+	}
 }
 func rendersTileWord(kind formats.LayerKind, id uint32) bool {
 	return kind == formats.LayerG || (int32(id) >= 0 && ((kind != formats.LayerD && kind != formats.LayerHB) || id != 0))
@@ -238,8 +259,10 @@ func (v *Viewer) atlasTileVertices(id uint32, x, y, tileSize int) ([4]ebiten.Ver
 	destinationX0 := float32((float64(x*tileSize) - v.CameraX) * v.Zoom)
 	destinationX0 += float32(v.ViewportX)
 	destinationY0 := float32((float64(y*tileSize)-v.CameraY)*v.Zoom + v.ViewportY)
-	destinationX1 := destinationX0 + float32(tileSize)*float32(v.Zoom)
-	destinationY1 := destinationY0 + float32(tileSize)*float32(v.Zoom)
+	// The far edge is the next tile's near edge, computed the same way, so
+	// neighbours share bit-identical coordinates and cannot leave a seam.
+	destinationX1 := float32((float64((x+1)*tileSize)-v.CameraX)*v.Zoom) + float32(v.ViewportX)
+	destinationY1 := float32((float64((y+1)*tileSize)-v.CameraY)*v.Zoom + v.ViewportY)
 	vertices = [4]ebiten.Vertex{{DstX: destinationX0, DstY: destinationY0, SrcX: sourceX0, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY0, SrcX: sourceX1, SrcY: sourceY0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX0, DstY: destinationY1, SrcX: sourceX0, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}, {DstX: destinationX1, DstY: destinationY1, SrcX: sourceX1, SrcY: sourceY1, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1}}
 	return vertices, true
 }
@@ -286,7 +309,12 @@ func collisionColor(value uint32) color.RGBA {
 		return color.RGBA{245, 220, 45, 220}
 	}
 }
-func (v *Viewer) drawProps(screen *ebiten.Image) {
+
+// tallPropHeight is the lift (in tiles) from which a prop is a tree-like canopy
+// that stands over the high-layer tiles instead of under them.
+const tallPropHeight = 3.0
+
+func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
 	type propDraw struct {
 		texture                      string
 		x, y, height, scaleX, scaleY float64
@@ -306,12 +334,14 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 		return props[i].y+props[i].height*float64(v.tileSize()) < props[j].y+props[j].height*float64(v.tileSize())
 	})
 	for _, prop := range props {
-		if v.Textures == nil {
+		if v.Textures == nil || (prop.height >= tallPropHeight) != overHigh {
 			continue
 		}
-		texture, err := v.Textures.Texture(prop.texture)
+		textureName := prop.texture
+		texture, err := v.Textures.Texture(textureName)
 		if err != nil {
-			texture, err = v.Textures.Texture(prop.texture + "_SD")
+			textureName = prop.texture + "_SD"
+			texture, err = v.Textures.Texture(textureName)
 		}
 		if err != nil {
 			continue
@@ -345,6 +375,11 @@ func (v *Viewer) drawProps(screen *ebiten.Image) {
 			column, row := frame%xFrames, frame/xFrames
 			sourceX0, sourceY0 = float64(column*cellWidth), float64(row*cellHeight)
 			sourceX1, sourceY1 = sourceX0+float64(cellWidth), sourceY0+float64(cellHeight)
+		}
+		if scales, ok := v.Textures.(SourceScaleProvider); ok && !prop.animated {
+			if density := scales.TextureSourceScale(textureName); density > 1 {
+				sourceX0, sourceY0, sourceX1, sourceY1 = sourceX0*density, sourceY0*density, sourceX1*density, sourceY1*density
+			}
 		}
 		sourceX0, sourceY0, sourceX1, sourceY1 = propSourceBounds(sourceX0, sourceY0, sourceX1, sourceY1, float64(texture.Bounds().Dx()), float64(texture.Bounds().Dy()))
 		worldWidth := scaleX * float64(v.tileSize())

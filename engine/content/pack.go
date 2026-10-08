@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 )
@@ -33,6 +34,8 @@ type LevelRepository interface {
 
 type Pack struct {
 	source          AssetSource
+	audioOnce       sync.Once
+	audioIndex      map[string]string
 	manifest        PackManifest
 	levels          map[string]formats.Level
 	variables       formats.FrontendVariables
@@ -142,7 +145,47 @@ func (p *Pack) TextureSourceScale(name string) float64 {
 	}
 	return 1
 }
-func (p *Pack) Open(path string) (io.ReadCloser, error) { return p.source.Open(path) }
+func (p *Pack) Open(path string) (io.ReadCloser, error) {
+	reader, err := p.source.Open(path)
+	if err == nil {
+		return reader, nil
+	}
+	if alternate, ok := p.audioFallback(path); ok {
+		return p.source.Open(alternate)
+	}
+	return nil, err
+}
+
+// audioFallback maps the audio paths used by the older cache layout
+// ("audio/sound/sfx/x.ogg", "audio/music/sound/x.ogg") to the same file in a
+// per-package layout ("audio/Common0/Sound/SFX/x.ogg") by case-insensitive name.
+func (p *Pack) audioFallback(path string) (string, bool) {
+	slashed := filepath.ToSlash(path)
+	if !strings.HasPrefix(strings.ToLower(slashed), "audio/") || !strings.EqualFold(filepath.Ext(slashed), ".ogg") {
+		return "", false
+	}
+	p.audioOnce.Do(func() {
+		keys := make([]string, 0, len(p.manifest.Files))
+		for key := range p.manifest.Files {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		p.audioIndex = map[string]string{}
+		for _, key := range keys {
+			value := p.manifest.Files[key]
+			if !strings.EqualFold(filepath.Ext(value), ".ogg") {
+				continue
+			}
+			base := strings.ToLower(strings.TrimSuffix(filepath.Base(filepath.ToSlash(value)), filepath.Ext(value)))
+			if _, taken := p.audioIndex[base]; !taken {
+				p.audioIndex[base] = value
+			}
+		}
+	})
+	wanted := strings.ToLower(strings.TrimSuffix(filepath.Base(slashed), filepath.Ext(slashed)))
+	alternate, ok := p.audioIndex[wanted]
+	return alternate, ok && !strings.EqualFold(alternate, slashed)
+}
 func (p *Pack) Script(path string) (formats.Script, error) {
 	name, ok := manifestPath(p.manifest.Files, path)
 	if !ok {
@@ -264,6 +307,38 @@ func (p *Pack) Weapons() (formats.WeaponCatalog, error) {
 	p.weapons, p.weaponErr = formats.ParseWeapons(r)
 	if p.weaponErr != nil {
 		p.weaponErr = fmt.Errorf("%s: %w", path, p.weaponErr)
+	}
+	if p.weaponErr == nil {
+		// Later packages add weapons: Common1 buzzsaw, Common2 sentry guns, DLC1 dual pistol and cow-pat bomb.
+		extras := make([]string, 0, 4)
+		for key := range p.manifest.Files {
+			lower := strings.ToLower(key)
+			if strings.HasSuffix(lower, "_weapons.xml") && !strings.HasPrefix(lower, "common0/") {
+				extras = append(extras, key)
+			}
+		}
+		sort.Strings(extras)
+		for _, key := range extras {
+			path, ok := p.SourcePath(key)
+			if !ok {
+				continue
+			}
+			rc, err := p.source.Open(path)
+			if err != nil {
+				continue
+			}
+			more, err := formats.ParseWeapons(rc)
+			rc.Close()
+			if err != nil {
+				p.weaponErr = fmt.Errorf("%s: %w", path, err)
+				break
+			}
+			for _, weapon := range more {
+				if _, exists := p.weapons.Find(weapon.GunType); !exists {
+					p.weapons = append(p.weapons, weapon)
+				}
+			}
+		}
 	}
 	return append(formats.WeaponCatalog(nil), p.weapons...), p.weaponErr
 }

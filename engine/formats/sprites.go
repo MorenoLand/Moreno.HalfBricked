@@ -18,6 +18,7 @@ type SpriteAnimation struct {
 	FPS        float64
 	Loop       bool
 	AnimLength int
+	Atlas      string
 }
 
 type SpriteDefinition struct {
@@ -45,6 +46,7 @@ type spriteAnimXML struct {
 	FPS        string `xml:"fps,attr"`
 	Loop       string `xml:"loop,attr"`
 	AnimLength string `xml:"animLength,attr"`
+	Atlas      string `xml:"atlas,attr"`
 }
 
 func ParseSprites(reader io.Reader) (SpriteCatalog, error) {
@@ -98,7 +100,7 @@ func ParseSprites(reader io.Reader) (SpriteCatalog, error) {
 			if _, exists := definition.Animations[animationKey]; !exists {
 				definition.AnimationOrder = append(definition.AnimationOrder, animationKey)
 			}
-			definition.Animations[animationKey] = SpriteAnimation{Name: animName, Texture: texture, Frames: frames, Angles: angles, FPS: fps, Loop: loop, AnimLength: animLength}
+			definition.Animations[animationKey] = SpriteAnimation{Name: animName, Texture: texture, Frames: frames, Angles: angles, FPS: fps, Loop: loop, AnimLength: animLength, Atlas: strings.ToLower(strings.TrimSpace(item.Atlas))}
 		}
 		result[key] = definition
 	}

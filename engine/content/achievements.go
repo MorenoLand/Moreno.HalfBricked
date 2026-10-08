@@ -69,7 +69,11 @@ func (p *Pack) Achievements() (formats.AchievementCatalog, error) {
 			}
 		}
 	}
-	if path, ok := p.SourcePath("Common0/Xml/Services/iOS/Provider_GameCenter_Achievements.xml"); ok {
+	path, ok := p.SourcePath("Common0/Xml/Services/iOS/Provider_GameCenter_Achievements.xml")
+	if !ok {
+		path, ok = p.SourcePath("Common0/Xml/Services/Provider_GameCenter_Achievements.xml")
+	}
+	if ok {
 		r, err := p.source.Open(path)
 		if err != nil {
 			return nil, err
@@ -88,7 +92,9 @@ func (p *Pack) Achievements() (formats.AchievementCatalog, error) {
 			descriptions[entry.ID] = entry.Description
 		}
 		for index := range catalog {
-			catalog[index].Description = descriptions[catalog[index].ID]
+			if text := descriptions[catalog[index].ID]; text != "" {
+				catalog[index].Description = text
+			}
 		}
 	}
 	return catalog, nil

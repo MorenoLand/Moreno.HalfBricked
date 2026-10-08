@@ -12,6 +12,10 @@ import (
 	"strings"
 )
 
+// importerVersion changes whenever the importer starts caching new asset kinds,
+// so an up-to-date APK hash alone does not keep an incomplete cache.
+const importerVersion = "2-uiscreens"
+
 func prepareAPK(apkPath string) (string, error) {
 	return PrepareAPK(apkPath, filepath.Join("bin", "data-cache"))
 }
@@ -22,7 +26,7 @@ func PrepareAPK(apkPath, output string) (string, error) {
 		return "", fmt.Errorf("hash APK %q: %w", apkPath, err)
 	}
 	if _, err := os.Stat(filepath.Join(output, "pack.json")); err == nil {
-		if data, readErr := os.ReadFile(marker); readErr == nil && strings.TrimSpace(string(data)) == hash && hasScriptLevelCache(output) {
+		if data, readErr := os.ReadFile(marker); readErr == nil && strings.TrimSpace(string(data)) == hash+" "+importerVersion && hasScriptLevelCache(output) {
 			return output, nil
 		}
 	}
@@ -40,7 +44,7 @@ func PrepareAPK(apkPath, output string) (string, error) {
 	if err := Import(stage, output); err != nil {
 		return "", fmt.Errorf("import APK assets: %w", err)
 	}
-	if err := os.WriteFile(marker, []byte(hash+"\n"), 0644); err != nil {
+	if err := os.WriteFile(marker, []byte(hash+" "+importerVersion+"\n"), 0644); err != nil {
 		return "", err
 	}
 	return output, nil

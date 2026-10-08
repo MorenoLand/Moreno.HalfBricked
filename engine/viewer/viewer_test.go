@@ -53,3 +53,23 @@ func TestHDAtlasUsesSourcePixelsAndNativeWorldCells(t *testing.T) {
 		t.Fatalf("native world grid: %v", vertices)
 	}
 }
+
+func TestNeighbouringTilesShareTheirEdgeAtAnyCameraAndZoom(t *testing.T) {
+	v := &Viewer{Atlas: ebiten.NewImage(64, 64), Zoom: 1}
+	for _, zoom := range []float64{.45, .5, .65, 1, 1.37} {
+		for _, camera := range []float64{0, 3.3, 17.77, 101.123} {
+			v.Zoom, v.CameraX, v.CameraY = zoom, camera, camera*.7
+			for x := 0; x < 20; x++ {
+				a, okA := v.atlasTileVertices(1, x, 4, 32)
+				b, okB := v.atlasTileVertices(1, x+1, 4, 32)
+				c, _ := v.atlasTileVertices(1, x, 5, 32)
+				if !okA || !okB {
+					t.Skip("atlas too small for the test tile")
+				}
+				if a[1].DstX != b[0].DstX || a[3].DstY != c[0].DstY {
+					t.Fatalf("zoom %v camera %v tile %d: edge %v != %v or %v != %v", zoom, camera, x, a[1].DstX, b[0].DstX, a[3].DstY, c[0].DstY)
+				}
+			}
+		}
+	}
+}

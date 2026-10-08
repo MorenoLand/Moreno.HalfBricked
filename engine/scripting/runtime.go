@@ -1,9 +1,11 @@
 package scripting
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -28,6 +30,15 @@ const (
 	StatusFailed
 )
 
+// stepBudget bounds how long a script may run between yields.
+const stepBudget = 2 * time.Second
+
+// hostCallBudget bounds the host calls a script may make between yields. The
+// native engine runs scripts on their own thread, so a loop that polls a host
+// function without calling Idle() simply waits; here it would freeze the game.
+// After the budget the call yields for a frame and resumes with its own result.
+const hostCallBudget = 4000
+
 type Runtime struct {
 	state    *lua.LState
 	thread   *lua.LState
@@ -35,6 +46,8 @@ type Runtime struct {
 	function *lua.LFunction
 	status   Status
 	err      error
+	calls    int
+	resume   []lua.LValue
 }
 
 func New(source string, host Host, callbacks []string) (*Runtime, error) {
@@ -47,12 +60,13 @@ func New(source string, host Host, callbacks []string) (*Runtime, error) {
 	lua.OpenString(state)
 	lua.OpenMath(state)
 	lua.OpenCoroutine(state)
+	runtime := &Runtime{state: state}
 	for _, name := range callbacks {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		state.SetGlobal(name, state.NewFunction(hostFunction(host, name)))
+		state.SetGlobal(name, state.NewFunction(hostFunction(host, name, runtime)))
 	}
 	function, err := state.LoadString(source)
 	if err != nil {
@@ -60,7 +74,41 @@ func New(source string, host Host, callbacks []string) (*Runtime, error) {
 		return nil, err
 	}
 	thread, cancel := state.NewThread()
-	return &Runtime{state: state, thread: thread, cancel: cancel, function: function}, nil
+	runtime.thread, runtime.cancel, runtime.function = thread, cancel, function
+	return runtime, nil
+}
+
+// Successor loads source into this runtime's Lua state, so globals defined by
+// the previous script (such as the entry script's Wait helper) stay visible to
+// the next one, and moves the state to the returned runtime. The receiver must
+// not be used afterwards.
+func (r *Runtime) Successor(source string, host Host, callbacks []string) (*Runtime, error) {
+	if r == nil || r.state == nil {
+		return nil, fmt.Errorf("script runtime has no state to continue")
+	}
+	if host == nil {
+		return nil, fmt.Errorf("script host is nil")
+	}
+	function, err := r.state.LoadString(source)
+	if err != nil {
+		return nil, err
+	}
+	next := &Runtime{}
+	for _, name := range callbacks {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		r.state.SetGlobal(name, r.state.NewFunction(hostFunction(host, name, next)))
+	}
+	if r.cancel != nil {
+		r.cancel()
+	}
+	state := r.state
+	r.state, r.thread, r.cancel, r.function = nil, nil, nil, nil
+	thread, cancel := state.NewThread()
+	next.state, next.thread, next.cancel, next.function = state, thread, cancel, function
+	return next, nil
 }
 
 func (r *Runtime) Step() error {
@@ -70,7 +118,16 @@ func (r *Runtime) Step() error {
 	if r.status == StatusComplete || r.status == StatusFailed {
 		return r.err
 	}
-	status, err, _ := r.state.Resume(r.thread, r.function)
+	// A script that loops without yielding would freeze the whole game; give
+	// each step a time budget and fail the script instead.
+	ctx, cancel := context.WithTimeout(context.Background(), stepBudget)
+	r.thread.SetContext(ctx)
+	r.calls = 0
+	pending := r.resume
+	r.resume = nil
+	status, err, _ := r.state.Resume(r.thread, r.function, pending...)
+	r.thread.RemoveContext()
+	cancel()
 	switch status {
 	case lua.ResumeYield:
 		r.status = StatusSuspended
@@ -130,7 +187,7 @@ func (r *Runtime) Close() {
 	r.function = nil
 }
 
-func hostFunction(host Host, name string) lua.LGFunction {
+func hostFunction(host Host, name string, runtime *Runtime) lua.LGFunction {
 	return func(state *lua.LState) int {
 		args := make([]Value, state.GetTop())
 		for index := range args {
@@ -156,6 +213,14 @@ func hostFunction(host Host, name string) lua.LGFunction {
 		}
 		if result.Yield {
 			return state.Yield(values...)
+		}
+		if runtime != nil {
+			runtime.calls++
+			if runtime.calls > hostCallBudget {
+				runtime.calls = 0
+				runtime.resume = values
+				return state.Yield()
+			}
 		}
 		for _, value := range values {
 			state.Push(value)

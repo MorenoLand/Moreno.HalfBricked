@@ -174,7 +174,7 @@ func importAssets(root, out string, manifest *PackManifest) error {
 				return err
 			}
 			manifest.Files[rel] = name
-		case ".fnt", ".xml", ".script", ".txt":
+		case ".fnt", ".xml", ".script", ".txt", ".uiscreen":
 			name := filepath.ToSlash(filepath.Join("source", rel))
 			target := filepath.Join(out, filepath.FromSlash(name))
 			if err := copyFile(path, target); err != nil {
