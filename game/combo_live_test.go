@@ -17,7 +17,7 @@ func TestLiveTrackerRisesWithKillsForEachPrimaryWeapon(t *testing.T) {
 			// Flame particles pay 0.01 only for hits the zombie survives (FUN_000a4bbc).
 			p.zombies = nil
 			for i := 0; i < 3; i++ {
-				r.stack(1, p.x+20, p.y)
+				r.stack(1, p.x+40, p.y)
 				p.zombies[i].health = 100
 			}
 			p.fire(1, 0)

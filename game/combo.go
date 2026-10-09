@@ -463,6 +463,17 @@ func (p *playState) syncCombo() {
 	if name == "" {
 		name = secondaryGrenade
 	}
+	if p.grenades <= 0 {
+		// Nothing to throw: no combo to count. (The original keeps an empty
+		// grenade tracker whose "x0" sat beside Barry from the start of a level;
+		// the user found that stuck "x0" confusing, so the port only tracks a
+		// secondary while one is held.)
+		if c.secondary != nil && c.secondary.counter >= 1 {
+			c.release(c.secondary)
+		}
+		c.secondary = nil
+		name = ""
+	}
 	if name != "" && (c.secondary == nil || c.secondary.serial != c.secondarySerial || c.secondary.gun != name) {
 		c.release(c.secondary)
 		c.secondary = newComboTracker(name, c.secondarySerial, true, p.weapons)
@@ -487,6 +498,11 @@ func (p *playState) updateCombo(dt float64) {
 		t.hudGlyph = glyph
 		if t.state == comboActive {
 			t.posX, t.posY = p.comboAnchor(t.size)
+			if t == c.secondary && c.primary != nil && c.primary.state == comboActive && c.primary.visible() {
+				// Both slots anchor on the same spot behind Barry; stack the
+				// grenade's count under the weapon's so they don't overprint.
+				t.posY += c.primary.size/2 + t.size/2 + 2
+			}
 		}
 		if event := t.update(dt, dead); event != nil {
 			p.applyComboBonus(event)
@@ -588,49 +604,28 @@ func (a *achievementProgress) noteCombo(value int) {
 	}
 }
 
-// Zombie health model used for the per-hit credit. The original zombies carry
-// integer health (+0x2a8, maximum +0x2d0) and every projectile handler deals a
-// fixed damage through the zombie's damage slot: bullets 0x65 = 101
-// (FUN_000a521c), flame particles 1 (FUN_000a4bbc), blast ticks 5
+// Zombie health model behind the per-hit credit. Zombies carry integer health
+// (+0x2a8, maximum +0x2d0 = the spawn record's strength) and every projectile
+// handler deals a fixed damage through the zombie's damage slot: bullets 0x65 =
+// 101 (FUN_000a521c), flame particles 1 (FUN_000a4bbc), blast ticks 5
 // (FUN_000a4cac, FUN_000a4dc4, FUN_000a4f50, FUN_000a50f4), the piercing blade
-// handler 0x270f = 9999 (FUN_000a5338). The port's projectiles deal their own
-// (larger) damage in one hit, so the credit is converted to what the original
-// would have paid for the same health.
-const (
-	comboBulletDamage = 101.0 // 0x65
-	comboBlastDamage  = 5.0
-)
+// handler 0x270f = 9999 (FUN_000a5338). The port applies the same damages (see
+// zombie_model.go), so the credit is the native one without any conversion.
 
-// comboBulletHit credits one port projectile hit on a living zombie.
-// healthBefore is the zombie's health before the hit and damage what the port
-// dealt. Native bullets credit 1.01 per hit before the damage lands (so the
-// lethal hit pays too); flame particles 0.01 only when the zombie survives.
-// Saw blades (entity 0x1b, FUN_000a5338, confirmed through the entity factory)
-// never come through here: stepSawBlade credits weapons.SawBladeHitCredit (1.01)
-// per living target contacted.
-func (p *playState) comboBulletHit(b bullet, healthBefore, damage float64) {
-	survived := healthBefore-damage > 0
-	switch {
-	case b.projectile != nil && b.projectile.EntityType == 0x16:
+// comboBulletHit credits one bullet or flame particle hit on a living zombie.
+// Native bullets credit 1.01 before the damage lands (so the lethal hit pays
+// too); flame particles credit 0.01 only when the zombie survives the hit. Saw
+// blades (entity 0x1b, FUN_000a5338) never come through here: stepSawBlade
+// credits weapons.SawBladeHitCredit (1.01) per living target contacted, and
+// blast ticks credit comboHitBlast per surviving 5 damage tick.
+func (p *playState) comboBulletHit(b bullet, survived bool) {
+	if b.projectile != nil && b.projectile.EntityType == 0x16 {
 		if survived {
 			p.comboCredit(b.origin, comboHitFlame)
 		}
-	default:
-		dealt := math.Min(math.Max(healthBefore, 0), damage)
-		if hits := math.Ceil(dealt / comboBulletDamage); hits > 0 {
-			p.comboCredit(b.origin, hits*comboHitBullet)
-		}
+		return
 	}
-}
-
-// comboBlastKill credits a lethal blast. Each 5 damage tick that leaves the
-// zombie alive pays 0.05, the killing tick pays nothing, so a zombie with
-// healthBefore health yields (ceil(health/5)-1) * 0.05 (0.95 for 100).
-func (p *playState) comboBlastKill(origin killOrigin, healthBefore float64) {
-	ticks := math.Ceil(math.Max(healthBefore, 0)/comboBlastDamage) - 1
-	if ticks > 0 {
-		p.comboCredit(origin, ticks*comboHitBlast)
-	}
+	p.comboCredit(b.origin, comboHitBullet)
 }
 
 // captureComboScene stages a UZI combo of 35 that is then swapped for the

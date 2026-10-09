@@ -308,7 +308,7 @@ func (p *playState) trainCollide(t *trainHazard) {
 			continue
 		}
 		z.health -= trainDamage
-		z.hitFlash = zombieHitFlashDuration
+		z.hitFlash = zombieDamageFlash
 		if z.health <= 0 {
 			p.creditKill(killOrigin{gun: "TRAIN", shot: t.passSerial})
 			z.dying, z.deathAge = true, 0

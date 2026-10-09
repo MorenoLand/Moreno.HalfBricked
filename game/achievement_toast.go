@@ -85,7 +85,9 @@ func (a *app) drawAchievementToasts(screen *ebiten.Image) {
 	source := image.Rect(int(float64(achievementBannerSD.Min.X)*scale), 0, int(float64(achievementBannerSD.Max.X)*scale), int(float64(achievementBannerSD.Max.Y)*scale))
 	width, height := float64(achievementBannerSD.Dx()), float64(achievementBannerSD.Dy())
 	x := (logicalWidth - width) / 2
-	y := -height + (height+4)*slide
+	// The art is a plate that hangs from the top edge of the screen (flat top,
+	// rounded bottom), so it rests flush at y=0 instead of floating below it.
+	y := -height + height*slide
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 	options.GeoM.Scale(1/scale, 1/scale)
 	options.GeoM.Translate(x, y)

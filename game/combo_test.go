@@ -226,6 +226,7 @@ func TestComboPistolSwapIsSilent(t *testing.T) {
 func TestComboPlayerDeathEpicFailsAndResetsMultiplier(t *testing.T) {
 	r := testRig(t)
 	p := r.p
+	p.fillSecondarySlot(secondaryGrenade, "GRENADE") // a held grenade owns the second tracker
 	p.collectPickup("p_shotgun")
 	p.multiplier = 9
 	p.updateCombo(1.0 / 60)
@@ -318,7 +319,7 @@ func TestComboBulletHitsAndKillsAreCredited(t *testing.T) {
 	p := r.p
 	p.collectPickup("p_shotgun")
 	p.updateCombo(1.0 / 60)
-	r.stack(1, p.x+20, p.y)
+	r.stack(1, p.x+40, p.y)
 	p.fire(1, 0)
 	r.tick(10)
 	if p.combo.primary.counter < 1 {
@@ -336,36 +337,21 @@ func TestComboBulletHitsAndKillsAreCredited(t *testing.T) {
 	if p.combo.primary.counter != before {
 		t.Fatal("stale pickup credit must be ignored")
 	}
-	// Flame particles pay 0.01 per surviving hit (damage 1).
-	p.comboBulletHit(bullet{origin: p.primaryOrigin(2), projectile: &weapons.NativeWeaponProjectile{EntityType: 0x16}}, 50, 1)
-	p.comboBulletHit(bullet{origin: p.primaryOrigin(2), projectile: &weapons.NativeWeaponProjectile{EntityType: 0x16}}, 1, 1)
+	// Flame particles pay 0.01 per surviving hit (damage 1), nothing for the lethal one.
+	p.comboBulletHit(bullet{origin: p.primaryOrigin(2), projectile: &weapons.NativeWeaponProjectile{EntityType: 0x16}}, true)
+	p.comboBulletHit(bullet{origin: p.primaryOrigin(2), projectile: &weapons.NativeWeaponProjectile{EntityType: 0x16}}, false)
 	if d := p.combo.primary.counter - before; d < 0.0099 || d > 0.0101 {
 		t.Fatalf("flame credit %v", d)
 	}
-	// Bullets credit 1.01 for every native 101-damage hit the zombie would have
-	// taken, lethal one included: 100 health = 1 hit, 300 = 3, 3000 hit with the
-	// port's 500 damage = 5 (of the 30 native hits).
-	for _, c := range []struct{ health, damage, want float64 }{{100, 500, 1.01}, {300, 500, 3.03}, {3000, 500, 5.05}, {101, 500, 1.01}, {102, 500, 2.02}} {
-		p.collectPickup("p_uzi")
-		p.updateCombo(1.0 / 60)
-		p.comboBulletHit(bullet{origin: p.primaryOrigin(3)}, c.health, c.damage)
-		if got := float64(p.combo.primary.counter); math.Abs(got-c.want) > 1e-4 {
-			t.Fatalf("bullet credit health %v damage %v = %v, want %v", c.health, c.damage, got, c.want)
+	// Bullets credit 1.01 per hit before the damage lands, so the lethal hit pays
+	// too; the port now deals the native 101 per hit, so no conversion is needed.
+	p.collectPickup("p_uzi")
+	p.updateCombo(1.0 / 60)
+	for hits := 1; hits <= 3; hits++ {
+		p.comboBulletHit(bullet{origin: p.primaryOrigin(3)}, hits < 3)
+		if got, want := float64(p.combo.primary.counter), 1.01*float64(hits); math.Abs(got-want) > 1e-4 {
+			t.Fatalf("bullet credit after %d hits = %v, want %v", hits, got, want)
 		}
-	}
-	// A blast pays 0.05 for every 5-damage tick that leaves the zombie alive: 0.95 for 100 health.
-	if p.combo.secondary == nil {
-		t.Fatal("the grenade slot owns a tracker")
-	}
-	p.combo.secondary.counter = 0
-	p.comboBlastKill(killOrigin{gun: "GRENADE", shot: 1}, 100)
-	if got := float64(p.combo.secondary.counter); math.Abs(got-0.95) > 1e-4 {
-		t.Fatalf("blast kill credit %v, want 0.95", got)
-	}
-	p.combo.secondary.counter = 0
-	p.comboBlastKill(killOrigin{gun: "GRENADE", shot: 1}, 300)
-	if got := float64(p.combo.secondary.counter); math.Abs(got-2.95) > 1e-3 {
-		t.Fatalf("blast kill credit for 300 health %v, want 2.95", got)
 	}
 	// Enemy-owned blasts and trains have no tracker.
 	before = p.combo.primary.counter

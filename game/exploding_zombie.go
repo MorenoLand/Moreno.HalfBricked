@@ -188,7 +188,7 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 		// 0.05 for every hit that leaves the zombie alive.
 		for visit := 0; visit < hits && zombie.health > 0; visit++ {
 			zombie.health -= zombieBlastDamage
-			zombie.hitFlash = zombieHitFlashDuration
+			zombie.hitFlash = zombieDamageFlash
 			if zombie.health > 0 {
 				p.comboCredit(origin, comboHitBlast)
 			}

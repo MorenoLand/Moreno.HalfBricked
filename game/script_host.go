@@ -203,9 +203,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.setScriptCameraPan(zoom, x, y, duration)
 		return scripting.CallResult{}, nil
 	case "GetCameraX":
-		return scriptValues(h.play.scriptCameraCenterX()), nil
+		// Native FUN_00095aa8 (1.2.5): camera centre + the current shake offset
+		// (+0x24 + +0x18), so a script that lerps from GetCameraX feeds the shake back in.
+		return scriptValues(h.play.scriptCameraCenterX() + h.play.shake.currentX), nil
 	case "GetCameraY":
-		return scriptValues(h.play.scriptCameraCenterY()), nil
+		return scriptValues(h.play.scriptCameraCenterY() + h.play.shake.currentY), nil
 	case "SetCameraFollow":
 		follow, err := scriptNumber(args, 0)
 		if err != nil {

@@ -10,7 +10,7 @@ import (
 
 func scriptZombieActivityHost(t *testing.T) *playScriptHost {
 	t.Helper()
-	p := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: make([]uint32, 400)}}}, tileSize: 32, x: 320, y: 320, health: 1, scriptEntities: map[int]*scriptEntity{}, zombies: []zombieState{{x: 64, y: 64, speed: 60, health: 100, fps: 8, size: formats.Vec2{X: 48, Y: 48}}}}
+	p := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: openLayer(400)}}}, tileSize: 32, x: 320, y: 320, health: 1, scriptEntities: map[int]*scriptEntity{}, zombies: []zombieState{{x: 64, y: 64, speed: 60, health: 100, fps: 8, size: formats.Vec2{X: 48, Y: 48}}}}
 	h := &playScriptHost{play: p}
 	var err error
 	p.scriptRuntime, err = scripting.New("Idle()", h, scriptCallbacks)

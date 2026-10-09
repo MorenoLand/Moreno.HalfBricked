@@ -110,12 +110,12 @@ func TestBulletUpdateAppliesNativeDamageAndStartsZombieDeath(t *testing.T) {
 	if len(play.bullets) != 0 {
 		t.Fatalf("overlapping bullet count = %d, want consumed hit", len(play.bullets))
 	}
-	if zombie := play.zombies[0]; zombie.health != -400 || !zombie.dying || zombie.deathAge != 0 {
-		t.Fatalf("zombie after native 500 hit = health %.1f dying %t deathAge %.3f, want -400/true/0", zombie.health, zombie.dying, zombie.deathAge)
+	if zombie := play.zombies[0]; zombie.health != -1 || !zombie.dying || zombie.deathAge != 0 {
+		t.Fatalf("zombie after a native 101 hit = health %.1f dying %t deathAge %.3f, want -1/true/0", zombie.health, zombie.dying, zombie.deathAge)
 	}
 }
 
-func TestBulletUpdateContinuesPastInvulnerableZombie(t *testing.T) {
+func TestBulletUpdateStopsAtInvulnerableZombie(t *testing.T) {
 	collision := make([]uint32, 64)
 	for i := range collision {
 		collision[i] = math.MaxUint32
@@ -143,8 +143,11 @@ func TestBulletUpdateContinuesPastInvulnerableZombie(t *testing.T) {
 	if zombie := play.zombies[0]; zombie.health != 100 || zombie.dying {
 		t.Fatalf("invulnerable first target = health %.1f dying %t, want 100/false", zombie.health, zombie.dying)
 	}
-	if zombie := play.zombies[1]; zombie.health != -400 || !zombie.dying || zombie.deathAge != 0 {
-		t.Fatalf("vulnerable second target = health %.1f dying %t deathAge %.3f, want -400/true/0", zombie.health, zombie.dying, zombie.deathAge)
+	// FUN_000a5f74 returns after the first target for kind 0x10 bullets, even when that
+	// target ignores the damage (FUN_000a0304 returns early for +0x2e1), so the
+	// second zombie in the cell is not reached in the same frame.
+	if zombie := play.zombies[1]; zombie.health != 100 || zombie.dying {
+		t.Fatalf("second target = health %.1f dying %t, want untouched 100/false", zombie.health, zombie.dying)
 	}
 }
 

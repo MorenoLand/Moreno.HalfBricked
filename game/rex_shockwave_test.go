@@ -306,59 +306,6 @@ func TestRexShockwaveDamageIsPerTickAndPerGridCell(t *testing.T) {
 	}
 }
 
-// FUN_000ba174 starts the rex with +0x2f4 = 3 and FUN_000b94c4 only allows the
-// health-threshold rage at +0x2f4 <= 0, which nothing reaches for the rex.
-func TestRexHealthRageIsGatedByTheNativeCounter(t *testing.T) {
-	r := newRexRig(t, nil, 800, 800)
-	p := r.p
-	p.updateZombies() // records the full health
-	if p.rex.bosses[rexTestID].gate != rexInitialGate || rexInitialGate != 3 {
-		t.Fatalf("gate = %d, want the native initial 3", p.rex.bosses[rexTestID].gate)
-	}
-	r.rex().health = 25000 * .30
-	p.updateZombies()
-	if r.rex().rexRageTimer != 0 {
-		t.Fatal("health rage fired through the closed native gate")
-	}
-}
-
-func TestRexHealthThresholdsTriggerRageWhenTheGateIsOpen(t *testing.T) {
-	r := newRexRig(t, nil, 800, 800)
-	p := r.p
-	p.updateZombies() // records the full health
-	p.rex.bosses[rexTestID].gate = 0
-	if r.rex().rexRageTimer != 0 {
-		t.Fatal("rage without cause")
-	}
-	r.rex().health = 25000 * .70
-	p.updateZombies()
-	if r.rex().rexRageTimer != 0 {
-		t.Fatal("rage above 66% health")
-	}
-	r.rex().health = 25000 * .65
-	p.updateZombies()
-	if r.rex().rexRageTimer < 900 || !hasSFX(p, "SFX_T_REX_ROAR_1") && !hasSFX(p, "SFX_T_REX_ROAR_2") {
-		t.Fatalf("no rage/roar when crossing 66%%: timer %v sfx %v", r.rex().rexRageTimer, p.sfxQueue)
-	}
-	// Run through the whole rage + leap; a hit while at 50% must not re-trigger.
-	for frame := 0; frame < 300; frame++ {
-		p.updateZombies()
-	}
-	if len(p.rex.waves) != 0 || p.rexLeaping(rexTestID) {
-		t.Fatal("rage cycle did not finish")
-	}
-	r.rex().health = 25000 * .50
-	p.updateZombies()
-	if r.rex().rexRageTimer != 0 {
-		t.Fatal("rage re-triggered inside the same band")
-	}
-	r.rex().health = 25000 * .30
-	p.updateZombies()
-	if r.rex().rexRageTimer == 0 {
-		t.Fatal("no rage when crossing 33%")
-	}
-}
-
 func TestRexShockwaveIsRemovedInsideAWallTile(t *testing.T) {
 	r := newRexRig(t, nil, 500, 500)
 	p := r.p

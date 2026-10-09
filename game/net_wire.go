@@ -50,11 +50,15 @@ type wirePlayer struct {
 
 type wireZombie struct {
 	X, Y, Frame, Alpha, HitFlash, DeathAge, Health, Fps, RexRage float64
+	Lift                                                         float64 // rex leap lift (rex_shockwave.go)
 	W, H                                                         float64
 	Tex, Anim                                                    int // indexes into the snapshot's string table
 	Angle                                                        int
 	FlipX, FlipY, Dying, BossRage, AnimTime                      bool
 	Exploding                                                    bool
+	Brightness                                                   float64 // +0x2b8 tint (zombie_model.go)
+	Speedy                                                       bool    // afterimage trail
+	Ghosts                                                       [2]wireGhost
 }
 
 type wireBullet struct {
@@ -95,10 +99,18 @@ type wireSnapshot struct {
 	Zoom       float64
 	HasProg    bool
 	Over       bool
+	RexWaves   [][4]float64 // x, y, age, max size of each rex shockwave
+	RexVenom   []wireVenom
 	Sfx        []string
 	Combo      []wireCombo
 	HudFlash   float64
 	HudColor   [3]float64
+}
+
+// wireVenom is one rex venom projectile (rex_ai.go) as the guest draws it.
+type wireVenom struct {
+	X, Y, Heading, Height, Size, Age, Life float64
+	State                                  int
 }
 
 type wireSentry struct {
@@ -150,7 +162,11 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 		if z.spawnAway {
 			continue
 		}
-		s.Zombies = append(s.Zombies, wireZombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z)})
+		s.Zombies = append(s.Zombies, wireZombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts)})
+	}
+	for _, shot := range p.zombieShots {
+		projectile := shot.projectile
+		s.Bullets = append(s.Bullets, wireBullet{X: round(projectile.X), Y: round(projectile.Y), Proj: &projectile})
 	}
 	for _, b := range p.bullets {
 		wb := wireBullet{X: round(b.x), Y: round(b.y), VX: b.vx, VY: b.vy, Life: b.life, Angle: b.angle, Kind: b.kind}
@@ -168,6 +184,12 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 	for _, b := range p.thrown {
 		// Guests draw a thrown bomb as a grenade bullet at its lifted position.
 		s.Bullets = append(s.Bullets, wireBullet{X: round(b.x), Y: round(b.y - b.lift + nativeProjectileRenderAnchor), Angle: math.Atan2(b.dirY, b.dirX) + math.Pi/2, Kind: "grenade"})
+	}
+	for _, w := range p.rex.waves {
+		s.RexWaves = append(s.RexWaves, [4]float64{round(w.x), round(w.y), w.age, w.max})
+	}
+	for _, v := range p.rex.venom {
+		s.RexVenom = append(s.RexVenom, wireVenom{X: round(v.x), Y: round(v.y), Heading: v.heading, Height: v.height, Size: v.size, Age: v.age, Life: v.life, State: v.state})
 	}
 	for _, m := range p.mines {
 		s.Mines = append(s.Mines, [3]float64{round(m.x), round(m.y), m.age})
@@ -245,7 +267,7 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	}
 	p.zombies = p.zombies[:0]
 	for _, z := range s.Zombies {
-		p.zombies = append(p.zombies, zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding})
+		p.zombies = append(p.zombies, zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}})
 	}
 	p.bullets = p.bullets[:0]
 	for _, b := range s.Bullets {
@@ -301,6 +323,13 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	if p.world != nil && s.Zoom > 0 && p.world.Zoom != s.Zoom {
 		p.world.SetZoom(s.Zoom)
 	}
+	p.rex.waves, p.rex.venom = nil, nil
+	for _, w := range s.RexWaves {
+		p.rex.waves = append(p.rex.waves, rexShockwave{x: w[0], y: w[1], age: w[2], max: w[3]})
+	}
+	for _, v := range s.RexVenom {
+		p.rex.venom = append(p.rex.venom, rexVenom{x: v.X, y: v.Y, heading: v.Heading, height: v.Height, size: v.Size, age: v.Age, life: v.Life, state: v.State})
+	}
 	p.sfxQueue = append(p.sfxQueue, s.Sfx...)
 }
 
@@ -348,4 +377,33 @@ type wireTrain struct {
 	X, Y   float64
 	Active bool
 	Frame  int
+}
+
+// speedyKind restores the one native kind that changes how a guest draws a zombie.
+func speedyKind(speedy bool) int {
+	if speedy {
+		return zombieKindSpeedy
+	}
+	return 0
+}
+
+// wireGhost is a speedy zombie afterimage as it travels in a snapshot.
+type wireGhost struct {
+	X, Y, W, H, Frame float64
+	Angle, Alpha      int
+	FlipX             bool
+}
+
+func ghostsToWire(ghosts [2]zombieGhost) (out [2]wireGhost) {
+	for i, g := range ghosts {
+		out[i] = wireGhost{X: g.x, Y: g.y, W: g.w, H: g.h, Frame: g.frame, Angle: g.angle, Alpha: g.alpha, FlipX: g.flipX}
+	}
+	return out
+}
+
+func ghostsFromWire(ghosts [2]wireGhost) (out [2]zombieGhost) {
+	for i, g := range ghosts {
+		out[i] = zombieGhost{x: g.X, y: g.Y, w: g.W, h: g.H, frame: g.Frame, angle: g.Angle, alpha: g.Alpha, flipX: g.FlipX}
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -61,6 +62,8 @@ func TestRexBossIntroRunsAndBossDeathEndsTheLevel(t *testing.T) {
 	}
 
 	// Killing the boss stops the waves, clears the field and queues the end script.
+	// (The landing shockwave may have compacted the zombie list: look the rex up again.)
+	rex = h.findZombie(rexID)
 	rex.health, rex.dying, rex.deathAge = 0, true, 10
 	for frame := 0; frame < 5; frame++ {
 		p.Update(0, 0, false, false, false)
@@ -184,3 +187,70 @@ func TestSamuraiBossFight(t *testing.T)  { bossLevelSweep(t, "world3_level2", "b
 func TestGangsterBossFight(t *testing.T) { bossLevelSweep(t, "world1_level2", "boss_gangster", true) }
 func TestRobotBossFight(t *testing.T)    { bossLevelSweep(t, "world4_level2", "boss_robot", false) }
 func TestWesternBossFight(t *testing.T)  { bossLevelSweep(t, "world5_level2", "boss_west", false) }
+
+// The dino_boss intro never recentres on the rex natively: the script's own camera
+// writes only SetCamera(camX, camY) from a stale value (the RexWalk lerp lines are
+// commented out), auto-tracking is off while a script runs (FUN_0013c170 gate in
+// FUN_000c35b0 / FUN_00096030 follows nothing), and CameraShake only adds a decaying
+// offset. GetCameraX/Y return centre + shake offset (FUN_00095aa8). See
+// Research/native/rex-intro-camera-2026-10-09.md.
+func TestRexIntroCameraStaysOnBarryAndReturnsAfterTheScript(t *testing.T) {
+	h := script125CachedHost(t, "world0_level2")
+	p := h.play
+	p.scriptRuntime.Close()
+	p.scriptRuntime = nil
+	p.hudVisible = true
+	p.waveIndex = 3
+	var rexID int
+	for frame := 0; frame < 400 && rexID == 0; frame++ {
+		p.Update(0, 0, false, false, false)
+		for id, entity := range p.scriptEntities {
+			if entity.entityType == "boss_rex" {
+				rexID = id
+			}
+		}
+	}
+	if rexID == 0 {
+		t.Fatal("boss_rex never spawned")
+	}
+	rex := h.findZombie(rexID)
+	p.world.SetZoom(.65)
+	p.setScriptCamera(p.x, p.y)
+	if err := h.app.updateBossScripts(); err != nil {
+		t.Fatal(err)
+	}
+	startX, startY := p.scriptCameraCenterX(), p.scriptCameraCenterY()
+	maxDrift := 0.0
+	for frame := 0; frame < 6000 && p.scriptRuntime != nil && !p.scriptRuntime.Done(); frame++ {
+		if p.dialogueIndex < len(p.dialogue) && frame%60 == 0 {
+			p.dialogueIndex++
+		}
+		p.aimActive = true
+		if err := p.updateScript(); err != nil {
+			t.Fatal(err)
+		}
+		p.shakeOffX, p.shakeOffY = p.updateShake(1.0 / 60.0)
+		p.updateZombies()
+		p.updateCamera()
+		drift := math.Hypot(p.scriptCameraCenterX()-startX, p.scriptCameraCenterY()-startY)
+		maxDrift = math.Max(maxDrift, drift)
+		// GetCameraX/Y are the centre plus the live shake offset.
+		if got := h.play.scriptCameraCenterX() + p.shake.currentX; math.Abs(got-(p.world.CameraX+float64(logicalWidth)/(2*p.world.Zoom)+p.shake.currentX)) > 1e-9 {
+			t.Fatalf("GetCameraX = %v", got)
+		}
+	}
+	if p.scriptRuntime != nil && !p.scriptRuntime.Done() {
+		t.Fatal("intro never finished")
+	}
+	// Native: the camera is not pulled to the rex (only the shake feedback moves it a little).
+	if maxDrift > 40 {
+		t.Fatalf("camera drifted %.1f px from Barry during the intro; native has no pan toward the rex (rex at %.0f,%.0f)", maxDrift, rex.x, rex.y)
+	}
+	// After the script the normal follow resumes and settles on the player.
+	for frame := 0; frame < 300; frame++ {
+		p.updateCamera()
+	}
+	if math.Hypot(p.scriptCameraCenterX()-p.x, p.scriptCameraCenterY()-p.y) > 1 {
+		t.Fatalf("camera did not return to Barry after the intro: centre %.1f,%.1f player %.1f,%.1f", p.scriptCameraCenterX(), p.scriptCameraCenterY(), p.x, p.y)
+	}
+}

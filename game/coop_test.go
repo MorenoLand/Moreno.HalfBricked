@@ -85,7 +85,7 @@ func TestZombiesChaseAndHurtTheNearestPlayer(t *testing.T) {
 	p.updateCoopPlayers([]playerInput{{}})
 	player := p.coop.players[0]
 	player.body.x, player.body.y = p.x+400, p.y
-	p.zombies = []zombieState{{x: player.body.x - 30, y: player.body.y, speed: 0, health: 100, size: formats.Vec2{X: 48, Y: 48}, collision: 15}}
+	p.zombies = []zombieState{{x: player.body.x - 20, y: player.body.y, speed: 0, health: 100, size: formats.Vec2{X: 48, Y: 48}, collision: 15}}
 	prey := p.nearestPlayer(p.zombies[0].x, p.zombies[0].y)
 	if prey.index != 1 {
 		t.Fatalf("zombie picked player %d, want the nearby player 2", prey.index)

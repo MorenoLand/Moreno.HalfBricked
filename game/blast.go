@@ -50,7 +50,7 @@ func (p *playState) rocketContactDamage(b bullet, zombie *zombieState) {
 	visits := p.zombieGridVisits(zombie, b.x, b.y, float32(rocketBodyWidth)*zombieBlastQueryScale)
 	for visit := 0; visit < visits && zombie.health > 0; visit++ {
 		zombie.health -= zombieBlastDamage
-		zombie.hitFlash = zombieHitFlashDuration
+		zombie.hitFlash = zombieDamageFlash
 		if zombie.health > 0 {
 			p.comboCredit(b.origin, comboHitBlast)
 		}

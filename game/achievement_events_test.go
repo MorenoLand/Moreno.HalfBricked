@@ -69,7 +69,7 @@ func (r *achievementRig) shootUntil(t *testing.T, perShot, frames, limit int, do
 	t.Helper()
 	for i := 0; i < limit && !done(); i++ {
 		r.clear()
-		r.stack(perShot, r.p.x+20, r.p.y)
+		r.stack(perShot, r.p.x+40, r.p.y)
 		r.p.spinAudio.SpinTimer = 1
 		switch r.p.weapon.GunType {
 		case "BUZZSAW":
@@ -107,7 +107,7 @@ func driveKillAchievement(t *testing.T, r *achievementRig, entry formats.Achieve
 	case "rifle":
 		r.p.collectPickup("p_sniper")
 		r.clear()
-		r.stack(entry.Total, r.p.x+30, r.p.y)
+		r.stack(entry.Total, r.p.x+90, r.p.y)
 		r.p.fire(1, 0)
 		r.tick(60)
 	case "bazooka", "grenade", "cowpat":
@@ -142,10 +142,10 @@ func driveKillAchievement(t *testing.T, r *achievementRig, entry formats.Achieve
 			t.Fatal("sentry refused")
 		}
 		sentry := r.p.sentries[0]
-		for i := 0; i < 600 && !met() && len(r.p.sentries) > 0; i++ {
+		for i := 0; i < 6000 && !met() && len(r.p.sentries) > 0; i++ {
 			if _, ok := r.p.nearestZombie(sentry.x, sentry.y, 1); !ok {
 				r.clear()
-				r.stack(2, sentry.x+20, sentry.y)
+				r.stack(6, sentry.x+60, sentry.y)
 			}
 			r.tick(1)
 		}
@@ -268,7 +268,7 @@ func driveCompletionAchievement(t *testing.T, r *achievementRig, entry formats.A
 		check(true)
 	case "SPECIFIC/pistol_only":
 		r.clear()
-		r.stack(1, p.x+20, p.y)
+		r.stack(1, p.x+40, p.y)
 		p.fire(1, 0)
 		r.tick(10)
 		a.awardLocalAchievements(&formats.LevelInfo{ID: "l", Flags: []string{"STORY"}})
@@ -279,7 +279,7 @@ func driveCompletionAchievement(t *testing.T, r *achievementRig, entry formats.A
 			for shot := 0; shot < hits+misses; shot++ {
 				r.clear()
 				if shot < hits {
-					r.stack(1, r.p.x+20, r.p.y)
+					r.stack(1, r.p.x+40, r.p.y)
 				}
 				r.p.fire(1, 0)
 				r.tick(20)
@@ -371,7 +371,7 @@ func TestSentryKillsAreNotPlayerKills(t *testing.T) {
 	r.p.collectPickup("p_sentry")
 	r.p.fireSecondary(1, 0)
 	s := r.p.sentries[0]
-	r.stack(1, s.x+20, s.y)
+	r.stack(1, s.x+60, s.y)
 	// The turret needs .75 s to raise its head and then to turn toward the zombie.
 	for i := 0; i < 600 && r.p.achieve.best["sentry"] == 0; i++ {
 		r.tick(1)

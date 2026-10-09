@@ -8,7 +8,7 @@ import (
 )
 
 func TestZombieTargetFollowsPlayerAfterScript(t *testing.T) {
-	p := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: make([]uint32, 400)}}}, tileSize: 32, x: 320, y: 320, health: 1, scriptHasZombieTarget: true, scriptZombieTargetX: 64, scriptZombieTargetY: 64, scriptEntities: map[int]*scriptEntity{1: {id: 1}}, zombies: []zombieState{{x: 64, y: 64, speed: 60, health: 100, size: formats.Vec2{X: 48, Y: 48}, scriptID: 1}}}
+	p := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 20, Height: 20, Layers: map[formats.LayerKind][]uint32{formats.LayerC: openLayer(400)}}}, tileSize: 32, x: 320, y: 320, health: 1, scriptHasZombieTarget: true, scriptZombieTargetX: 64, scriptZombieTargetY: 64, scriptEntities: map[int]*scriptEntity{1: {id: 1}}, zombies: []zombieState{{x: 64, y: 64, speed: 60, health: 100, size: formats.Vec2{X: 48, Y: 48}, scriptID: 1}}}
 	p.updateZombies()
 	if p.zombies[0].x <= 64 || p.zombies[0].y <= 64 || p.health != 1 {
 		t.Fatalf("stale target retained or remote damage: zombie %+v health %g", p.zombies[0], p.health)

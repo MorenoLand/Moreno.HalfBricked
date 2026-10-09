@@ -170,12 +170,14 @@ type zombieState struct {
 	bossRage         bool
 	animTimeMode     bool
 	rexRageTimer     float64
+	lift             float64 // guests only: the host's rex leap lift in px (net_wire.go)
 	spawnAway        bool
 	dying            bool
 	deathAge         float64
 	scriptControlled bool
 	collision        float64
 	mirrorExploding  bool // guests only: the host says this one is an exploding zombie
+	native           zombieNative // spawn-record state of wave zombies (zombie_model.go)
 	grid             entityGridRegistration
 }
 
@@ -240,6 +242,9 @@ type playState struct {
 	bossDefeated, scriptPaused                             bool
 	pausedControls                                         [2]bool
 	sfxQueue                                               []string
+	alertNoise                                             float64 // player +0x3e0 (zombie_ai.go)
+	zombieWeapons                                          formats.ZombieWeaponCatalog
+	zombieShots                                            []zombieShot
 	sentryLoopHold                                         float64
 	navs                                                   [maxCoopPlayers]navField
 	secondaryWeapon                                        string
@@ -1300,6 +1305,22 @@ func (a *app) setCaptureState(state string) error {
 		a.play.paused = true
 		a.hover = map[string]float64{"pauseOPTIONS": 1}
 		return nil
+	case "play-train":
+		if err := a.selectCaptureLevel("World5Level1"); err != nil {
+			return err
+		}
+		a.titleScreen, a.page = false, 2
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.spawnTrain()
+		a.play.train.countdown = 0.5
+		a.play.x, a.play.y = 1450, 440
+		a.play.centerCamera()
+		return nil
 	case "net-join":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		a.startNetJoin()
@@ -1379,6 +1400,8 @@ func (a *app) setCaptureState(state string) error {
 		return err
 	case "play-combo":
 		return a.captureComboScene()
+	case "play-zoo":
+		return a.captureZombieZoo()
 	case "play-combat":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
@@ -1566,6 +1589,8 @@ func (a *app) setCaptureState(state string) error {
 		}
 		a.play.addPortal(a.play.x, a.play.y)
 		return nil
+	case "play-rex-venom":
+		return a.captureRexVenom()
 	case "play-rex-shockwave":
 		return a.captureRexShockwave()
 	case "debug-viewer":
@@ -2472,6 +2497,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		a.drawTrain(target, a.play.train) // FUN_000fde94 submits at once: under every bucketed entity
 		a.drawZombieShadows(target)
 		a.drawRexShockwaves(target)
+		a.drawRexVenom(target)
 		for _, portal := range a.play.portals {
 			a.drawPortal(target, portal)
 		}
@@ -2879,8 +2905,11 @@ func collisionLabel(value uint32) string {
 }
 
 func (a *app) drawBullets(screen *ebiten.Image) {
-	if a.play == nil || len(a.play.bullets) == 0 {
+	if a.play == nil || (len(a.play.bullets) == 0 && len(a.play.zombieShots) == 0) {
 		return
+	}
+	for _, shot := range a.play.zombieShots {
+		a.drawWeaponProjectile(screen, shot.projectile)
 	}
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.bullets {
@@ -3013,6 +3042,7 @@ func spriteAnimationFrame(animation formats.SpriteAnimation, elapsed float64, fa
 }
 
 func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
+	a.drawZombieTrail(screen, zombie)
 	textureName := zombie.texture
 	if textureName == "" {
 		textureName = "cavezombie"
@@ -3070,8 +3100,8 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	scaleX, scaleY := zombieSpriteScale(zombie.size.X, zombie.size.Y, rect, scale, frontendX, frontendY)
 	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, zombie.flipY)
 	options.GeoM.Scale(scaleX, scaleY)
-	if zombie.hitFlash > 0 {
-		options.ColorScale.Scale(1.5, .18, .18, 1)
+	if tint := zombieTint(zombie); tint != 1 {
+		options.ColorScale.Scale(tint, tint, tint, 1)
 	}
 	if zombie.alpha < 1 {
 		options.ColorScale.ScaleAlpha(float32(math.Max(0, zombie.alpha)))
@@ -3481,7 +3511,7 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
-	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
+	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, zombieWeapons: a.zombieWeapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
 	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
 	play.levelInfo = level.Info
 	play.trainSpec = a.loadTrainSpec()
@@ -3860,7 +3890,6 @@ func (p *playState) updateBulletsAndKills() {
 				childBullets = append(childBullets, bullet{x: child.X, y: child.Y, vx: child.VX, vy: child.VY, life: child.Life, projectile: &child, origin: b.origin})
 			}
 		}
-		previousX, previousY := b.x, b.y
 		b.x += b.vx * dt
 		b.y += b.vy * dt
 		b.life -= dt
@@ -3868,7 +3897,7 @@ func (p *playState) updateBulletsAndKills() {
 			b.projectile.X, b.projectile.Y, b.projectile.Life = b.x, b.y, b.life
 			b.projectile.Age += dt
 		}
-		if b.life <= 0 || p.isSolid(b.x, b.y) {
+		if b.life <= 0 || p.bulletInWall(&b) {
 			if b.explodes() {
 				p.detonateFrom(b.x, b.y, b.explosionSound(), b.origin)
 			}
@@ -3883,7 +3912,7 @@ func (p *playState) updateBulletsAndKills() {
 			if p.zombies[index].health <= 0 {
 				continue
 			}
-			if !bulletHitsZombie(previousX, previousY, b.x, b.y, p.zombies[index]) {
+			if !p.bulletReachesZombie(b, &p.zombies[index]) {
 				continue
 			}
 			p.markProjectileHit(b.projectile, b.origin)
@@ -3895,24 +3924,27 @@ func (p *playState) updateBulletsAndKills() {
 			}
 			if p.zombies[index].invulnerable {
 				hit = true
+				if bulletStopsAtFirstTarget(b) {
+					break
+				}
 				continue
 			}
-			damage := 500.0
 			if b.projectile != nil && b.projectile.EntityType == 0x16 {
 				b.vx = float64(float32(b.vx) * float32(.85))
 				b.vy = float64(float32(b.vy) * float32(.85))
 				b.projectile.VX, b.projectile.VY = b.vx, b.vy
-				damage = 1
 			}
-			p.zombies[index].health -= damage
-			p.zombies[index].hitFlash = zombieHitFlashDuration
-			p.comboBulletHit(b, p.zombies[index].health+damage, damage)
-			if p.zombies[index].health <= 0 {
+			// FUN_000a521c / FUN_000a4bbc: fixed damage per hit (101 / 1) against the
+			// zombie's real health (zombie_model.go).
+			if p.damageFromBullet(b, &p.zombies[index]) {
 				p.creditKill(b.origin)
 				p.zombies[index].dying = true
 				p.zombies[index].deathAge = 0
 			}
 			hit = true
+			if bulletStopsAtFirstTarget(b) {
+				break
+			}
 		}
 		if b.projectile != nil && (b.projectile.EntityType == 0x11 || b.projectile.EntityType == 0x16) {
 			// Multi-bullet children and flame particles pass through targets (saw
@@ -3945,7 +3977,14 @@ func (p *playState) updateBulletsAndKills() {
 			p.score = int(int32(p.score) + award)
 		}
 		if !zombie.spawnAway {
-			p.bloodPops = append(p.bloodPops, bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3})
+			pop := bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3}
+			if zombie.native.kind != 0 {
+				pop.variant, pop.x = p.zombieDeathPop(zombie)
+			}
+			p.bloodPops = append(p.bloodPops, pop)
+			if zombie.dying && !p.isExplodingZombie(zombie) {
+				p.queueZombieDeathSound()
+			}
 		}
 	}
 	p.zombies = alive
@@ -4009,6 +4048,9 @@ func waveSpawnerInterval(runTime, delayTime float64, count int) float64 {
 
 // spawnZombieAt creates one zombie of the given type, opening a portal there.
 func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
+	native := nativeZombieTypes[entry.Name]
+	waveZombie := native >= zombieKindPlain && native <= zombieKindProspect
+	var record zombieSpawnRecord
 	speed := entry.Speed.X
 	if entry.Speed.Y > 0 {
 		speed = (entry.Speed.X + entry.Speed.Y) / 2
@@ -4020,6 +4062,15 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 	if entry.Strength >= 0 {
 		rawPoints = int(entry.Strength)
 		health = float64(rawPoints)
+	}
+	if waveZombie {
+		// Types 2..9 come from the native spawn record (zombie_model.go): rolled speed,
+		// size and strength instead of the averages the port used before.
+		record = rollZombieSpawnRecord(entry, p.rng)
+		speed = float64(record.Speed)
+		if record.Speed < 0 {
+			speed = 30 + float64(zombieRandom(p.rng, 30))
+		}
 	}
 	texture := entry.Texture
 	if texture == "" {
@@ -4035,8 +4086,15 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 	id := p.scriptNextEntity
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
+	p.markRexSpawn(id, entry.Name)
 	if name := bossIntroScript(entry.Name, texture); name != "" {
 		p.bossScripts = append(p.bossScripts, name)
+	}
+	if waveZombie {
+		z := newWaveZombie(record, p.rng, p.zombieWeapons, point, speed, texture, id)
+		z.fps = p.spriteFPS(texture, "")
+		p.zombies = append(p.zombies, z)
+		return
 	}
 	renderSize := nativeSpawnRenderSize(entry.Size)
 	collision := nativeSpawnCollisionRadius(entry.Size)
@@ -4181,6 +4239,8 @@ func (p *playState) updateZombies() {
 	}
 	const dt = 1.0 / 60.0
 	p.refreshNav()
+	p.updateAlertNoise(dt)
+	p.updateZombieShots(dt)
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
@@ -4194,61 +4254,91 @@ func (p *playState) updateZombies() {
 		}
 		prey := p.nearestPlayer(zombie.x, zombie.y)
 		targetX, targetY := prey.x, prey.y
-		chasing := true
 		var entity *scriptEntity
 		if zombie.scriptID != 0 {
 			entity = p.scriptEntities[zombie.scriptID]
 			if entity != nil && entity.walking {
 				targetX, targetY = entity.targetX, entity.targetY
-				chasing = false
 			} else if p.scriptHasZombieTarget && p.scriptRuntime != nil && !p.scriptRuntime.Done() {
 				targetX, targetY = p.scriptZombieTargetX, p.scriptZombieTargetY
-				chasing = false
 			}
 		}
 		dx, dy := targetX-zombie.x, targetY-zombie.y
 		distance := math.Hypot(dx, dy)
 		zombieRadius := zombieCollisionRadius(*zombie)
-		collisionDistance := playerCollisionRadius + zombieRadius
 		speed := zombie.speed
 		if p.rexHeld(zombie) {
 			speed = 0
 		}
-		stopDistance := collisionDistance
-		if entity != nil && entity.walking {
+		speed *= p.rexSpeedFactor(zombie)
+		scriptWalk := entity != nil && entity.walking
+		stopDistance := playerCollisionRadius + zombieRadius
+		if scriptWalk {
 			stopDistance = entity.targetRange
 		}
-		if entity != nil && entity.walking && distance <= stopDistance {
+		moved := false
+		scriptIdle := p.scriptRuntime == nil || p.scriptRuntime.Done() || p.scriptZombiesActive
+		switch {
+		case scriptWalk && distance <= stopDistance:
 			entity.walking = false
 			if entity.stopOnArrival {
 				zombie.speed, entity.speed = 0, 0
 			}
-		} else if distance > stopDistance && speed > 0 && ((entity != nil && entity.walking) || p.scriptRuntime == nil || p.scriptRuntime.Done() || p.scriptZombiesActive) {
-			step := math.Min(speed*dt, distance-stopDistance)
-			if distance > 0 {
-				dirX, dirY := dx/distance, dy/distance
-				if chasing && !p.lineClear(zombie.x, zombie.y, targetX, targetY, zombieRadius*.8) {
-					if navX, navY, ok := p.navDirection(zombie.x, zombie.y, prey.index); ok {
-						dirX, dirY = navX, navY
-					}
+		case zombie.native.kind != 0 && !scriptWalk:
+			// Spawn-record zombies run the native update (zombie_ai.go).
+			aimX, aimY := dx, dy
+			if zombie.native.kind == zombieKindSmart && !p.lineClear(zombie.x, zombie.y, targetX, targetY, zombieRadius*.8) {
+				if navX, navY, ok := p.navDirection(zombie.x, zombie.y, prey.index); ok {
+					aimX, aimY = navX*math.Max(distance, 2), navY*math.Max(distance, 2)
 				}
-				p.moveZombie(zombie, dirX, dirY, step, zombieRadius)
+			}
+			moveX, moveY := p.stepZombieAI(zombie, dx, dy, aimX, aimY, dt)
+			if scriptIdle && speed > 0 {
+				zombie.x += moveX
+				zombie.y += moveY
+				moved = moveX != 0 || moveY != 0
+			}
+		case scriptWalk || scriptIdle:
+			// Staged zombies (scripts, capture scenes, bosses): straight chase.
+			if distance > stopDistance && speed > 0 {
+				step := math.Min(speed*dt, distance-stopDistance)
+				dirX, dirY := p.rexSteer(zombie, prey.index, dx/distance, dy/distance)
+				zombie.x += dirX * step
+				zombie.y += dirY * step
+				moved = step > 0
 			}
 		}
-		if math.Hypot(prey.x-zombie.x, prey.y-zombie.y) <= collisionDistance && (entity == nil || !entity.walking) && (!zombie.scriptControlled || p.scriptCollideZombies) {
-			p.damagePlayer(prey.index, dt*.08)
+		// FUN_000a17cc: after every move the body is pushed out of blocking tiles.
+		if moved {
+			pushX, pushY := p.nativeTilePush(zombie.x, zombie.y, zombieBodyScale*zombie.size.X)
+			zombie.x += pushX
+			zombie.y += pushY
+		}
+		p.separateZombie(index, dt)
+		if zombie.native.kind == zombieKindSpeedy {
+			stepZombieTrail(zombie)
+		}
+		if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) {
+			p.zombieContact(zombie, prey, dt)
 		}
 		if entity != nil {
 			entity.x, entity.y = zombie.x, zombie.y
 		}
 		if entity == nil || !entity.rotationSet {
-			zombie.angle, zombie.flipX = barryDirection(dx, dy)
+			if zombie.native.kind != 0 {
+				zombie.angle, zombie.flipX = barryDirection(cosU16(zombie.native.facing), sinU16(zombie.native.facing))
+			} else {
+				zombie.angle, zombie.flipX = barryDirection(dx, dy)
+			}
 		}
 		fps := zombie.fps
 		if fps <= 0 {
 			fps = p.spriteFPS(zombie.texture, "")
 		}
-		zombie.frame += dt * fps
+		if zombie.native.kind != 0 {
+			fps *= zombie.native.ai.speedFactor
+		}
+		zombie.frame += dt * fps * p.rexAnimationFactor(zombie)
 	}
 	p.updateRexBoss()
 }
@@ -4431,6 +4521,7 @@ func (p *playState) fire(dx, dy float64) bool {
 	by := p.y + offsetY
 	dirX, dirY = p.projectileDirection(dirX, dirY, offsetX, offsetY)
 	p.shotSound = p.weapon.SFXShoot
+	p.addFireNoise()
 	if weapons.NativeVolleyWeapon(p.weapon.GunType) {
 		if p.weapon.Ammo <= 0 {
 			if pistol, ok := p.weapons.Find("PISTOL"); ok {

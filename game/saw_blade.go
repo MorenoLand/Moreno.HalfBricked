@@ -59,7 +59,7 @@ func (p *playState) stepSawBlade(b *bullet) bool {
 	b.x += b.vx * dt
 	b.y += b.vy * dt
 	projectile.X, projectile.Y = b.x, b.y
-	if float32(projectile.Life) <= age || p.isSolid(b.x, b.y) {
+	if float32(projectile.Life) <= age || p.projectileBlockedAt(b.x, b.y) {
 		return false
 	}
 	sounds := 0
@@ -93,7 +93,7 @@ func (p *playState) stepSawBlade(b *bullet) bool {
 				continue
 			}
 			zombie.health -= weapons.SawBladeHitDamage
-			zombie.hitFlash = zombieHitFlashDuration
+			zombie.hitFlash = zombieDamageFlash
 			if zombie.health <= 0 {
 				p.creditKill(b.origin)
 				zombie.dying = true

@@ -99,26 +99,22 @@ func (p *playState) updateThrown() {
 		// FUN_000a7218, state 2.
 		b.fall += dt * thrownGravity
 		nx, ny := b.x+b.dirX*b.speed*dt, b.y+b.dirY*b.speed*dt
-		if p.isSolid(nx, ny) {
-			// UNRESOLVED: the native wall response subtracts FUN_000be3c0's push-out
-			// vector from the heading and normalises it (FUN_00098338); the push-out
-			// magnitude was not recovered, so the heading is reflected on the
-			// blocked axis instead. Speed .75 and sound 0x13 are native.
-			blockedX, blockedY := p.isSolid(nx, b.y), p.isSolid(b.x, ny)
-			switch {
-			case blockedX && !blockedY:
-				b.y = ny
-				b.dirX = -b.dirX
-			case blockedY && !blockedX:
-				b.x = nx
-				b.dirY = -b.dirY
-			default:
-				b.dirX, b.dirY = -b.dirX, -b.dirY
+		b.x, b.y = nx, ny
+		// FUN_000be3c0(level, pos, width, &out, 0): only collision value 1 blocks
+		// (pits and water, value 2, are flown over). The native response subtracts
+		// the push-out from the position and from the heading, renormalises the
+		// heading (FUN_00098338), multiplies the speed by .75 and plays sound 0x13.
+		// UNRESOLVED: the exact FUN_001be118 corner rounding (geometric reading).
+		if pushX, pushY := p.projectileTilePush(b.x, b.y, b.size); pushX != 0 || pushY != 0 {
+			b.x += pushX
+			b.y += pushY
+			b.dirX += pushX
+			b.dirY += pushY
+			if length := math.Hypot(b.dirX, b.dirY); length > 0 {
+				b.dirX, b.dirY = b.dirX/length, b.dirY/length
 			}
 			b.speed = float64(float32(b.speed) * float32(thrownWallSpeed))
 			p.sfxQueue = append(p.sfxQueue, thrownBounceSound)
-		} else {
-			b.x, b.y = nx, ny
 		}
 		if b.age >= b.life-1e-9 || float32(b.speed) < thrownMinSpeed {
 			spawned = append(spawned, p.detonateThrown(b)...)
