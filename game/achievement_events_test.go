@@ -252,8 +252,22 @@ func driveCompletionAchievement(t *testing.T, r *achievementRig, entry formats.A
 		a.recordPlayStats(p, 0, p.lives)
 		check(true)
 	case "SPECIFIC/wave":
-		a.mode, p.waveIndex = 1, entry.Total-1
-		a.recordPlayStats(p, 0, p.lives)
+		// A two-wave looping survival table: the wave index never passes 1, the native wave counter keeps counting.
+		a.mode, p.levelInfo.Flags = 1, []string{"SURVIVAL"}
+		p.world.Level.Waves = []formats.Wave{{EndWaveTime: 100}, {EndWaveTime: 100, NextWave: 1}}
+		for frame := 0; frame < 60*60 && !a.achievementUnlocks[entry.ID]; frame++ {
+			if int(p.achieve.waveAdvances) == entry.Total-1 {
+				check(false)
+			}
+			p.updateWaves()
+			a.updateGameplayAchievements(p)
+		}
+		if p.waveIndex > 1 {
+			t.Fatalf("looping table left index 1: %d", p.waveIndex)
+		}
+		if int(p.achieve.waveAdvances) != entry.Total {
+			t.Fatalf("unlocked at wave counter %d, want %d", p.achieve.waveAdvances, entry.Total)
+		}
 		check(true)
 	case "SPECIFIC/no_move":
 		for i := 0; i < entry.Total; i++ {

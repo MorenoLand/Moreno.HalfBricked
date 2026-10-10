@@ -15,8 +15,9 @@ func setTestBuild(p *playState, build string) {
 	p.world.Level.WaveBuild = build
 }
 
-// Both held counts are drawn on both builds (the count display is left unchanged on request).
-func TestComboBothCountsShownOnBothBuilds(t *testing.T) {
+// The held counts are one shared count on both builds: the live counter stands for both slots and shows their
+// hits added together.
+func TestComboCountIsOneSharedCountOnBothBuilds(t *testing.T) {
 	for _, build := range []string{content.WaveBuildV7, content.WaveBuild125} {
 		r := testRig(t)
 		p := r.p
@@ -24,17 +25,38 @@ func TestComboBothCountsShownOnBothBuilds(t *testing.T) {
 		p.fillSecondarySlot(secondaryGrenade, "GRENADE")
 		p.collectPickup("p_shotgun")
 		p.updateCombo(1.0 / 60)
-		if p.combo.secondary == nil {
-			t.Fatalf("%s: a held grenade must own a secondary tracker", build)
+		if p.combo.primary == nil || p.combo.secondary == nil {
+			t.Fatalf("%s: both held slots must own a tracker", build)
 		}
-		found := false
+		p.combo.primary.counter, p.combo.secondary.counter = 3, 4
+		p.updateCombo(1.0 / 60)
+		live := 0
 		for _, tr := range p.comboShownTrackers() {
-			if tr == p.combo.secondary {
-				found = true
+			if tr == p.combo.primary || tr == p.combo.secondary {
+				live++
 			}
 		}
-		if !found {
-			t.Fatalf("%s: the grenade-slot count is not drawn", build)
+		if live != 1 {
+			t.Fatalf("%s: %d live counters drawn, want one", build, live)
 		}
+		popup, ok := p.combo.shownPopup(p.combo.liveCounter())
+		if !ok || popup.Text != "x7" {
+			t.Fatalf("%s: shared counter %+v shown %v, want x7", build, popup, ok)
+		}
+	}
+}
+
+// Holding a weapon shows no counter; it appears once hits are counted.
+func TestComboCounterHiddenUntilThereIsACount(t *testing.T) {
+	r := testRig(t)
+	p := r.p
+	p.collectPickup("p_shotgun")
+	p.updateCombo(1.0 / 60)
+	if len(p.comboShownTrackers()) != 0 {
+		t.Fatal("a counter is drawn before any hit")
+	}
+	p.combo.primary.counter = 2
+	if len(p.comboShownTrackers()) != 1 {
+		t.Fatal("the counter must show once the count is above 0")
 	}
 }

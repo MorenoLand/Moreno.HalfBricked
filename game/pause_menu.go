@@ -63,7 +63,7 @@ func (a *app) activatePauseMenu(index int) error {
 	case 3:
 		a.askConfirm("QUIT TO MENU?", a.quitToMenu)
 	case 4:
-		a.askConfirm("QUIT TO DESKTOP?", func() error { return ebiten.Termination })
+		a.askNativeQuit(func() error { return ebiten.Termination })
 	case 5:
 		a.openAchievements()
 	case 6:

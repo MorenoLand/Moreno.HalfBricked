@@ -23,23 +23,7 @@ func (p *playState) controlButtonGeometry(baseX, baseY, defaultX, defaultY, gap 
 	if width <= 0 || height <= 0 {
 		width, height = 64, 32
 	}
-	sx, sy := 1.0, 1.0
-	if p.controlWidth > 0 {
-		sx = float64(p.controlWidth) / logicalWidth
-	}
-	if p.controlHeight > 0 {
-		sy = float64(p.controlHeight) / logicalHeight
-	}
-	offset := float64(p.controls.PadRadius) + gap
-	if !p.mobileControls {
-		baseHeight := height
-		if p.secondaryDensity > 1 {
-			width, height = width*p.secondaryDensity, height*p.secondaryDensity
-		}
-		// Keep the button clear of the stick: a taller button sits higher by the extra half-height.
-		offset += (height - baseHeight) / 2
-		width, height, offset = width/sx, height/sy, offset/sy
-	}
+	offset := p.padRingHalfHeight() + gap
 	x, y = defaultX, defaultY
 	if baseX > 0 && baseY > 0 {
 		x, y = baseX, baseY-offset
@@ -47,6 +31,27 @@ func (p *playState) controlButtonGeometry(baseX, baseY, defaultX, defaultY, gap 
 	x = math.Max(width/2, math.Min(logicalWidth-width/2, x))
 	y = math.Max(height/2, math.Min(logicalHeight-height/2, y))
 	return
+}
+
+// padRingHalfHeight is the drawn stick ring's half height in logical units (see
+// drawStick). The ring is a circle of PadRadius screen pixels on desktop and a
+// circle of PadRadius*W/480 pixels on mobile, so its logical height depends on the
+// window size; placing the button by the raw radius left it floating far above the
+// ring in a large window.
+func (p *playState) padRingHalfHeight() float64 {
+	width, height := float64(p.controlWidth), float64(p.controlHeight)
+	if width <= 0 {
+		width = logicalWidth
+	}
+	if height <= 0 {
+		height = logicalHeight
+	}
+	sx, sy := width/logicalWidth, height/logicalHeight
+	radius := float64(p.controls.PadRadius)
+	if p.mobileControls {
+		return radius * sx / sy
+	}
+	return radius / sy
 }
 
 // leftStickAnchor mirrors rightStickAnchor for the left (move) stick.

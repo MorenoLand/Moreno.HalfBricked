@@ -166,14 +166,18 @@ func (p *playState) nearestPlayer(x, y float64) playerTarget {
 	return best
 }
 
-// The original game has no recovered damage indicator for the player, so the
-// port flashes Barry red while he is being hurt (the same cue zombies get).
+// PORT ADDITION (no native source): FUN_00094c6c / FUN_00096818 (v7) apply no tint to
+// Barry when he is hurt; the native cues are the regeneration delay and the camera shake
+// (+0x9c < -699, FUN_000be1fc, not ported). The red flash below is the port's own
+// feedback. portHurtFlash switches it off for strict parity.
+var portHurtFlash = true
+
 const hurtFlashDuration = .35
 
 // hurtTint fades Barry from red back to his normal colour as the flash runs
 // out; while a zombie keeps hitting him it stays red. A zero base means normal.
 func hurtTint(hurt, clock float64, base [3]float32) [3]float32 {
-	if hurt <= 0 {
+	if hurt <= 0 || !portHurtFlash {
 		return base
 	}
 	t := float32(min(hurt/hurtFlashDuration, 1))

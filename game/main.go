@@ -90,6 +90,10 @@ type app struct {
 	selectorWheel                                float64
 	resultsUI                                    *formats.UIScreen
 	resultsUILoaded                              bool
+	credits                                      *creditsState
+	creditsUI                                    *formats.UIScreen
+	creditsUILoaded                              bool
+	creditsMargins                               map[string]int
 	highscores                                   map[string]int32
 	coopPlayers                                  int
 	net                                          *netSession
@@ -132,6 +136,7 @@ type bullet struct {
 	kind       string
 	projectile *weapons.NativeWeaponProjectile
 	origin     killOrigin
+	hostile    bool // also hits the players (gib flames, flame_flight.go)
 }
 
 type explosionState struct {
@@ -144,6 +149,7 @@ type portalState struct {
 	rotationSpeed       float64
 	cellX, cellY, frame int
 	animationTimer      float64
+	alpha               float64 // colour alpha byte +0x5f (portal.go)
 }
 
 type bloodPop struct {
@@ -347,6 +353,7 @@ type playState struct {
 	portals                                                []portalState
 	bloodPops                                              []bloodPop
 	gibBodies                                              []zombieState // gib bodies presenting Disintegrate (zombie_gib.go)
+	gibFlameCountdown                                      int           // global gib flame countdown (flame_flight.go)
 	explosions                                             []explosionState
 	zombieBlasts                                           []zombieBlast
 	hudVisible                                             bool
@@ -521,6 +528,9 @@ func (a *app) Update() error {
 	}
 	if a.menuClick != nil {
 		return a.updateMenuClick()
+	}
+	if a.page == creditsPage && a.credits != nil {
+		return a.updateCredits()
 	}
 	if a.page == 6 {
 		return a.updateAchievements()
@@ -714,8 +724,24 @@ func (a *app) Update() error {
 			a.leaveLevelSelect()
 		} else if a.page > 0 {
 			a.page--
+		} else if index := a.mainMenuBackIndex(); index >= 0 {
+			// MainScreen.txt marks QuitButton IsBack: the back key presses Quit.
+			a.menuSelection = index
+			return a.beginMenuClick(index)
 		}
 		return nil
+	}
+	if a.page == 0 {
+		if dir := mainMenuNavKey(); dir != "" {
+			if target := a.mainMenuNavigate(a.mainMenuIndex(), dir); target >= 0 {
+				a.menuSelection = target
+				a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+				return nil
+			}
+			if dir == "Left" || dir == "Right" {
+				return nil
+			}
+		}
 	}
 	if a.page == 2 {
 		if handled, err := a.updateLevelSelectInput(); handled || err != nil {
@@ -955,12 +981,12 @@ func (a *app) mainMenuHit(x, y int) int {
 func (a *app) Draw(screen *ebiten.Image) {
 	// Hide the OS cursor during play so the red reticule crosshair shows instead.
 	ebiten.SetCursorMode(ebiten.CursorModeVisible)
-	if a.play != nil && !a.mobile && !a.play.paused && !a.sandboxOpen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && !a.play.storyGameOver(a.mode) {
+	if a.play != nil && !a.mobile && !a.play.paused && !a.sandboxOpen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && a.page != creditsPage && !a.play.storyGameOver(a.mode) {
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
 	}
 	a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
 	a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
-	if a.play != nil && a.view == nil && !a.titleScreen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && a.startupFrames <= 0 {
+	if a.play != nil && a.view == nil && !a.titleScreen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && a.page != creditsPage && a.startupFrames <= 0 {
 		screen.Fill(color.Black)
 	} else {
 		screen.Fill(colorDark)
@@ -980,6 +1006,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 		if a.netGuest() {
 			a.drawGuestResultsOverlay(screen)
 		}
+	} else if a.page == creditsPage && a.credits != nil {
+		a.drawCredits(screen)
 	} else if a.page == 6 {
 		a.drawAchievements(screen)
 	} else if a.page == 3 || a.page == 4 {
@@ -1040,6 +1068,9 @@ func (a *app) captureState() string {
 	}
 	if a.page == 4 {
 		return "stats"
+	}
+	if a.page == creditsPage {
+		return "credits"
 	}
 	if a.page == 6 {
 		return "achievements"
@@ -2381,7 +2412,7 @@ func (a *app) activate() error {
 		case 3:
 			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
 		case 4:
-			a.askConfirm("QUIT TO DESKTOP?", func() error { return ebiten.Termination })
+			a.askNativeQuit(func() error { return ebiten.Termination })
 		}
 	case 2:
 		levels := a.filteredLevels()
@@ -3189,6 +3220,9 @@ func (a *app) drawPortal(screen *ebiten.Image, portal portalState) {
 		return
 	}
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	if portal.alpha < 255 {
+		options.ColorScale.ScaleAlpha(float32(portal.alpha / 255))
+	}
 	options.GeoM.Translate(-64*resolution, -64*resolution)
 	options.GeoM.Scale(renderSize/(128*resolution)*a.play.world.Zoom, renderSize/(128*resolution)*a.play.world.Zoom)
 	options.GeoM.Rotate((portal.rotationUnits / 182) * math.Pi / 180)
@@ -3592,6 +3626,10 @@ func (a *app) openPlay() error {
 			if err != nil {
 				return fmt.Errorf("%s: %w", survivalIntroScript, err)
 			}
+			// While a script runs the native player update accepts move and aim input only when the script has switched
+			// them on (the override bytes +0x509ed / +0x509ec, cleared when a scripted entry starts). survival_tute.script
+			// never switches them on, so Barry stands still through GET READY and HERE THEY COME.
+			play.moveControl, play.shootControl = false, false
 		}
 	}
 	if a.coopPlayers > 1 {
@@ -3953,6 +3991,7 @@ func (p *playState) updateBulletsAndKills() {
 				childBullets = append(childBullets, bullet{x: child.X, y: child.Y, vx: child.VX, vy: child.VY, life: child.Life, projectile: &child, origin: b.origin})
 			}
 		}
+		p.stepFlameFlight(&b)
 		b.x += b.vx * dt
 		b.y += b.vy * dt
 		b.life -= dt
@@ -3960,6 +3999,7 @@ func (p *playState) updateBulletsAndKills() {
 			b.projectile.X, b.projectile.Y, b.projectile.Life = b.x, b.y, b.life
 			b.projectile.Age += dt
 		}
+		p.growFlame(&b)
 		if b.life <= 0 || p.bulletInWall(&b) {
 			if b.explodes() {
 				p.detonateFrom(b.x, b.y, b.explosionSound(), b.origin)
@@ -3970,6 +4010,14 @@ func (p *playState) updateBulletsAndKills() {
 		if b.projectile != nil && b.projectile.EntityType == 0x12 {
 			activeBullets = append(activeBullets, b)
 			continue
+		}
+		if !flameLive(b) {
+			// FUN_000a6a58: a flame's hit flags are clear on two of every three updates.
+			activeBullets = append(activeBullets, b)
+			continue
+		}
+		if b.hostile {
+			p.flameHitPlayers(b)
 		}
 		for index := range p.zombies {
 			if p.zombies[index].health <= 0 {
@@ -4118,6 +4166,9 @@ func (p *playState) updateWaves() {
 			next = p.waveIndex + 1
 		}
 		if next < len(p.world.Level.Waves) {
+			// Native advance: the wave counter (1.2.5 +0x450f0) goes up by one and, in survival, the mode hook
+			// FUN_000998ac submits it as SPECIFIC "wave" (see Research/native/achievement-audit-2026-10-10.md).
+			p.achieve.waveAdvances++
 			p.survivalAdvance(next)
 			p.waveIndex = next
 			p.waveElapsed = 0
@@ -4362,12 +4413,14 @@ func (p *playState) updateZombies() {
 	p.refreshNav()
 	p.updateAlertNoise(dt)
 	p.updateZombieGibBodies(dt)
+	p.stepPickupDrops(dt)
 	p.updateZombieShots(dt)
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
 		zombie.rexRageTimer = math.Max(0, zombie.rexRageTimer-1000*dt)
 		if zombie.dying {
+			p.stepGibFlames(zombie)
 			zombie.deathAge += dt
 			continue
 		}
@@ -4542,11 +4595,12 @@ func (p *playState) updatePlayerDeath() bool {
 func (p *playState) updatePortals() {
 	const portalLifetime = 2.0
 	const portalCloseRemaining = -0.6
+	const portalLateRemaining = 1.0
 	const portalRemoveRemaining = -1.0
 	active := p.portals[:0]
 	for _, portal := range p.portals {
 		portal.age += 1.0 / 60.0
-		portal.rotationUnits -= 1.0 / 60.0 * portal.rotationSpeed * portalRotationUnitsPerSecond
+		portal.rotationUnits = portalAngleStep(portal.rotationUnits, portal.rotationSpeed)
 		if portal.animationTimer < 1 {
 			portal.frame = (portal.frame + 1) % 4
 			portal.animationTimer = 100
@@ -4560,9 +4614,13 @@ func (p *playState) updatePortals() {
 		}
 		portal.size += (targetSize - portal.size) * .1
 		targetRotationSpeed := portalOpenRotationSpeed
+		if remaining <= portalLateRemaining {
+			targetRotationSpeed = portalLateRotationSpeed
+		}
 		if remaining < portalCloseRemaining {
 			targetRotationSpeed = 0
 		}
+		portal.alpha = portalAlphaStep(portal.alpha, remaining < portalCloseRemaining)
 		portal.rotationSpeed += (targetRotationSpeed - portal.rotationSpeed) * portalRotationLerp
 		if remaining >= portalRemoveRemaining {
 			active = append(active, portal)

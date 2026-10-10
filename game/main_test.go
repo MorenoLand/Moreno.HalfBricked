@@ -767,8 +767,9 @@ func TestPortalRotationUsesNativeAngleUnits(t *testing.T) {
 		t.Fatalf("portal rotation speed = %.3f, want %.3f", play.portals[0].rotationSpeed, portalOpenRotationSpeed*portalRotationLerp)
 	}
 	play.updatePortals()
-	if play.portals[0].rotationUnits >= 0 {
-		t.Fatalf("portal rotation units = %.3f, want negative native clockwise step", play.portals[0].rotationUnits)
+	// vcvt.u32.f32 saturates the negative step at 0 from a start of 0: no rotation.
+	if play.portals[0].rotationUnits != 0 {
+		t.Fatalf("portal rotation units = %.3f, want 0 (native ushort conversion saturates)", play.portals[0].rotationUnits)
 	}
 }
 

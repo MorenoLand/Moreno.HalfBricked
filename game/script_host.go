@@ -46,6 +46,11 @@ type scriptEntity struct {
 	walkBest, walkStalled   float64 // closest distance to the walk target so far / seconds without getting closer (port watchdog)
 	playing                 bool
 	frameTime               float64
+	// Pickup drop (FUN_000928f4 / constructor 0x00092da0): height +0x1c, vertical speed
+	// +0x20. drop is set by spawnPickup only; landed is true in a frame whose update
+	// ended on the ground (the only frames in which the pickup can be collected).
+	drop, landed  bool
+	lift, liftVel float64
 }
 
 type scriptTexture struct {
@@ -716,7 +721,8 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		}
 		return scripting.CallResult{}, err
 	case "GetCameoY":
-		return scriptValues(0), nil
+		// Native 0x0013f5f8 -> FUN_0012a8dc(1): top of the dialogue panel in script units (cameo_y.go).
+		return scriptValues(float64(scriptCameoY(logicalWidth, logicalHeight))), nil
 	case "DrawText1":
 		return h.drawScriptText(args, false)
 	case "DrawText2":
@@ -725,6 +731,8 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptText1, h.play.scriptText2, h.play.scriptTextVisible = "", "", false
 		return scripting.CallResult{}, nil
 	case "ShowSkip":
+		// Native 0x0013cbcc only stores the byte game+0x36593; no reader exists in the 1.2.5 library (no skip UI asset
+		// either), so the flag has no further effect.
 		show, err := scriptBool(args, 0)
 		h.play.scriptShowSkip = show
 		return scripting.CallResult{}, err
@@ -1563,6 +1571,11 @@ func (p *playState) updatePickups() {
 		if entity == nil {
 			continue
 		}
+		if entity.drop && !entity.landed {
+			// FUN_000928f4 tests the player only in the branch where the drop update ended
+			// below the ground (height < 0).
+			continue
+		}
 		best, bestDistance := -1, pickupReach(entity.texture)
 		for index, target := range targets {
 			if distance := math.Hypot(target.x-entity.x, target.y-entity.y); distance <= bestDistance {
@@ -1635,7 +1648,7 @@ func (p *playState) spawnPickup(name string, point formats.Vec2) {
 	if resolved, ok := p.resolveRandomPickup(name); ok {
 		name = strings.ToLower(resolved)
 	}
-	p.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: name}
+	p.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: name, drop: true, lift: pickupDropHeight}
 }
 
 func (p *playState) collectPickup(name string) {
@@ -1868,7 +1881,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 			if zoom <= 0 {
 				zoom = 1
 			}
-			a.drawPickupBox(screen, (entity.x-a.play.world.CameraX)*zoom+a.play.world.ViewportX, (entity.y-a.play.world.CameraY)*zoom+a.play.world.ViewportY, zoom, entity.texture)
+			a.drawPickupBox(screen, (entity.x-a.play.world.CameraX)*zoom+a.play.world.ViewportX, (entity.y-a.play.world.CameraY)*zoom+a.play.world.ViewportY-entity.lift*zoom, zoom, entity.texture)
 		}
 		return
 	}
@@ -1916,6 +1929,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	screenX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 	screenY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
 	if entity.kind == "pickup" {
+		screenY -= entity.lift * zoom // FUN_000930c8: y - size * 0.375 - height (+0x1c)
 		a.drawPickupBox(screen, screenX, screenY, zoom, entity.texture)
 		if pickupCrateTexture(entity.texture) == "Common0/Textures/Special_Crate" {
 			// Mystery crates show their own "?" and no weapon icon.

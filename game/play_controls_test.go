@@ -54,8 +54,8 @@ func TestSecondaryControlFitsViewportAndMatchesHitbox(t *testing.T) {
 		if !p.secondaryButtonContains(x, y) || p.secondaryButtonContains(x+width, y) {
 			t.Fatal("secondary hitbox differs from drawn geometry")
 		}
-		if !mobile && width != 64*logicalWidth/2560.0 {
-			t.Fatal("desktop secondary control was scaled twice")
+		if width != 64 || height != 32 {
+			t.Fatalf("secondary control %gx%g logical units, want 64x32 so it scales with the window", width, height)
 		}
 	}
 }
@@ -67,5 +67,22 @@ func TestHiddenControlsContinueAcceptingInput(t *testing.T) {
 	p.startControlTouch(100, 200)
 	if p.controls.Visible || p.stick != 1 || p.leftBaseX != 100 || p.leftBaseY != 200 {
 		t.Fatal("hidden control disabled input or lost its origin")
+	}
+}
+
+// The grenade button sits a fixed logical gap (20 less half its height) above the
+// drawn ring at every window size; it used to float further away as the window grew.
+func TestControlButtonStaysAtRingTopWhenWindowGrows(t *testing.T) {
+	for _, mobile := range []bool{false, true} {
+		for _, size := range [][2]int{{480, 320}, {960, 640}, {1920, 1080}} {
+			p := &playState{grenades: 1, controlWidth: size[0], controlHeight: size[1], mobileControls: mobile}
+			p.configureControls(nativeOptionsDefaults(false), size[0], size[1])
+			_, y, _, height := p.secondaryButtonGeometry()
+			_, baseY := p.rightStickAnchor()
+			ringTop := baseY - p.padRingHalfHeight()
+			if got := ringTop - (y + height/2); got < 3.99 || got > 4.01 {
+				t.Fatalf("mobile=%v %v: button bottom is %g above the ring, want 4", mobile, size, got)
+			}
+		}
 	}
 }

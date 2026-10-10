@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -15,17 +16,37 @@ type wireCombo struct {
 	R, G, B, A uint8
 }
 
-// comboShownTrackers lists the trackers whose count and popup are drawn. Both slots are drawn on both builds:
-// the count display stays as it was (the user asked for it to be left alone).
+// comboShownTrackers lists what is drawn: exactly one combo count, the live counter, which stands for both held slots
+// (see shownPopup). Released trackers draw only their tier or bonus words ("Good", "+2", "Epic Fail"); their count text
+// ("x35") would be a second counter and is not drawn. Their multiplier bonus still goes to the score multiplier.
 func (p *playState) comboShownTrackers() []*comboTracker {
-	return p.combo.trackers()
+	var list []*comboTracker
+	// The counter is shown by hits and kills, not by holding a weapon: nothing is drawn while the count is 0.
+	if live := p.combo.liveCounter(); live != nil && p.combo.sharedHits() > 0 {
+		list = append(list, live)
+	}
+	for _, t := range p.combo.popups {
+		if !strings.HasPrefix(t.text, "x") {
+			list = append(list, t)
+		}
+	}
+	return list
+}
+
+// shownPopup is the popup of a shown tracker. The live counter reads the shared count of both held slots.
+func (c *comboSystem) shownPopup(t *comboTracker) (comboPopup, bool) {
+	popup, ok := t.popup()
+	if ok && t == c.liveCounter() {
+		popup.Text = "x" + strconv.Itoa(c.sharedHits())
+	}
+	return popup, ok
 }
 
 // comboWire exports the host's popups and HUD flash for guests.
 func (p *playState) comboWire() ([]wireCombo, float64, [3]float64) {
 	var out []wireCombo
 	for _, t := range p.comboShownTrackers() {
-		if popup, ok := t.popup(); ok {
+		if popup, ok := p.combo.shownPopup(t); ok {
 			out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 		}
 	}
@@ -52,7 +73,7 @@ func (p *playState) comboPopups() []comboPopup {
 	}
 	var list []comboPopup
 	for _, t := range p.comboShownTrackers() {
-		if popup, ok := t.popup(); ok {
+		if popup, ok := p.combo.shownPopup(t); ok {
 			list = append(list, popup)
 		}
 	}
@@ -77,7 +98,7 @@ func (a *app) drawComboHUD(screen *ebiten.Image, x, y float64) {
 		return
 	}
 	for _, t := range a.play.comboShownTrackers() {
-		if popup, ok := t.popup(); ok {
+		if popup, ok := a.play.combo.shownPopup(t); ok {
 			a.drawComboText(screen, popup, t)
 		}
 	}

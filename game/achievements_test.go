@@ -92,7 +92,8 @@ func TestLocalAchievementsUseSupportedScopesOnly(t *testing.T) {
 		t.Fatal("unmeasured stats substituted")
 	}
 	a.statistics.Available["Zombies Killed"], a.statistics.Available["Highest Survival Wave"] = true, true
-	if !a.awardLocalAchievements(nil) || !a.achievementUnlocks["total"] || !a.achievementUnlocks["wave"] || a.achievementUnlocks["pickup"] {
+	if !a.awardLocalAchievements(nil) || !a.achievementUnlocks["total"] || a.achievementUnlocks["wave"] || a.achievementUnlocks["pickup"] {
+		// "wave" is the live survival wave counter (playAchievementMet), not the stored best wave.
 		t.Fatal("achievement scope mismatch")
 	}
 	if a.awardLocalAchievements(nil) {

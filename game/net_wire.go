@@ -59,6 +59,10 @@ type wireZombie struct {
 	Brightness                                                   float64 // +0x2b8 tint (zombie_model.go)
 	Speedy                                                       bool    // afterimage trail
 	Ghosts                                                       [2]wireGhost
+	// Gib state (zombie_gib.go): native death state 1/2, the Disintegrate body flag and its age.
+	DeathState int
+	Gibbed     bool
+	PresentAge float64
 }
 
 type wireBullet struct {
@@ -71,6 +75,7 @@ type wirePickup struct {
 	ID      int
 	X, Y    float64
 	Texture string
+	Lift    float64
 }
 
 type wireSnapshot struct {
@@ -79,6 +84,7 @@ type wireSnapshot struct {
 	Strings    []string
 	Players    []wirePlayer
 	Zombies    []wireZombie
+	GibBodies  []wireZombie // Disintegrate bodies (playState.gibBodies)
 	Bullets    []wireBullet
 	Pickups    []wirePickup
 	Mines      [][3]float64
@@ -130,6 +136,7 @@ type wireBlood struct {
 type portalState2 struct {
 	X, Y, Age, Size, Rotation, Speed float64
 	CellX, CellY, Frame              int
+	Alpha                            float64
 }
 
 func round(v float64) float64 { return math.Round(v*10) / 10 }
@@ -162,7 +169,10 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 		if z.spawnAway {
 			continue
 		}
-		s.Zombies = append(s.Zombies, wireZombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts)})
+		s.Zombies = append(s.Zombies, p.zombieToWire(z, intern))
+	}
+	for _, z := range p.gibBodies {
+		s.GibBodies = append(s.GibBodies, p.zombieToWire(z, intern))
 	}
 	for _, shot := range p.zombieShots {
 		projectile := shot.projectile
@@ -178,7 +188,7 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 	}
 	for id, e := range p.scriptEntities {
 		if e != nil && e.kind == "pickup" {
-			s.Pickups = append(s.Pickups, wirePickup{ID: id, X: round(e.x), Y: round(e.y), Texture: e.texture})
+			s.Pickups = append(s.Pickups, wirePickup{ID: id, X: round(e.x), Y: round(e.y), Texture: e.texture, Lift: round(e.lift)})
 		}
 	}
 	for _, b := range p.thrown {
@@ -204,7 +214,7 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 		s.Blood = append(s.Blood, wireBlood{X: round(b.x), Y: round(b.y), Age: b.age, Variant: b.variant})
 	}
 	for _, o := range p.portals {
-		s.Portals = append(s.Portals, portalState2{X: o.x, Y: o.y, Age: o.age, Size: o.size, Rotation: o.rotationUnits, Speed: o.rotationSpeed, CellX: o.cellX, CellY: o.cellY, Frame: o.frame})
+		s.Portals = append(s.Portals, portalState2{X: o.x, Y: o.y, Age: o.age, Size: o.size, Rotation: o.rotationUnits, Speed: o.rotationSpeed, CellX: o.cellX, CellY: o.cellY, Frame: o.frame, Alpha: o.alpha})
 	}
 	s.Combo, s.HudFlash, s.HudColor = p.comboWire()
 	s.Over = p.allPlayersDown()
@@ -267,7 +277,11 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	}
 	p.zombies = p.zombies[:0]
 	for _, z := range s.Zombies {
-		p.zombies = append(p.zombies, zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}})
+		p.zombies = append(p.zombies, zombieFromWire(z, str))
+	}
+	p.gibBodies = p.gibBodies[:0]
+	for _, z := range s.GibBodies {
+		p.gibBodies = append(p.gibBodies, zombieFromWire(z, str))
 	}
 	p.bullets = p.bullets[:0]
 	for _, b := range s.Bullets {
@@ -280,7 +294,7 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	}
 	p.scriptEntities = map[int]*scriptEntity{}
 	for _, e := range s.Pickups {
-		p.scriptEntities[e.ID] = &scriptEntity{id: e.ID, kind: "pickup", texture: e.Texture, x: e.X, y: e.Y, scaleX: 1, scaleY: 1, alpha: 1}
+		p.scriptEntities[e.ID] = &scriptEntity{id: e.ID, kind: "pickup", texture: e.Texture, x: e.X, y: e.Y, scaleX: 1, scaleY: 1, alpha: 1, lift: e.Lift}
 	}
 	p.mines = p.mines[:0]
 	for _, m := range s.Mines {
@@ -304,7 +318,7 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	}
 	p.portals = p.portals[:0]
 	for _, o := range s.Portals {
-		p.portals = append(p.portals, portalState{x: o.X, y: o.Y, age: o.Age, size: o.Size, rotationUnits: o.Rotation, rotationSpeed: o.Speed, cellX: o.CellX, cellY: o.CellY, frame: o.Frame})
+		p.portals = append(p.portals, portalState{x: o.X, y: o.Y, age: o.Age, size: o.Size, rotationUnits: o.Rotation, rotationSpeed: o.Speed, cellX: o.CellX, cellY: o.CellY, frame: o.Frame, alpha: o.Alpha})
 	}
 	p.progressMirror, p.progressValue = s.HasProg, s.Progress
 	switch {
@@ -406,4 +420,14 @@ func ghostsFromWire(ghosts [2]wireGhost) (out [2]zombieGhost) {
 		out[i] = zombieGhost{x: g.X, y: g.Y, w: g.W, h: g.H, frame: g.Frame, angle: g.Angle, alpha: g.Alpha, flipX: g.FlipX}
 	}
 	return out
+}
+
+// zombieToWire is the snapshot form of one zombie (or gib body).
+func (p *playState) zombieToWire(z zombieState, intern func(string) int) wireZombie {
+	return wireZombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts), DeathState: z.deathState, Gibbed: z.gibbed, PresentAge: z.presentAge}
+}
+
+// zombieFromWire rebuilds a zombie from its snapshot form.
+func zombieFromWire(z wireZombie, str func(int) string) zombieState {
+	return zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, deathState: z.DeathState, gibbed: z.Gibbed, presentAge: z.PresentAge, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}}
 }

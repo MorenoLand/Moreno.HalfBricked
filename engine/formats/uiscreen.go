@@ -29,7 +29,7 @@ type UIComponent struct {
 var uiClassPattern = regexp.MustCompile(`(Component[A-Za-z]+|UIModifier[A-Za-z]+)\x00`)
 
 // Property names decoded from component records.
-var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch"}
+var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch", "colour", "textColour"}
 
 func ParseUIScreen(data []byte) (*UIScreen, error) {
 	if len(data) < 64 || string(data[:4]) != "FSIU" {
@@ -241,4 +241,25 @@ func (c *UIComponent) Anchor() (x, y float64) {
 	}
 	localX, localY := c.Position()
 	return x + localX, y + localY
+}
+
+// FontSize returns the component's fontSize property.
+func (c *UIComponent) FontSize() (float64, bool) { return c.float("fontSize", 0) }
+
+// Colour returns a colour property ("colour" or "textColour") as 0..255 channels
+// (the compiled screen stores four floats).
+func (c *UIComponent) Colour(name string) (r, g, b, a float64, ok bool) {
+	raw, present := c.props[name]
+	if !present || len(raw) < 16 {
+		return 0, 0, 0, 0, false
+	}
+	values := [4]float64{}
+	for index := range values {
+		value := math.Float32frombits(binary.LittleEndian.Uint32(raw[4*index:]))
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return 0, 0, 0, 0, false
+		}
+		values[index] = float64(value)
+	}
+	return values[0], values[1], values[2], values[3], true
 }

@@ -41,6 +41,17 @@ type achievementProgress struct {
 	shots, hits                            int32
 	nonPistol, died, banked                bool
 	shieldTimer                            float64
+	// waveAdvances is the native wave counter (1.2.5 frame +0x450f0): 0 at the level start, +1 per wave advance
+	// that has a next wave. It is not waveIndex+1, because survival waves loop through next_wave.
+	waveAdvances int32
+	// sandboxUsed is set when the F1 sandbox changes the run. The original has no such menu, so a run that used it
+	// never awards achievements (a port policy, not a native rule).
+	sandboxUsed bool
+}
+
+// achievementsTainted reports whether this run was altered by the port-only sandbox or cheat toggles.
+func (p *playState) achievementsTainted() bool {
+	return p != nil && (p.achieve.sandboxUsed || p.cheats != cheatFlags{})
 }
 
 func (p *playState) newShot() int {
@@ -275,6 +286,10 @@ func (a *app) playAchievementMet(p *playState, entry formats.Achievement) bool {
 		return int(p.achieve.shieldKills[entry.SpecificType]) >= entry.Total
 	case entry.Type == "SPECIFIC" && entry.Check == "ge" && entry.SpecificType == "combo":
 		return int(p.achieve.best["combo"]) >= entry.Total
+	case entry.Type == "SPECIFIC" && entry.Check == "ge" && entry.SpecificType == "wave":
+		// FUN_000998ac is the survival mode's advance hook (vtable +0x44); the story mode's is a no-op. It submits
+		// the new wave counter as "wave" (the call's r1 is the incremented counter at 0x001232a4).
+		return p.isSurvival() && int(p.achieve.waveAdvances) >= entry.Total
 	}
 	return false
 }
@@ -311,6 +326,21 @@ func (a *app) bankLevelAchievementProgress(info *formats.LevelInfo) {
 	}
 	p.achieve.banked = true
 	s := &a.achieveSession
+	if p.achievementsTainted() {
+		// A sandbox run counts for nothing: it breaks the one-sitting story and earns no death-free or accuracy credit.
+		s.storyBroken = true
+		if s.chapter == nil {
+			s.chapter = map[int][2]int32{}
+		}
+		totals := s.chapter[info.WorldIndex]
+		totals[0] += max(p.achieve.shots, 1)
+		s.chapter[info.WorldIndex] = totals
+		if hasLevelFlag(*info, "ENDWORLD") {
+			s.chapterAccuracy = -1
+			delete(s.chapter, info.WorldIndex)
+		}
+		return
+	}
 	if !p.achieve.died {
 		if s.deathFree == nil {
 			s.deathFree = map[string]bool{}
@@ -350,7 +380,7 @@ func (a *app) allStoryLevelsDeathFree() bool {
 // completionAchievementMet evaluates the SPECIFIC conditions that resolve when a
 // story level is completed.
 func (a *app) completionAchievementMet(entry formats.Achievement, info *formats.LevelInfo) bool {
-	if info == nil || a.mode != 0 || a.play == nil || entry.Type != "SPECIFIC" {
+	if info == nil || a.mode != 0 || a.play == nil || entry.Type != "SPECIFIC" || a.play.achievementsTainted() {
 		return false
 	}
 	s := &a.achieveSession

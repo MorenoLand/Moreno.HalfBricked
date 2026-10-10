@@ -754,6 +754,15 @@ func (e *scriptEntity) entityTypeOrEmpty() string {
 
 // ptCheckContinue verifies that completing info leads to its declared next level.
 func ptCheckContinue(a *app, info formats.LevelInfo, out *ptOutcome, err error) {
+	if err == nil && a.credits != nil {
+		// HD native Continue enters the Credits state first (final level, or a SHOWCREDITS level); leave it the
+		// way Back does and check the destination.
+		if a.page != creditsPage {
+			out.fail("level %s: Credits open but page is %d", info.ID, a.page)
+		}
+		out.note("HD Credits state entered after %s", info.ID)
+		err = a.finishCredits()
+	}
 	if info.NextLevel == "" {
 		// terminal story level: Continue must not fail the frame; it leaves for the main menu
 		if err != nil {
@@ -761,7 +770,7 @@ func ptCheckContinue(a *app, info formats.LevelInfo, out *ptOutcome, err error) 
 		} else if a.play != nil || a.page != 0 {
 			out.fail("final level %s: Continue did not return to the main menu (page %d)", info.ID, a.page)
 		}
-		out.note("final story level: Continue returns to the main menu (native credits/rating flow not ported)")
+		out.note("final story level: Continue returns to the main menu (SD: Credits state not decoded; HD: through Credits)")
 		return
 	}
 	if err != nil {

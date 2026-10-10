@@ -291,6 +291,15 @@ func TestContinueOnTheFinalStoryLevelLeavesForTheMainMenu(t *testing.T) {
 			if err := a.continueStoryLevel(a.play.levelInfo); err != nil {
 				t.Fatalf("%s %s: Continue failed: %v", cache.name, info.ID, err)
 			}
+			if a.credits != nil {
+				// HD (1.2.5) Continue enters the Credits state; leaving it (Back) must reach the main menu.
+				if a.page != creditsPage || cache.name == "sd-1.2.1" {
+					t.Errorf("%s %s: Credits page %d", cache.name, info.ID, a.page)
+				}
+				if err := a.finishCredits(); err != nil {
+					t.Fatalf("%s %s: leaving Credits: %v", cache.name, info.ID, err)
+				}
+			}
 			if a.play != nil || a.page != 0 {
 				t.Errorf("%s %s: Continue left page %d, play %v; want the main menu", cache.name, info.ID, a.page, a.play != nil)
 			}

@@ -1,6 +1,10 @@
 package game
 
-import "math"
+import (
+	"math"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
+)
 
 // Projectile versus level geometry (libmortargame.so v7).
 //
@@ -51,7 +55,7 @@ const flameWallRadius = .5
 // and zeroes the speed factor, so it stops against the wall and lives out its
 // lifetime there.
 func (p *playState) bulletInWall(b *bullet) bool {
-	if b.projectile != nil && b.projectile.EntityType == 0x16 && (b.vx != 0 || b.vy != 0) {
+	if b.projectile != nil && b.projectile.EntityType == 0x16 && flameSpeed(b, flameUpdateCount(b.projectile.Age)) > float64(weapons.FlameStopSpeed) {
 		radius := b.projectile.Width * flameWallRadius
 		if pushX, pushY := p.projectileTilePush(b.x, b.y, radius); pushX != 0 || pushY != 0 {
 			b.x += pushX

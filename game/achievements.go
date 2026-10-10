@@ -17,6 +17,11 @@ func (a *app) updateGameplayAchievements(p *playState) error {
 	if p == nil || p.paused {
 		return nil
 	}
+	// Active gameplay only: every caller sits behind the page, results, sandbox and pause gates of app.Update.
+	// A run altered through the port-only sandbox never awards (the original has no such menu).
+	if p.achievementsTainted() {
+		return nil
+	}
 	sample := p.achievementTracking.Update(achievements.AchievementTrackingFrame{PlayerPresent: true, Kills: p.combatKillCount, Health: float32(p.health), MotionX: p.achievementMotionX, MotionY: p.achievementMotionY, ScriptActive: p.scriptRuntime != nil && !p.scriptRuntime.Done(), Dt: float32(1.0 / 60.0)})
 	changed := false
 	for _, entry := range a.achievements {
@@ -41,13 +46,15 @@ func (a *app) awardLocalAchievements(info *formats.LevelInfo) bool {
 		met := false
 		if entry.Type == "SPECIFIC" && (entry.SpecificType == "pistol_only" || entry.SpecificType == "continue" || entry.SpecificType == "death" || entry.SpecificType == "accuracy") {
 			met = a.completionAchievementMet(entry, info)
+		} else if a.play.achievementsTainted() {
+			// sandbox run: no award from this play (nil-safe: a nil play is never tainted)
 		} else if entry.Type == "STORY" {
 			met = info != nil && hasLevelFlag(*info, "ENDWORLD") && info.WorldIndex == entry.Total
 		} else if entry.SpecificType == "total" {
 			met = a.statistics.Available["Zombies Killed"] && a.statistics.ZombiesKilled >= int32(entry.Total)
-		} else if entry.SpecificType == "wave" {
-			met = a.statistics.Available["Highest Survival Wave"] && a.statistics.HighestSurvivalWave >= int32(entry.Total)
 		}
+		// "wave" is not derived from a stored statistic: the native hook submits the live wave counter
+		// (playAchievementMet), and waveIndex+1 saturates at the wave table length for looping survival maps.
 		if met {
 			a.unlockAchievement(entry)
 			changed = true
@@ -92,6 +99,7 @@ func (a *app) updateAchievements() error {
 func (a *app) drawAchievements(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
 	a.textCentered(screen, "ACHIEVEMENTS", 14, .75)
+	a.textCentered(screen, a.achievementProgressLine(), 37, .3)
 	for row := 0; row < 5 && a.achievementOffset+row < len(a.achievements); row++ {
 		entry := a.achievements[a.achievementOffset+row]
 		y := float64(48 + row*45)
@@ -204,4 +212,20 @@ func (a *app) drawAchievementIcon(screen *ebiten.Image, entry formats.Achievemen
 		options.ColorScale.Scale(.45, .45, .45, 1)
 	}
 	a.drawImage(screen, icon, options)
+}
+
+// achievementProgressText is AchievementsScreen.uiscreen's ProgressText line (the
+// shipped placeholder reads "Unlocked: 3/12").
+func achievementProgressText(unlocked, total int) string {
+	return fmt.Sprintf("Unlocked: %d/%d", unlocked, total)
+}
+
+func (a *app) achievementProgressLine() string {
+	unlocked := 0
+	for _, entry := range a.achievements {
+		if a.achievementUnlocks[entry.ID] {
+			unlocked++
+		}
+	}
+	return achievementProgressText(unlocked, len(a.achievements))
 }

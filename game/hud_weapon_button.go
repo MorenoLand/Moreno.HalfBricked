@@ -73,17 +73,11 @@ func (a *app) drawButtonReadout(screen *ebiten.Image, x, y float64, sheetName st
 	density := a.pack.TextureSourceScale(sheetName)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(icon.Bounds().Dx())/2, -float64(icon.Bounds().Dy())/2)
-	// Sheet cells are twice the grenade icon's size; keep the icon inside the plate.
+	// Sheet cells are twice the grenade icon's size; keep the icon inside the plate. Plate, icon and count are all in
+	// logical units, so they scale together with the window (drawImage and the text apply the frontend scale).
 	iconScale := .5
-	iconWidth := float64(icon.Bounds().Dx())
-	if a.mobile {
-		options.GeoM.Scale(iconScale/density, iconScale/density)
-		iconWidth *= iconScale / density
-	} else {
-		sx, sy := a.renderScale()
-		options.GeoM.Scale(iconScale/sx, iconScale/sy)
-		iconWidth *= iconScale / sx
-	}
+	options.GeoM.Scale(iconScale/density, iconScale/density)
+	iconWidth := float64(icon.Bounds().Dx()) * iconScale / density
 	_, iconY := secondaryIconPosition(x, y, offset, a.mobile)
 	// Centre the icon and the count together so three-digit counts stay on the plate.
 	countWidth := a.fontTextWidth(count, controlCountTextScale)

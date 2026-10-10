@@ -517,6 +517,26 @@ func (p *playState) updateCombo(dt float64) {
 	c.updateHUD(dt, p.multiplier)
 }
 
+// liveCounter is the held tracker whose popup stands for the one shared count: the primary, or the secondary when
+// there is no primary.
+func (c *comboSystem) liveCounter() *comboTracker {
+	if c.primary != nil {
+		return c.primary
+	}
+	return c.secondary
+}
+
+// sharedHits is the one combo count the player sees: the hits of both held slots added together.
+func (c *comboSystem) sharedHits() int {
+	total := 0
+	for _, t := range []*comboTracker{c.primary, c.secondary} {
+		if t != nil {
+			total += int(t.counter)
+		}
+	}
+	return total
+}
+
 func (c *comboSystem) trackers() []*comboTracker {
 	list := make([]*comboTracker, 0, 2+len(c.popups))
 	if c.primary != nil {

@@ -92,10 +92,15 @@ func (a *app) storyLevelSelection(id string) (int, int, error) {
 	return 0, 0, fmt.Errorf("story continuation level %q not found", id)
 }
 func (a *app) continueStoryLevel(info formats.LevelInfo) error {
+	// Native Continue (HD 1.2.5, EndScreen update 0x000ce2a0..0x000ce458): an empty nextLevel, or a nextLevel
+	// the level manager cannot find, enters the Credits state and then the main menu; a found nextLevel
+	// on a SHOWCREDITS level enters Credits and then loads it; otherwise the next level loads directly.
+	// The SD (1.2.1) Credits state is not decoded, so SD keeps the direct behaviour.
 	if info.NextLevel == "" {
-		// Terminal story level (World5Level2, president_story_2): there is nothing to continue into. The native
-		// end-of-story branch (credits / rate prompt for ENDSTORY, RATEONFINISH, SHOWCREDITS) is not decoded, so
-		// leave the level for the main menu instead of failing the frame.
+		if a.creditsAvailable() {
+			return a.openCredits(info, creditsExit{})
+		}
+		// Terminal story level without a decoded Credits state: leave for the main menu.
 		if err := a.recordStoryCompletion(info); err != nil {
 			return err
 		}
@@ -107,7 +112,13 @@ func (a *app) continueStoryLevel(info formats.LevelInfo) error {
 	}
 	world, level, err := a.storyLevelSelection(info.NextLevel)
 	if err != nil {
+		if a.creditsAvailable() {
+			return a.openCredits(info, creditsExit{})
+		}
 		return err
+	}
+	if hasLevelFlag(info, "SHOWCREDITS") && a.creditsAvailable() {
+		return a.openCredits(info, creditsExit{hasNext: true, world: world, level: level})
 	}
 	if err := a.recordStoryCompletion(info); err != nil {
 		return err

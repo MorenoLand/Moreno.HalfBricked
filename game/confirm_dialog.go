@@ -14,10 +14,66 @@ import (
 type confirmDialog struct {
 	title string
 	yes   func() error
+	// native marks the QuitPrompt.uiscreen dialog: Quit / Back buttons, Back
+	// focused by default (QuitPrompt.txt: Back IsDefault IsBack), Left/Right moves
+	// focus and Enter presses the focused button.
+	native          bool
+	yesText, noText string
+	focusYes        bool
 }
 
 func (a *app) askConfirm(title string, yes func() error) {
 	a.confirm = &confirmDialog{title: title, yes: yes}
+}
+
+// askNativeQuit opens the QuitPrompt screen's dialog: the text and button labels
+// come from QuitPrompt.uiscreen ("Quit Age of Zombies?", "Quit", "Back").
+func (a *app) askNativeQuit(yes func() error) {
+	title, yesText, noText := nativeQuitPromptText(a.loadQuitPromptScreen())
+	a.confirm = &confirmDialog{title: title, yes: yes, native: true, yesText: yesText, noText: noText}
+}
+
+// nativeQuitPromptText reads the dialog strings out of QuitPrompt.uiscreen,
+// falling back to the shipped English text when the pack has no screen.
+func nativeQuitPromptText(screen *formats.UIScreen) (title, yes, no string) {
+	title, yes, no = "Quit Age of Zombies?", "Quit", "Back"
+	if screen == nil {
+		return
+	}
+	if c := screen.Find("ComponentText"); c != nil && c.String("text") != "" {
+		title = c.String("text")
+	}
+	if c := screen.Find("QuitYesButton"); c != nil && c.String("text") != "" {
+		yes = c.String("text")
+	}
+	if c := screen.Find("QuitNoButton"); c != nil && c.String("text") != "" {
+		no = c.String("text")
+	}
+	return
+}
+
+func (a *app) loadQuitPromptScreen() *formats.UIScreen {
+	if a.pack == nil {
+		return nil
+	}
+	path, ok := a.pack.SourcePath("Common0/UserInterface/screens/QuitPrompt.uiscreen")
+	if !ok {
+		return nil
+	}
+	reader, err := a.pack.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer reader.Close()
+	data, err := ioReadAll(reader)
+	if err != nil {
+		return nil
+	}
+	screen, err := formats.ParseUIScreen(data)
+	if err != nil {
+		return nil
+	}
+	return screen
 }
 
 func confirmButtons() (yes, no lobbyButton) {
@@ -35,6 +91,18 @@ func (a *app) updateConfirm() (bool, error) {
 	yesButton, noButton := confirmButtons()
 	accept := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeyY)
 	cancel := inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyN)
+	if c.native {
+		// Enter presses the focused button: Back unless focus moved to Quit.
+		enter := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter)
+		accept = inpututil.IsKeyJustPressed(ebiten.KeyY) || (enter && c.focusYes)
+		cancel = cancel || (enter && !c.focusYes)
+		if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
+			c.focusYes = true // Back Left:Quit
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyRight) {
+			c.focusYes = false // Quit Right:Back
+		}
+	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		x, y := a.pointer()
 		switch {
@@ -65,10 +133,16 @@ func (a *app) drawConfirm(screen *ebiten.Image) {
 		a.drawRect(screen, 115, 95, 250, 110, color.RGBA{18, 22, 28, 240})
 	}
 	a.textCentered(screen, a.confirm.title, 122, .5)
-	a.textCentered(screen, "Are you sure?", 142, .38)
+	if !a.confirm.native {
+		a.textCentered(screen, "Are you sure?", 142, .38)
+	}
 	pointerX, pointerY := a.pointer()
 	yesButton, noButton := confirmButtons()
+	if a.confirm.native {
+		yesButton.label, noButton.label = a.confirm.yesText, a.confirm.noText
+	}
 	for _, button := range []lobbyButton{yesButton, noButton} {
-		a.drawLobbyButton(screen, button, image.Pt(pointerX, pointerY).In(button.rect))
+		focused := a.confirm.native && (button.action == "yes") == a.confirm.focusYes
+		a.drawLobbyButton(screen, button, focused || image.Pt(pointerX, pointerY).In(button.rect))
 	}
 }

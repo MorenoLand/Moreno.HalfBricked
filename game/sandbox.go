@@ -269,6 +269,7 @@ func (a *app) updateSandbox() bool {
 	shift := ebiten.IsKeyPressed(ebiten.KeyShiftLeft) || ebiten.IsKeyPressed(ebiten.KeyShiftRight)
 	for index, item := range a.sandboxItems() {
 		if slot := index - a.sandboxScroll; slot >= 0 && slot < sandboxVisible && point.In(sandboxItemRect(slot)) {
+			a.play.achieve.sandboxUsed = true
 			item.do(a, shift)
 			a.playSound("audio/sound/sfx/menu_select.ogg", .6)
 			return true

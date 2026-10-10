@@ -165,7 +165,11 @@ func TestCoopPlayerPickupsAreTheirOwn(t *testing.T) {
 	p.updateCoopPlayers([]playerInput{{}})
 	player := p.coop.players[0]
 	p.spawnPickup("p_shotgun", formats.Vec2{X: player.body.x, Y: player.body.y})
-	p.updatePickups()
+	for i := 0; i < 120; i++ {
+		// the crate falls from 250 px and is only taken on a ground frame (pickup_drop.go)
+		p.stepPickupDrops(1.0 / 60)
+		p.updatePickups()
+	}
 	if player.body.weapon.GunType != "SHOTGUN" {
 		t.Fatalf("player 2 holds %s after touching a shotgun", player.body.weapon.GunType)
 	}
