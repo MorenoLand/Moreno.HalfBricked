@@ -261,8 +261,10 @@ func TestComboPlayerDeathEpicFailsAndResetsMultiplier(t *testing.T) {
 	}
 	p.health = p.maxHealth
 	p.updateCombo(1.0 / 60)
-	if p.combo.primary == nil || p.combo.primary.counter != 0 {
-		t.Fatal("a fresh tracker is created after respawn")
+	// FUN_00094c6c re-equips the pistol (FUN_0009458c(player, 0, 0)) on death and the
+	// pistol class never owns a combo tracker.
+	if p.weapon.GunType != "PISTOL" || p.combo.primary != nil {
+		t.Fatalf("death puts the pistol back: weapon %s, tracker %v", p.weapon.GunType, p.combo.primary)
 	}
 }
 

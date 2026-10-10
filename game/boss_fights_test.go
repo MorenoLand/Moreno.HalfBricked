@@ -188,12 +188,19 @@ func TestGangsterBossFight(t *testing.T) { bossLevelSweep(t, "world1_level2", "b
 func TestRobotBossFight(t *testing.T)    { bossLevelSweep(t, "world4_level2", "boss_robot", false) }
 func TestWesternBossFight(t *testing.T)  { bossLevelSweep(t, "world5_level2", "boss_west", false) }
 
-// The dino_boss intro never recentres on the rex natively: the script's own camera
-// writes only SetCamera(camX, camY) from a stale value (the RexWalk lerp lines are
-// commented out), auto-tracking is off while a script runs (FUN_0013c170 gate in
-// FUN_000c35b0 / FUN_00096030 follows nothing), and CameraShake only adds a decaying
-// offset. GetCameraX/Y return centre + shake offset (FUN_00095aa8). See
-// Research/native/rex-intro-camera-2026-10-09.md.
+// The dino_boss intro moves the camera centre only through its own SetCamera calls (1.2.5):
+//   - SetCamera stores the clamped centre at once (FUN_0013de0c -> FUN_00095dd8, param 0).
+//   - The per-camera updater FUN_00096030 leaves the centre alone here: no follow entity
+//     (cam+0x4c, cleared by the level entry script's SetCameraFollow(0)), no pan (timer cam+0x58
+//     and flag cam+0x78 are cleared once no script runs), and auto-tracking FUN_000c35b0 is gated
+//     off while the script flag is set (FUN_0013c170).
+//   - GetCameraX = centre + shake offset (FUN_00095aa8 = cam+0x24 + cam+0x18), so the boss lerp
+//     centre' = clamp(0.95*(centre + shake) + 0.05*Barry) feeds the shake back into the centre.
+//   - The shake offset is bounded by its targets: X by 9*ampX = 13.5 px, Y by 9*ampY = 9 px
+//     (FUN_00095d38 / FUN_00095c14), and it stops stepping when the 1.5 s timer ends.
+//   - WaitInit(1000) is 60 ticks; RexWalk then reuses the stale camX, so the centre stays put.
+//
+// See Research/native/rex-intro-camera-2026-10-09.md.
 func TestRexIntroCameraStaysOnBarryAndReturnsAfterTheScript(t *testing.T) {
 	h := script125CachedHost(t, "world0_level2")
 	p := h.play
@@ -216,35 +223,94 @@ func TestRexIntroCameraStaysOnBarryAndReturnsAfterTheScript(t *testing.T) {
 	rex := h.findZombie(rexID)
 	p.world.SetZoom(.65)
 	p.setScriptCamera(p.x, p.y)
+	// dino_boss.script: desiredCamX = GetPlayerX() before the first Update. Script numbers returned by
+	// the host are float32 (native callbacks push a float), so the desired point is float32 as well.
+	desiredX, desiredY := float64(float32(p.x)), float64(float32(p.y))
 	if err := h.app.updateBossScripts(); err != nil {
 		t.Fatal(err)
 	}
 	startX, startY := p.scriptCameraCenterX(), p.scriptCameraCenterY()
-	maxDrift := 0.0
+	if math.Abs(startX-p.x) > 1e-9 || math.Abs(startY-p.y) > 1e-9 {
+		t.Fatalf("camera starts at %.3f,%.3f, want Barry at %.3f,%.3f", startX, startY, p.x, p.y)
+	}
+	const (
+		shakeMaxX  = 9 * 1.5 // CameraShake(rexX, rexY, 1.5, 1.5): ampX 1.5, first target 9*ampX
+		shakeMaxY  = 9 * 1.0 // ampY 1.0
+		lerpFrames = 61      // WaitInit(1000): 60 ticks of 1000/60 ms, plus one for rounding
+	)
+	clampX := func(x float64) float64 {
+		half := float64(logicalWidth) / (2 * p.world.Zoom)
+		return math.Max(half, math.Min(math.Max(half, float64(p.world.Level.Width*p.tileSize)-half), x))
+	}
+	clampY := func(y float64) float64 {
+		half := float64(logicalHeight) / (2 * p.world.Zoom)
+		return math.Max(half, math.Min(math.Max(half, float64(p.world.Level.Height*p.tileSize)-half), y))
+	}
+	cameraValue := func(name string) float64 {
+		t.Helper()
+		result, err := h.Call(name, nil)
+		if err != nil || len(result.Values) != 1 {
+			t.Fatalf("%s: %v (%#v)", name, err, result)
+		}
+		value, ok := result.Values[0].(float64)
+		if !ok {
+			t.Fatalf("%s returned %#v", name, result.Values[0])
+		}
+		return value
+	}
+	motion, frozen := 0, false
+	maxFeedback := 0.0
 	for frame := 0; frame < 6000 && p.scriptRuntime != nil && !p.scriptRuntime.Done(); frame++ {
 		if p.dialogueIndex < len(p.dialogue) && frame%60 == 0 {
 			p.dialogueIndex++
 		}
 		p.aimActive = true
+		beforeX, beforeY := p.scriptCameraCenterX(), p.scriptCameraCenterY()
+		// GetCameraX/Y as the script reads them this tick: centre plus the shake offset.
+		seenX, seenY := cameraValue("GetCameraX"), cameraValue("GetCameraY")
+		if math.Abs(seenX-(beforeX+p.shake.currentX)) > 1e-3 || math.Abs(seenY-(beforeY+p.shake.currentY)) > 1e-3 {
+			t.Fatalf("GetCameraX/Y = %.6f,%.6f, want centre %.6f,%.6f plus shake %.6f,%.6f (float32)", seenX, seenY, beforeX, beforeY, p.shake.currentX, p.shake.currentY)
+		}
+		maxFeedback = math.Max(maxFeedback, math.Max(math.Abs(seenX-beforeX), math.Abs(seenY-beforeY)))
 		if err := p.updateScript(); err != nil {
 			t.Fatal(err)
 		}
-		p.shakeOffX, p.shakeOffY = p.updateShake(1.0 / 60.0)
+		afterX, afterY := p.scriptCameraCenterX(), p.scriptCameraCenterY()
+		if math.Abs(afterX-beforeX) > 1e-9 || math.Abs(afterY-beforeY) > 1e-9 {
+			if frozen {
+				t.Fatalf("frame %d: centre moved to %.3f,%.3f after the lerp had stopped (rex at %.0f,%.0f)", frame, afterX, afterY, rex.x, rex.y)
+			}
+			// dino_boss.script lerp: camX = GetCameraX + (desiredCamX - GetCameraX) * 0.05.
+			wantX := clampX(seenX + (desiredX-seenX)*0.05)
+			wantY := clampY(seenY + (desiredY-seenY)*0.05)
+			if math.Abs(afterX-wantX) > 1e-6 || math.Abs(afterY-wantY) > 1e-6 {
+				t.Fatalf("frame %d: centre %.6f,%.6f, want the lerp %.6f,%.6f (GetCameraX %.6f,%.6f, Barry %.3f,%.3f; rex at %.0f,%.0f)", frame, afterX, afterY, wantX, wantY, seenX, seenY, desiredX, desiredY, rex.x, rex.y)
+			}
+			motion++
+		} else if motion > 0 {
+			frozen = true
+		}
 		p.updateZombies()
 		p.updateCamera()
-		drift := math.Hypot(p.scriptCameraCenterX()-startX, p.scriptCameraCenterY()-startY)
-		maxDrift = math.Max(maxDrift, drift)
-		// GetCameraX/Y are the centre plus the live shake offset.
-		if got := h.play.scriptCameraCenterX() + p.shake.currentX; math.Abs(got-(p.world.CameraX+float64(logicalWidth)/(2*p.world.Zoom)+p.shake.currentX)) > 1e-9 {
-			t.Fatalf("GetCameraX = %v", got)
+		p.stepShakeTick()
+		if math.Abs(p.shake.currentX) > shakeMaxX+1e-9 || math.Abs(p.shake.currentY) > shakeMaxY+1e-9 {
+			t.Fatalf("frame %d: shake offset %.3f,%.3f exceeds the native targets %.1f,%.1f", frame, p.shake.currentX, p.shake.currentY, shakeMaxX, shakeMaxY)
 		}
 	}
 	if p.scriptRuntime != nil && !p.scriptRuntime.Done() {
 		t.Fatal("intro never finished")
 	}
-	// Native: the camera is not pulled to the rex (only the shake feedback moves it a little).
-	if maxDrift > 40 {
-		t.Fatalf("camera drifted %.1f px from Barry during the intro; native has no pan toward the rex (rex at %.0f,%.0f)", maxDrift, rex.x, rex.y)
+	if motion < lerpFrames-3 || motion > lerpFrames {
+		t.Fatalf("the lerp moved the centre on %d ticks, want about 60 (WaitInit(1000))", motion)
+	}
+	if maxFeedback < 1 {
+		t.Fatalf("shake feedback reached GetCameraX by at most %.3f px; the lerp coupling was not exercised", maxFeedback)
+	}
+	// Feedback envelope: u' = 0.95*u + 0.95*C with |C| <= the targets, so |u| <= 0.95*C_max*(1-0.95^n)/0.05.
+	envX := 0.95 * shakeMaxX * (1 - math.Pow(0.95, lerpFrames)) / 0.05
+	envY := 0.95 * shakeMaxY * (1 - math.Pow(0.95, lerpFrames)) / 0.05
+	if dx, dy := p.scriptCameraCenterX()-desiredX, p.scriptCameraCenterY()-desiredY; math.Abs(dx) > envX || math.Abs(dy) > envY {
+		t.Fatalf("centre %.1f,%.1f is %.1f,%.1f from Barry, beyond the shake-feedback envelope %.1f,%.1f (rex at %.0f,%.0f)", p.scriptCameraCenterX(), p.scriptCameraCenterY(), dx, dy, envX, envY, rex.x, rex.y)
 	}
 	// After the script the normal follow resumes and settles on the player.
 	for frame := 0; frame < 300; frame++ {

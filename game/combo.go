@@ -27,10 +27,13 @@ import (
 //     weapon (class 0x005bbaf0, FUN_000ae184 returns 0) never get one, so a
 //     pistol swap can never show "Epic Fail"; every other primary and secondary
 //     weapon does (base FUN_000a8f70 returns 1).
-//   - While a tracker is live (state 0) its count "x%d" (string 0x00562283) is
-//     drawn every frame by FUN_000993d0 at the player's position pushed behind the
-//     aim direction (FUN_00098d64), clamped to the screen below the HUD
-//     multiplier; it never fades on its own. See Research/native/combo-achievements-followup-2026-10-08.md.
+//   - A live tracker (state 0) draws its count "x%d" (string 0x00562283) every frame
+//     at the player's position pushed behind the aim direction (FUN_00098d64),
+//     clamped below the HUD multiplier; it never fades on its own. The 1.2.5 (HD)
+//     draw FUN_000f73b8 serves the primary and grenade-slot trackers alike, so both
+//     show while held; v7 (SD) never draws the grenade slot (vtable +0x18 = 0x00099858).
+//     Rules and addresses: Research/native/combo-visibility-2026-10-09.md; see also
+//     Research/native/combo-achievements-followup-2026-10-08.md.
 
 const (
 	comboFlashFull     = 32768.0 // 0x8000, tracker +0x6c and HUD +0x90 flash timers
@@ -497,12 +500,8 @@ func (p *playState) updateCombo(dt float64) {
 	for _, t := range c.trackers() {
 		t.hudGlyph = glyph
 		if t.state == comboActive {
+			// FUN_00098d64: every live tracker anchors on the player (no per-slot offset).
 			t.posX, t.posY = p.comboAnchor(t.size)
-			if t == c.secondary && c.primary != nil && c.primary.state == comboActive && c.primary.visible() {
-				// Both slots anchor on the same spot behind Barry; stack the
-				// grenade's count under the weapon's so they don't overprint.
-				t.posY += c.primary.size/2 + t.size/2 + 2
-			}
 		}
 		if event := t.update(dt, dead); event != nil {
 			p.applyComboBonus(event)

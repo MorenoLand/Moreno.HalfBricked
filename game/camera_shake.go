@@ -8,7 +8,9 @@ import (
 
 // Native camera shake (libmortargame.so v7): setup FUN_000be1fc, per-frame step
 // FUN_000be0d0 (called from the scene update FUN_000c0cec while the remaining
-// time at scene+0x1ac38 is above zero), camera composition FUN_000bf23c.
+// time at scene+0x1ac38 is above zero), camera composition FUN_000bf23c. The 1.2.5 step FUN_00095c14 uses
+// the same literals (16.0 at 0x00095d28, 9.0 at 0x00095d2c, 0.2 at 0x00095d30, turn 0x6388 + rng(0x38e0)).
+// Only the CameraShake callback's angle multiplier differs by build (camera_build.go).
 //
 //	start(pos, duration, ampX, ampY, angleMul):
 //	  angle16 = atan2(camY-posY, camX-posX)            (FUN_001ba6e4, 0x10000 = 360 deg)
@@ -84,12 +86,15 @@ func (s *cameraShake) step(dt float64, rng *weapons.NativeRNG) (float64, float64
 // active reports whether the shake timer is still running.
 func (s *cameraShake) active() bool { return s.remaining > 0 }
 
-// startCameraShake is the port entry for every native FUN_000be1fc caller.
+// startCameraShake is the port entry for every native shake caller. The angle is taken from the
+// rendered camera position: the view centre plus the current shake offset (v7 +0x1ac5c/+0x1ac60,
+// 1.2.5 cam+0x2c/+0x30 written by FUN_00095d38's callers). The port's world.CameraX is the
+// top-left corner, so it must be converted to the centre first.
 func (p *playState) startCameraShake(x, y, duration, ampX, ampY, angleMul float64) {
 	camX, camY := p.shake.currentX, p.shake.currentY
 	if p.world != nil {
-		camX += p.world.CameraX
-		camY += p.world.CameraY
+		camX += p.scriptCameraCenterX()
+		camY += p.scriptCameraCenterY()
 	}
 	p.shake.start(x, y, camX, camY, duration, ampX, ampY, angleMul)
 }
@@ -97,4 +102,20 @@ func (p *playState) startCameraShake(x, y, duration, ampX, ampY, angleMul float6
 // updateShake advances the shake one frame and returns the camera offset.
 func (p *playState) updateShake(dt float64) (float64, float64) {
 	return p.shake.step(dt, p.rng)
+}
+
+// stepShakeTick advances the shake by one logic tick. Native 1.2.5 runs the step from the per-camera
+// updater FUN_00096030 (cam+0x8 > 0 -> cam+0x8 -= dt, FUN_00095c14), which the scene updates
+// FUN_000e5eb8 / FUN_000cae30 call with the frame dt. The port must not step it from the draw path,
+// where the display refresh rate would change the decay.
+func (p *playState) stepShakeTick() {
+	if p == nil || p.paused {
+		return
+	}
+	p.updateShake(1.0 / 60.0)
+}
+
+// shakeOffset returns the current shake offset for rendering without advancing it.
+func (p *playState) shakeOffset() (float64, float64) {
+	return p.shake.currentX, p.shake.currentY
 }

@@ -23,7 +23,7 @@ var scriptCallbacks = []string{
 
 func init() {
 	scriptCallbacks = append(scriptCallbacks, "HasControllerAttached", "getWeaponLife", "setWeaponLife", "Analytics_SendEvent", "SecondaryPlayersPleaseWait", "SetZombiesActiveDuringScripts", "BrickUI_DisplayScreen", "BrickUI_PlayAnimation", "BrickUI_GetPropertyBool", "BrickUI_RemoveScreen", "BrickUI_SetupTutorialScreen", "Controller_OnEnterScreen", "Controller_OnLeaveScreen")
-	scriptCallbacks = append(scriptCallbacks, "AimControlActive", "DefaultThumbStickFree", "DoPlayerSpawn", "FireGun", "ForceDrawReticule", "ForceDrawThumbStick", "ForceEnableSecondary", "IsSecondaryButtonDown", "KillZombie", "MoveControlActive", "NormalControlStyle", "PickupExists", "SetAllowThumbsticksDuringScripts", "SetPlayerCollideWithZombiesInScripts", "SetThumbStickCentre", "SetThumbStickFree", "SetThumbSticksToCorners", "SpawnZombiesAroundPlayer", "StopPlayerShootControl", "TriggerTutorial", "ZoomCameraOut", "AddRobotBossZombie", "AddWesternBossZombie", "GetPositionWithinRadius", "MakeRexRage", "MakeZombieInvulnerable", "MusicEnabled", "SetRobotRage", "SetWesternBossDead", "ShakeInputTriggered", "UnlockWesternBossAchievement", "Update", "ZoomCameraAndMove", "ZoomCameraIn")
+	scriptCallbacks = append(scriptCallbacks, "AimControlActive", "DefaultThumbStickFree", "DoPlayerSpawn", "FireGun", "ForceDrawReticule", "ForceDrawThumbStick", "ForceEnableSecondary", "IsSecondaryButtonDown", "KillZombie", "MoveControlActive", "NormalControlStyle", "PickupExists", "SetAllowThumbsticksDuringScripts", "SetPlayerCollideWithZombiesInScripts", "SetThumbStickCentre", "SetThumbStickFree", "SetThumbSticksToCorners", "SpawnZombiesAroundPlayer", "StopPlayerShootControl", "TriggerTutorial", "ZoomCameraOut", "AddRobotBossZombie", "AddWesternBossZombie", "GetPositionWithinRadius", "MakeRexRage", "MakeZombieInvulnerable", "MusicEnabled", "SetRobotRage", "SetWesternBossDead", "ShakeInputTriggered", "UnlockWesternBossAchievement")
 }
 
 type scriptEntity struct {
@@ -43,6 +43,7 @@ type scriptEntity struct {
 	targetRange             float64
 	stopOnArrival           bool
 	walking                 bool
+	walkBest, walkStalled   float64 // closest distance to the walk target so far / seconds without getting closer (port watchdog)
 	playing                 bool
 	frameTime               float64
 }
@@ -70,10 +71,74 @@ type playScriptHost struct {
 // (for example a misspelled variable in a script) is a native no-op.
 var entitySetters = map[string]bool{"SetEntityScale": true, "SetEntityPos": true, "SetEntityRotation": true, "SetEntityColour": true, "SetEntityAlpha": true, "SetEntityVFlip": true, "SetAnimation": true, "SetFrame": true, "StopAnimation": true, "SetSpriteXPosition": true, "SetSpriteYPosition": true, "DestroyEntity": true}
 
+// Script entity handles are raw object pointers natively (CreateEntity / SpawnZombie / GetFirstEntityOfType push the
+// pointer as a number) and the callbacks only guard against the null handle: the position getters push 0 and the
+// setters skip their store for 0 (1.2.5 closures 0x0013d6b0, 0x0013d730, 0x0013d7b0, 0x0013d830, 0x0013e610), while a
+// stale handle just touches freed memory without any visible effect. The port keeps small ids, so a handle whose
+// entity is gone (destroyed sprite, a boss that was shot dead during its intro, a zombie already removed) must be
+// that same harmless no-op: failing the callback would raise a script error and end the whole game.
+// world1_level2_entry keeps calling its car updater (Wait -> Update) after DestroyEntity(sprite), and a boss intro
+// script calls SetZombieSpeed(boss, ...) even when the player already killed the boss.
+type staleHandleResult uint8
+
+const (
+	staleNoOp staleHandleResult = iota
+	staleZero
+	staleFalse
+)
+
+var staleHandleCallbacks = map[string]staleHandleResult{
+	"GetEntityXPos": staleZero, "GetEntityYPos": staleZero, "GetSpriteXPosition": staleZero, "GetSpriteYPosition": staleZero,
+	"GetEntityRotation": staleZero, "GetZombieSpeed": staleZero, "IsZombieWalking": staleFalse,
+	"SetEntityPos": staleNoOp, "SetSpriteXPosition": staleNoOp, "SetSpriteYPosition": staleNoOp, "SetEntityScale": staleNoOp,
+	"SetEntityRotation": staleNoOp, "SetEntityColour": staleNoOp, "SetEntityAlpha": staleNoOp, "SetEntityVFlip": staleNoOp,
+	"SetAnimation": staleNoOp, "SetFrame": staleNoOp, "StopAnimation": staleNoOp, "DestroyEntity": staleNoOp,
+	"SetZombieSpeed": staleNoOp, "SetZombieAlpha": staleNoOp, "SetZombieAnimTime": staleNoOp, "SetZombieTexture": staleNoOp,
+	"MakeZombieInvulnerable": staleNoOp, "WalkZombieTo": staleNoOp, "SpawnAwayZombie": staleNoOp, "KillZombie": staleNoOp,
+}
+
+// handleLive reports whether an entity or a zombie with this id still exists.
+func (h *playScriptHost) handleLive(id int) bool {
+	return h.findEntity(id) != nil || h.findZombie(id) != nil
+}
+
+// scriptCoordinateGrid is the binary grid the coordinates handed to scripts are snapped to. The exit scripts' WalkTo
+// helper steps a sprite toward `GetEntityXPos(boss) + 25` and only finishes on exact float equality, and its
+// `dx < 0` branch moves away from the target once less than `speed` is left; with arbitrary fractions the remaining
+// distance can settle into a permanent 2-cycle (see TestScriptWalkToHelperTerminatesForAnyTarget), which hung the
+// level-complete cutscene of world2_level2 for about one boss death position in thirteen. On a 1/256 px grid every
+// operation of that helper is exact, so the wrong-sign steps double the leftover until it is exactly 0.
+const scriptCoordinateGrid = 1.0 / 256
+
+var scriptCoordinateGetters = map[string]bool{"GetPlayerX": true, "GetPlayerY": true, "GetEntityXPos": true, "GetEntityYPos": true, "GetSpriteXPosition": true, "GetSpriteYPosition": true}
+
 func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.CallResult, error) {
+	result, err := h.call(name, args)
+	if scriptCoordinateGetters[name] {
+		for index, value := range result.Values {
+			if number, ok := value.(float64); ok {
+				result.Values[index] = math.Round(number/scriptCoordinateGrid) * scriptCoordinateGrid
+			}
+		}
+	}
+	return result, err
+}
+
+func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.CallResult, error) {
 	h.play.scriptLastCallback = name
 	if entitySetters[name] && scriptNilHandle(args, 0) {
 		return scripting.CallResult{}, nil
+	}
+	if stale, ok := staleHandleCallbacks[name]; ok && !scriptNilHandle(args, 0) {
+		if id, err := scriptID(args, 0); err == nil && !h.handleLive(id) {
+			switch stale {
+			case staleZero:
+				return scriptValues(0.0), nil
+			case staleFalse:
+				return scriptValues(false), nil
+			}
+			return scripting.CallResult{}, nil
+		}
 	}
 	switch name {
 	case "HasControllerAttached", "IsXPlayDevice", "GetPlayer", "GetPlayerX", "GetPlayerY":
@@ -176,10 +241,10 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, fmt.Errorf("zoom must be positive")
 		}
 		h.play.cancelScriptCameraPan()
-		h.play.world.SetZoom(zoom)
+		h.play.world.SetZoom(portZoomFromNative(zoom))
 		return scripting.CallResult{}, nil
 	case "GetZoom":
-		return scriptValues(h.play.world.Zoom), nil
+		return scriptValues(nativeZoomFromPort(h.play.world.Zoom)), nil
 	case "SetCameraPan":
 		zoom, err := scriptNumber(args, 0)
 		if err != nil {
@@ -203,11 +268,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.setScriptCameraPan(zoom, x, y, duration)
 		return scripting.CallResult{}, nil
 	case "GetCameraX":
-		// Native FUN_00095aa8 (1.2.5): camera centre + the current shake offset
-		// (+0x24 + +0x18), so a script that lerps from GetCameraX feeds the shake back in.
-		return scriptValues(h.play.scriptCameraCenterX() + h.play.shake.currentX), nil
+		// Per build (camera_build.go): 1.2.5 FUN_00095aa8 adds the shake offset (+0x24 + +0x18),
+		// v7 FUN_000db61c returns the clamped centre only.
+		return scriptValues(h.play.scriptGetCameraX()), nil
 	case "GetCameraY":
-		return scriptValues(h.play.scriptCameraCenterY() + h.play.shake.currentY), nil
+		return scriptValues(h.play.scriptGetCameraY()), nil
 	case "SetCameraFollow":
 		follow, err := scriptNumber(args, 0)
 		if err != nil {
@@ -268,7 +333,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			}
 			entity := h.findEntity(id)
 			if entity == nil {
-				return scripting.CallResult{}, fmt.Errorf("entity %d not found", id)
+				return scripting.CallResult{}, nil // stale handle: nothing to look at (see staleHandleCallbacks)
 			}
 			x, y = entity.x, entity.y
 		} else {
@@ -343,7 +408,13 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, err
 		}
 		entity := h.findEntity(id)
-		return scriptValues(entity != nil && entity.walking), nil
+		if entity == nil || !entity.walking {
+			return scriptValues(false), nil
+		}
+		// A zombie that died or was removed is no longer walking: its native object is gone, so the walk flag
+		// must not outlive it (an exit script waits on this in a loop).
+		zombie := h.findZombie(id)
+		return scriptValues(zombie != nil && zombie.health > 0 && !zombie.dying), nil
 	case "WalkZombieTo":
 		if scriptNilHandle(args, 0) {
 			return scripting.CallResult{}, nil
@@ -376,6 +447,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			return scripting.CallResult{}, fmt.Errorf("entity %d not found", id)
 		}
 		entity.targetX, entity.targetY, entity.targetRange, entity.stopOnArrival, entity.walking = x, y, math.Abs(rangeCheck), stopOnArrival, true
+		entity.walkBest, entity.walkStalled = math.Inf(1), 0
 		return scripting.CallResult{}, nil
 	case "SpawnAwayZombie":
 		if scriptNilHandle(args, 0) {
@@ -432,7 +504,8 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 			}
 			return scriptValues(id), nil
 		}
-		return scripting.CallResult{}, fmt.Errorf("entity type %q not found", typeName)
+		// Native (1.2.5 closure 0x0013e574): the first entity of the type, or the null handle 0 when there is none.
+		return scriptValues(0), nil
 	case "GetZombieSpeed", "SetZombieSpeed", "SetZombieAlpha", "SetZombieAnimTime", "SetZombieTexture":
 		return h.zombieProperty(name, args)
 	case "AddPortal":
@@ -684,7 +757,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.dialogueIndex = len(h.play.dialogue)
 		return scripting.CallResult{}, nil
 	case "GetCurrentDialogSpeech":
-		return scriptValues(h.play.dialogueIndex), nil
+		// Native (1.2.5 closure 0x0013ca6c): -1 while no speech is running, otherwise the current speech index.
+		if h.play.dialogueIndex < len(h.play.dialogue) {
+			return scriptValues(h.play.dialogueIndex), nil
+		}
+		return scriptValues(-1), nil
 	case "StartFadeNormal", "StartFadeBlack":
 		duration, err := scriptNumber(args, 0)
 		if err != nil {
@@ -732,10 +809,11 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		// Native callback (v7 FUN_000db67c): arg 3 is the shake DURATION in
-		// seconds (stored at scene+0x1ac38/3c), the optional arg 4 (only read when
-		// exactly four arguments are passed, else 1.0) multiplies the horizontal
-		// amplitude; the vertical amplitude and angle multiplier are 1.0.
+		// Native 1.2.5 callback FUN_0013e0b8 (v7 FUN_000db67c): arg 3 is the shake
+		// DURATION in seconds, the optional arg 4 (only read when exactly four
+		// arguments are passed, else 1.0) multiplies the horizontal amplitude. For each
+		// camera it calls FUN_00095d38 with vertical amplitude 1.0 and angle multiplier
+		// 8.0 (0x41000000, 1.2.5) or 1.0 (0x3f800000, v7 FUN_000db67c): selected per build.
 		duration, err := scriptNumber(args, 2)
 		if err != nil {
 			return scripting.CallResult{}, err
@@ -747,7 +825,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 				return scripting.CallResult{}, err
 			}
 		}
-		h.play.startCameraShake(x, y, duration, ampX, 1, 1)
+		h.play.startCameraShake(x, y, duration, ampX, 1, cameraShakeAngleMul(h.play.waveBuild()))
 		return scriptValues(1), nil
 	case "getWeaponLife":
 		return scriptValues(h.play.weapon.Life), nil
@@ -814,7 +892,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptSecondaryEnabled = enabled
 		return scripting.CallResult{}, err
 	case "IsSecondaryButtonDown":
-		return scriptValues(h.play.secondaryButtonDown), nil
+		return scriptValues(h.play.secondaryButtonDown || h.play.input.secondary), nil
 	case "SetAllowThumbsticksDuringScripts":
 		allowed, err := scriptBool(args, 0)
 		h.play.scriptAllowThumbsticks = allowed
@@ -898,7 +976,7 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		}
 		zombie := h.findZombie(id)
 		if zombie == nil {
-			return scripting.CallResult{}, fmt.Errorf("zombie %d not found", id)
+			return scripting.CallResult{}, nil
 		}
 		zombie.invulnerable = value
 		return scripting.CallResult{}, nil
@@ -1037,7 +1115,23 @@ func (h *playScriptHost) Call(name string, args []scripting.Value) (scripting.Ca
 		h.app.awardMadDog(int(choice))
 		return scripting.CallResult{}, nil
 	case "GetPositionWithinRadius":
-		return scriptValues(0, 0), nil
+		var values [4]float64
+		for index := range values {
+			value, err := scriptNumber(args, index)
+			if err != nil {
+				return scripting.CallResult{}, err
+			}
+			values[index] = value
+		}
+		clearance := 32.0 // native default for the optional fifth argument (0x42000000)
+		if len(args) == 5 {
+			var err error
+			if clearance, err = scriptNumber(args, 4); err != nil {
+				return scripting.CallResult{}, err
+			}
+		}
+		x, y := h.play.randomPositionWithin(values[0], values[1], values[2], values[3], clearance)
+		return scriptValues(x, y), nil
 	case "SpawnZombiesAroundPlayer":
 		return scripting.CallResult{}, fmt.Errorf("SpawnZombiesAroundPlayer call shape is unresolved")
 	case "TriggerTutorial":
@@ -1258,7 +1352,11 @@ func (h *playScriptHost) zombieProperty(name string, args []scripting.Value) (sc
 	}
 	zombie := h.findZombie(id)
 	if zombie == nil {
-		return scripting.CallResult{}, fmt.Errorf("zombie %d not found", id)
+		// the entity outlived its zombie (shot dead and removed): reads give its last speed, writes go nowhere
+		if entity := h.findEntity(id); entity != nil && name == "GetZombieSpeed" {
+			return scriptValues(entity.speed), nil
+		}
+		return scripting.CallResult{}, nil
 	}
 	switch name {
 	case "GetZombieSpeed":
@@ -1386,6 +1484,12 @@ func (p *playState) updateScript() error {
 	if p.scriptRuntime.Done() {
 		p.pauseScriptGame(false)
 		p.playerUnspawned = false
+		if p.health > 0 && !p.deathStarted {
+			// The native move / aim stick gates (FUN_000f3280: FUN_0013c170() == 0 || the SetPlayerMoveControl /
+			// StopPlayerShootControl flags) only apply while a script is running, so a script that ends with the
+			// controls still switched off (egypt_boss, japan_boss: SetPlayerMoveControl(false)) hands them back.
+			p.moveControl, p.shootControl = true, true
+		}
 		return p.scriptRuntime.Err()
 	}
 	const dt = 1000.0 / 60.0
@@ -1426,22 +1530,16 @@ func (p *playState) updateScriptWalk() {
 		p.scriptWalking = false
 		return
 	}
-	step := playerBaseSpeed / 60
+	step := playerWalkBase(p.waveBuild()) * p.vitals.walkSpeedFactor() / 60
 	if distance <= step {
 		p.x, p.y, p.scriptWalking = p.scriptWalkX, p.scriptWalkY, false
 		return
 	}
-	candidateX := p.x + dx/distance*step
-	candidateY := p.y + dy/distance*step
-	for resolve := 0; resolve < 4; resolve++ {
-		pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, p.radius, p.tileSize)
-		if !hit {
-			break
-		}
-		candidateX += pushX
-		candidateY += pushY
-	}
-	p.x, p.y = candidateX, candidateY
+	// Native (1.2.5 Player::Update FUN_000f3280): while the walk flag (+0x98) is set the position
+	// advances straight along the target vector and the tile sub-step collision loop
+	// (FUN_0012122c) is skipped, so a scripted walk never stalls on a wall. The next normal frame
+	// pushes Barry out of any solid tile he ended inside.
+	p.x, p.y = p.x+dx/distance*step, p.y+dy/distance*step
 	p.angle, p.flipX = barryDirection(dx, dy)
 }
 
@@ -1451,11 +1549,21 @@ func (p *playState) updatePickups() {
 	if len(targets) == 0 {
 		targets = []playerTarget{{index: 0, x: p.x, y: p.y}}
 	}
+	// ids in ascending order: Go's map order would make the pickup that is taken first (and so the weapon that ends up
+	// equipped when several crates overlap) change from run to run
+	ids := make([]int, 0, len(p.scriptEntities))
 	for id, entity := range p.scriptEntities {
-		if entity == nil || entity.kind != "pickup" {
+		if entity != nil && entity.kind == "pickup" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Ints(ids)
+	for _, id := range ids {
+		entity := p.scriptEntities[id]
+		if entity == nil {
 			continue
 		}
-		best, bestDistance := -1, playerCollisionRadius+12
+		best, bestDistance := -1, pickupReach(entity.texture)
 		for index, target := range targets {
 			if distance := math.Hypot(target.x-entity.x, target.y-entity.y); distance <= bestDistance {
 				best, bestDistance = index, distance
@@ -1522,6 +1630,11 @@ func (p *playState) spawnPickup(name string, point formats.Vec2) {
 	}
 	id := p.scriptNextEntity
 	p.scriptNextEntity++
+	// The native pickup initialiser (0x00092da0) rolls a p_rand_* type right here,
+	// so the crate on the floor is already the weapon it will give.
+	if resolved, ok := p.resolveRandomPickup(name); ok {
+		name = strings.ToLower(resolved)
+	}
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: name}
 }
 
@@ -1557,7 +1670,11 @@ func (p *playState) collectPickup(name string) {
 			p.pickupVoices = append(p.pickupVoices, path)
 		}
 	case "P_HEALTH":
-		p.health = p.maxHealth
+		// FUN_000928f4 type 0x23: +0x3ec += 1 and the text "Lives + 1" (0x00562133); the
+		// pickup never touches the health bar (it regrows by itself, player_vitals.go).
+		p.lives++
+	case "P_HOVER":
+		p.collectHover()
 	default:
 		if strings.HasPrefix(name, "P_") {
 			if weapon, ok := p.weapons.Find(catalogWeaponName(strings.TrimPrefix(name, "P_"))); ok {
@@ -1583,18 +1700,35 @@ func (p *playState) cancelScriptCameraPan() {
 	p.scriptCameraPanActive = false
 	p.scriptCameraPanElapsed = 0
 }
+
+// The scripts speak the native camera zoom z, where the visible world width grows with z (the native screen
+// mapping is (position - camera) / (2 z), 1.2.5 FUN_000993d0, and the camera clamp extent is 480 * z) and every level
+// starts at z = 0.65 (DAT_00085dfc), the value the intro scripts pan back to. The port draws with a magnification
+// whose default is 1.0, so a script value z is mapped to 0.65 / z: the default stays 1.0, the cutscene close-ups
+// (SetZoom 0.4 / 0.5) zoom in and a script that restores GetZoom() or pans to 0.65 returns to the normal view.
+const nativeDefaultZoom = 0.65
+
+func portZoomFromNative(zoom float64) float64 { return nativeDefaultZoom / zoom }
+func nativeZoomFromPort(zoom float64) float64 {
+	if zoom <= 0 {
+		return nativeDefaultZoom
+	}
+	return nativeDefaultZoom / zoom
+}
+
 func (p *playState) setScriptCameraPan(zoom, x, y, duration float64) {
 	if zoom <= 0 {
 		return
 	}
 	if duration <= 0 {
 		p.cancelScriptCameraPan()
-		p.world.SetZoom(zoom)
+		p.world.SetZoom(portZoomFromNative(zoom))
 		p.setScriptCamera(x, y)
 		return
 	}
 	p.scriptCameraPanStartX, p.scriptCameraPanStartY = p.scriptCameraCenterX(), p.scriptCameraCenterY()
-	p.scriptCameraPanStartZoom, p.scriptCameraPanTargetZoom = p.world.Zoom, zoom
+	// the pan interpolates the native zoom value (scriptCameraPan*Zoom are native units, see portZoomFromNative)
+	p.scriptCameraPanStartZoom, p.scriptCameraPanTargetZoom = nativeZoomFromPort(p.world.Zoom), zoom
 	p.scriptCameraPanTargetX, p.scriptCameraPanTargetY = x, y
 	p.scriptCameraPanElapsed, p.scriptCameraPanDuration = 0, duration
 	p.scriptCameraPanActive = true
@@ -2058,6 +2192,13 @@ func scriptAlpha(args []scripting.Value, index int) (float64, error) {
 	return math.Max(0, math.Min(1, value)), nil
 }
 
+// nativeSFXFiles maps SFX symbols whose clip does not carry the symbol's name to the file basename the native
+// sound table pairs them with (1.2.5 strings 0x0085bebc.. SFX_GW_USA_* against 0x0085c50f.. PresidentRoar1 ...).
+var nativeSFXFiles = map[string]string{
+	"sfx_gw_usa_roar_1": "presidentroar1", "sfx_gw_usa_roar_2": "presidentroar2", "sfx_gw_usa_death": "presidentdeath",
+	"sfx_gw_usa_vomit": "presidentvomit", "sfx_gw_usa_sting_1": "presidentsting1", "sfx_gw_usa_sting_2": "presidentsting2",
+}
+
 func (a *app) scriptSoundPath(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" || name == "0" {
@@ -2070,6 +2211,9 @@ func (a *app) scriptSoundPath(name string) string {
 	wanted = strings.TrimPrefix(wanted, "sfx_")
 	if nativeName := weapons.NativeWeaponSoundBasename(name); nativeName != "" {
 		wanted = nativeName
+	}
+	if file, ok := nativeSFXFiles[strings.ToLower(name)]; ok {
+		wanted = file
 	}
 	for key, path := range a.pack.Manifest().Files {
 		if !strings.EqualFold(filepath.Ext(key), ".ogg") {

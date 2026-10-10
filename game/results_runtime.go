@@ -54,6 +54,10 @@ func (a *app) recordHighscore(levelID string, data resultsData) int32 {
 func (a *app) updateResultsMenu() error {
 	menu := a.resultsScreen
 	pressed := inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+	if pressed && menu.finishCount() {
+		// Port addition (results_count.go): the first press only finishes the count-up.
+		pressed = false
+	}
 	if pressed {
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			menu.activate(resultsMainMenu)
@@ -71,6 +75,7 @@ func (a *app) updateResultsMenu() error {
 		}
 	}
 	action := menu.update(1.0/60.0, false)
+	a.playResultsTick(menu)
 	if action == resultsNone {
 		return nil
 	}

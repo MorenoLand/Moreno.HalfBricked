@@ -108,10 +108,14 @@ func (p *playState) isExplodingZombie(z zombieState) bool {
 // zombieDeathDelayFor is how long a killed zombie lingers before its death
 // transition (and, for exploding zombies, the blast).
 func (p *playState) zombieDeathDelayFor(z zombieState) float64 {
-	if p.isExplodingZombie(z) {
-		return explodingDeathDelay
+	delay := zombieDeathDelay
+	if z.deathDelay > 0 {
+		delay = z.deathDelay // a gib's hit timer (zombie_gib.go)
 	}
-	return zombieDeathDelay
+	if p.isExplodingZombie(z) {
+		return delay / 2 // the exploding zombie's hit timer runs at double speed (FUN_0009f1c0)
+	}
+	return delay
 }
 
 // explodeZombie runs the type-4 death hook: detonate a blast at the zombie. The
@@ -197,6 +201,7 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 			p.creditKill(origin)
 			zombie.dying = true
 			zombie.deathAge = 0
+			p.classifyZombieDeath(zombie, zombieBlastKind(origin), b.x, b.y)
 		}
 	}
 }

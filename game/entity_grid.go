@@ -36,6 +36,10 @@ const (
 // entityGridRegisterExtent is 64.0 * 0.3 evaluated in float32 (FUN_000a17cc).
 var entityGridRegisterExtent = float32(entityGridPlayerBody) * entityGridBodyScale
 
+// entityGridPlayerRegister is the extent FUN_00096818 registers Barry with
+// (FUN_00091918 with 64.0 * DAT_0009749c = 0.45; 1.2.5 FUN_000f3280 with DAT_000f3fc8 = 0.45).
+var entityGridPlayerRegister = float32(entityGridPlayerBody) * .45
+
 // entityGridRange is a box of grid cells, inclusive.
 type entityGridRange struct{ x0, x1, y0, y1 int }
 
@@ -113,19 +117,45 @@ func (r *entityGridRegistration) visits(query entityGridRange) int {
 	return width * height
 }
 
+// sharesCell reports whether box touches a cell this registration is listed in.
+// The candidate loop of FUN_000a1b08 only sees entities listed in the zombie's own
+// cells, so two boxes that share no cell never meet.
+func (r *entityGridRegistration) sharesCell(box entityGridRange) bool {
+	return r.valid && box.x0 <= r.cells.x1 && r.cells.x0 <= box.x1 && box.y0 <= r.cells.y1 && r.cells.y0 <= box.y1
+}
+
+// zombieIsRising reports whether a native wave zombie is still in its spawn rise
+// (state 0, the 2 s portal emergence). The grid only lists a zombie once a move or
+// separation pass has registered it (FUN_000a17cc -> FUN_00091918), and both are
+// skipped in state 0: FUN_0009fb10 returns before the move, and FUN_000a1b08 skips
+// its candidate block (push-out, player contact) unless the state is nonzero. The
+// spawn hook (vtable slot +0x44) is a bare return and does not register it. So a
+// rising zombie cannot be hit by bullets, blasts, saws, bombs or shockwaves, and it
+// neither pushes nor hurts anyone until the rise ends. Port: script and boss
+// zombies keep kind 0 or a boss kind and are not affected.
+func zombieIsRising(z *zombieState) bool {
+	return z.native.kind >= zombieKindPlain && z.native.kind <= zombieKindProspect && z.native.ai.state == 0
+}
+
 // refreshEntityGrid registers every zombie at its current position. The native
 // registration runs right after each zombie move, so the port runs it once per
 // tick before any projectile pass reads it.
 func (p *playState) refreshEntityGrid() {
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
+		if zombieIsRising(zombie) {
+			continue
+		}
 		zombie.grid.register(zombie.x, zombie.y)
 	}
 }
 
 // zombieGridVisits is the number of times the projectile pass at (x, y) with
-// the given query extent lists this zombie.
+// the given query extent lists this zombie. A rising zombie is never listed.
 func (p *playState) zombieGridVisits(zombie *zombieState, x, y float64, extent float32) int {
+	if zombieIsRising(zombie) {
+		return 0
+	}
 	zombie.grid.register(zombie.x, zombie.y)
 	return zombie.grid.visits(entityGridBox(x, y, extent))
 }

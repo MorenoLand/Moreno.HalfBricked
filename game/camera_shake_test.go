@@ -4,6 +4,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 )
 
@@ -59,4 +62,60 @@ func abs(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+// Native 1.2.5 FUN_00095d38 takes the angle from the rendered camera (cam+0x2c/+0x30 = view centre plus
+// the shake offset), not from the top-left corner that world.CameraX holds.
+func TestCameraShakeOriginIsRenderedCentreNotTopLeft(t *testing.T) {
+	rng := weapons.NewNativeRNG()
+	p := &playState{rng: &rng, tileSize: 32, world: &viewer.Viewer{Level: formats.Level{Width: 200, Height: 200}, Zoom: 1}}
+	p.setScriptCamera(1000, 800)
+	cx, cy := p.scriptCameraCenterX(), p.scriptCameraCenterY()
+	p.startCameraShake(200, 300, 1.5, 1.5, 1, 1)
+	if want := weapons.NativeWeaponDirection(cx-200, cy-300); p.shake.angle != want {
+		t.Fatalf("angle %#x from the view centre, want %#x", p.shake.angle, want)
+	}
+	p.shake.currentX, p.shake.currentY = 4, -3
+	p.startCameraShake(200, 300, 1.5, 1.5, 1, 1)
+	if want := weapons.NativeWeaponDirection(cx+4-200, cy-3-300); p.shake.angle != want {
+		t.Fatalf("angle %#x with a shake offset, want %#x", p.shake.angle, want)
+	}
+}
+
+// Native 1.2.5 FUN_0013e0b8 calls FUN_00095d38(cam, origin, duration, ampX, 1.0, 8.0): the vertical
+// target uses sin(8 * angle), not sin(angle).
+func TestCameraShakeCallbackUsesNative125AngleMultiplierEight(t *testing.T) {
+	rng := weapons.NewNativeRNG()
+	play := &playState{rng: &rng}
+	host := &playScriptHost{play: play}
+	if _, err := host.Call("CameraShake", []scripting.Value{12, 24, 1.5, 1.5}); err != nil {
+		t.Fatal(err)
+	}
+	angle := weapons.NativeWeaponDirection(-12, -24) // no world: the camera sits at 0,0
+	wantY := shakeSin(uint16(int(float64(angle)*8)&0xffff)) * 9
+	if play.shake.angle != angle || math.Abs(play.shake.targetY-wantY) > 1e-9 {
+		t.Fatalf("CameraShake angle %#x target.y %.6f, want angle %#x target.y %.6f", play.shake.angle, play.shake.targetY, angle, wantY)
+	}
+}
+
+// The shake steps from the logic tick (native scene update), so reading the draw offset must not
+// advance it and a paused game must not step it.
+func TestCameraShakeStepsOncePerLogicTick(t *testing.T) {
+	rng := weapons.NewNativeRNG()
+	p := &playState{rng: &rng}
+	p.startCameraShake(0, 0, 1.5, 1, 1, 1)
+	start := p.shake.remaining
+	p.shakeOffset()
+	if p.shake.remaining != start {
+		t.Fatalf("reading the draw offset advanced the shake to %.6f", p.shake.remaining)
+	}
+	p.stepShakeTick()
+	if math.Abs(p.shake.remaining-(start-1.0/60)) > 1e-12 {
+		t.Fatalf("one logic tick left remaining %.6f, want %.6f", p.shake.remaining, start-1.0/60)
+	}
+	p.paused = true
+	p.stepShakeTick()
+	if math.Abs(p.shake.remaining-(start-1.0/60)) > 1e-12 {
+		t.Fatalf("a paused tick advanced the shake to %.6f", p.shake.remaining)
+	}
 }

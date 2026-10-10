@@ -15,10 +15,16 @@ type wireCombo struct {
 	R, G, B, A uint8
 }
 
+// comboShownTrackers lists the trackers whose count and popup are drawn. Both slots are drawn on both builds:
+// the count display stays as it was (the user asked for it to be left alone).
+func (p *playState) comboShownTrackers() []*comboTracker {
+	return p.combo.trackers()
+}
+
 // comboWire exports the host's popups and HUD flash for guests.
 func (p *playState) comboWire() ([]wireCombo, float64, [3]float64) {
 	var out []wireCombo
-	for _, t := range p.combo.trackers() {
+	for _, t := range p.comboShownTrackers() {
 		if popup, ok := t.popup(); ok {
 			out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 		}
@@ -45,7 +51,7 @@ func (p *playState) comboPopups() []comboPopup {
 		return list
 	}
 	var list []comboPopup
-	for _, t := range p.combo.trackers() {
+	for _, t := range p.comboShownTrackers() {
 		if popup, ok := t.popup(); ok {
 			list = append(list, popup)
 		}
@@ -70,7 +76,7 @@ func (a *app) drawComboHUD(screen *ebiten.Image, x, y float64) {
 	if !a.play.hudVisible {
 		return
 	}
-	for _, t := range a.play.combo.trackers() {
+	for _, t := range a.play.comboShownTrackers() {
 		if popup, ok := t.popup(); ok {
 			a.drawComboText(screen, popup, t)
 		}

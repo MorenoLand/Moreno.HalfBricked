@@ -476,8 +476,13 @@ func TestWaveSpawnedZombieAndPortalDoNotAdvanceOnCreationUpdate(t *testing.T) {
 	if len(play.zombies) != 1 || len(play.portals) != 1 {
 		t.Fatalf("wave update spawned %d zombies and %d portals, want one each", len(play.zombies), len(play.portals))
 	}
-	if play.zombies[0].x != 48 || play.zombies[0].y != 48 {
-		t.Errorf("new zombie advanced on its creation update to (%.3f, %.3f), want spawn point (48, 48)", play.zombies[0].x, play.zombies[0].y)
+	// FUN_000bec48: the point is random inside the tile, x = (tileX + 0.1 + rnd(.8)) * 32.
+	z := play.zombies[0]
+	if z.x < 32+3.2 || z.x > 32+28.8+.001 || z.y < 32+3.2 || z.y > 32+28.8+.001 {
+		t.Errorf("new zombie at (%.3f, %.3f) is outside the inset spawn tile", z.x, z.y)
+	}
+	if z.x != play.portals[0].x || z.y != play.portals[0].y {
+		t.Errorf("new zombie advanced on its creation update to (%.3f, %.3f), want the portal point (%.3f, %.3f)", z.x, z.y, play.portals[0].x, play.portals[0].y)
 	}
 	if play.portals[0].age != 0 || play.portals[0].size != 0 || play.portals[0].animationTimer != 100 {
 		t.Errorf("new portal advanced on its creation update: age %.3f size %.3f timer %.1f, want 0/0/100", play.portals[0].age, play.portals[0].size, play.portals[0].animationTimer)
@@ -559,7 +564,7 @@ func TestGetPositionWithinRadiusReturnsNativeClearedPair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Values) != 2 || result.Values[0] != 0 || result.Values[1] != 0 {
+	if len(result.Values) != 2 || result.Values[0] != float64(0) || result.Values[1] != float64(0) {
 		t.Fatalf("GetPositionWithinRadius() = %#v, want cleared pair (0, 0)", result.Values)
 	}
 }
@@ -799,14 +804,40 @@ func TestSetCameraPanInterpolatesNativeDuration(t *testing.T) {
 		t.Fatalf("camera pan start = active %t zoom %.3f, want active true zoom 1", play.scriptCameraPanActive, play.world.Zoom)
 	}
 	play.updateCamera()
-	if play.world.Zoom >= 1 || !play.scriptCameraPanActive {
-		t.Fatalf("camera pan first step = active %t zoom %.3f, want active true and zoom below 1", play.scriptCameraPanActive, play.world.Zoom)
+	// Script zoom is the native z (smaller = closer, default 0.65 = port zoom 1): panning to z .5 zooms in to 1.3.
+	if play.world.Zoom <= 1 || !play.scriptCameraPanActive {
+		t.Fatalf("camera pan first step = active %t zoom %.3f, want active true and zoom above 1", play.scriptCameraPanActive, play.world.Zoom)
 	}
 	for i := 0; i < 59; i++ {
 		play.updateCamera()
 	}
-	if play.scriptCameraPanActive || math.Abs(play.world.Zoom-.5) > .0001 {
-		t.Fatalf("camera pan final = active %t zoom %.3f, want active false zoom .5", play.scriptCameraPanActive, play.world.Zoom)
+	if play.scriptCameraPanActive || math.Abs(play.world.Zoom-.65/.5) > .0001 {
+		t.Fatalf("camera pan final = active %t zoom %.3f, want active false zoom 1.3", play.scriptCameraPanActive, play.world.Zoom)
+	}
+}
+
+func TestScriptZoomIsTheNativeInverseScale(t *testing.T) {
+	play := &playState{world: &viewer.Viewer{Level: formats.Level{Width: 40, Height: 40}, Zoom: 1}, tileSize: 32}
+	host := &playScriptHost{play: play}
+	result, err := host.Call("GetZoom", nil)
+	if err != nil || len(result.Values) != 1 || math.Abs(result.Values[0].(float64)-.65) > 1e-6 {
+		t.Fatalf("GetZoom at the default view = %v, %v; want the native level-start zoom 0.65", result.Values, err)
+	}
+	if _, err := host.Call("SetZoom", []scripting.Value{.4}); err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(play.world.Zoom-.65/.4) > 1e-9 {
+		t.Fatalf("SetZoom(0.4) set zoom %.4f, want %.4f (a closer view than the 0.65 default)", play.world.Zoom, .65/.4)
+	}
+	if _, err := host.Call("SetCameraPan", []scripting.Value{.65, 300, 300, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(play.world.Zoom-1) > 1e-9 {
+		t.Fatalf("SetCameraPan back to 0.65 left zoom %.4f, want the default 1", play.world.Zoom)
+	}
+	result, err = host.Call("GetZoom", nil)
+	if err != nil || math.Abs(result.Values[0].(float64)-.65) > 1e-6 {
+		t.Fatalf("GetZoom after restoring = %v, %v", result.Values, err)
 	}
 }
 

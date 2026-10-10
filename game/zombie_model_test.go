@@ -65,6 +65,7 @@ func TestPistolHitsToKillFollowStrength(t *testing.T) {
 func TestZombieHitFlashAndSurvivalSound(t *testing.T) {
 	p := modelRig()
 	p.spawnZombieAt(waveEntry("zombie", 300, formats.Vec2{X: 35, Y: 35}), formats.Vec2{X: 400, Y: 400})
+	riseZombies(p)
 	z := &p.zombies[0]
 	if z.native.maxHealth != 300 || z.health != 300 {
 		t.Fatalf("health %v / max %v, want 300", z.health, z.native.maxHealth)
@@ -93,6 +94,7 @@ func TestBigZombieScoreComesFromStrength(t *testing.T) {
 	p := modelRig()
 	p.multiplier = 2
 	p.spawnZombieAt(waveEntry("zombie", 300, formats.Vec2{X: 35, Y: 35}), formats.Vec2{X: 400, Y: 400})
+	riseZombies(p)
 	z := &p.zombies[0]
 	if z.rawPoints != 300 {
 		t.Fatalf("raw points %d, want the strength 300", z.rawPoints)
@@ -124,6 +126,7 @@ func shieldDirection(facing uint16, diff int) uint16 {
 func TestShieldZombieReducesFrontalBulletDamage(t *testing.T) {
 	p := modelRig()
 	p.spawnZombieAt(waveEntry("shield_zombie", 1000, formats.Vec2{X: 40, Y: 40}), formats.Vec2{X: 400, Y: 400})
+	riseZombies(p)
 	z := &p.zombies[0]
 	if z.native.kind != zombieKindShield {
 		t.Fatalf("native kind %d, want 3", z.native.kind)
@@ -157,6 +160,7 @@ func TestBulletReachGrowsWithZombieSize(t *testing.T) {
 	p := modelRig()
 	p.spawnZombieAt(waveEntry("zombie", 100, formats.Vec2{X: 29, Y: 29}), formats.Vec2{X: 400, Y: 400})
 	p.spawnZombieAt(waveEntry("zombie", 100, formats.Vec2{X: 45, Y: 45}), formats.Vec2{X: 800, Y: 400})
+	riseZombies(p)
 	small, big := &p.zombies[0], &p.zombies[1]
 	b := pistolBullet(small.x+10+zombieBodyScale*small.size.X+1, small.y)
 	if p.bulletReachesZombie(b, small) {
@@ -179,6 +183,7 @@ func TestBulletStopsAtFirstTarget(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		p.spawnZombieAt(waveEntry("zombie", 100, formats.Vec2{X: 29, Y: 29}), formats.Vec2{X: 400, Y: 400})
 	}
+	riseZombies(p)
 	p.bullets = append(p.bullets, pistolBullet(400, 400))
 	p.updateBulletsAndKills()
 	dead := 0

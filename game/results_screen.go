@@ -42,20 +42,6 @@ func (a *app) resultsUIScreen() *formats.UIScreen {
 	return screen
 }
 
-// The 1.2.5 end screen has no number count-up. The enter routine 0x000cf030
-// formats the final score and counters once with sprintf into the Score/Stat
-// text components (0x000c9f24 sets the text), and the per-frame update 0x000ce13c
-// only runs the slide state machine, the stat-pair cycle timers and the exit
-// timer, so the totals are shown at their final values from the first frame.
-func (menu *resultsMenu) shownScore() int32 { return menu.score() }
-
-func (menu *resultsMenu) shownKills() int32 {
-	if menu.Data.Kills == nil {
-		return 0
-	}
-	return *menu.Data.Kills
-}
-
 type uiDecorSpec struct {
 	texture string
 	frames  int
@@ -243,18 +229,17 @@ func (a *app) drawResultsText(screen *ebiten.Image, ui *formats.UIScreen, menu *
 		a.drawUIText(screen, "Score:", x, y, width, align, normal, scoreOffset)
 	}
 	if x, y, width, align, ok := place("StoryScore", "Score"); ok {
-		a.drawUIText(screen, fmt.Sprintf("%d", menu.shownScore()), x, y, width, align, normal, scoreOffset)
+		mult, gold := menu.popEffect(0)
+		a.drawUITextFX(screen, fmt.Sprintf("%d", menu.shownScore()), x, y, width, align, normal, scoreOffset, mult, gold) // port addition: count-up (results_count.go)
 	}
 	rows := []struct {
 		title, value, label string
 		amount              *int32
 		shown               int32
+		pop                 int
 	}{
-		{"StatTop_Title", "StatTop_Value", "Highscore:", menu.Data.Highscore, 0},
-		{"StatBottom_Title", "StatBottom_Value", "Zombie Kills:", menu.Data.Kills, menu.shownKills()},
-	}
-	if menu.Data.Highscore != nil {
-		rows[0].shown = *menu.Data.Highscore
+		{"StatTop_Title", "StatTop_Value", "Highscore:", menu.Data.Highscore, menu.shownHighscore(), 2},
+		{"StatBottom_Title", "StatBottom_Value", "Zombie Kills:", menu.Data.Kills, menu.shownKills(), 1},
 	}
 	for _, row := range rows {
 		if row.amount == nil {
@@ -264,7 +249,8 @@ func (a *app) drawResultsText(screen *ebiten.Image, ui *formats.UIScreen, menu *
 			a.drawUIText(screen, row.label, x, y, width, align, small, mainOffset)
 		}
 		if x, y, width, align, ok := place("StatsBox", row.value); ok {
-			a.drawUIText(screen, fmt.Sprintf("%d", row.shown), x, y, width, align, small, mainOffset)
+			mult, gold := menu.popEffect(row.pop)
+			a.drawUITextFX(screen, fmt.Sprintf("%d", row.shown), x, y, width, align, small, mainOffset, mult, gold)
 		}
 	}
 	labels := []struct {

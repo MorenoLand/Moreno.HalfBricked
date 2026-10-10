@@ -85,16 +85,3 @@ func TestResultsOffsetNativeSpeed(t *testing.T) {
 		t.Fatal("exit speed")
 	}
 }
-
-// The native enter routine (1.2.5 0x000cf030) sprintf's the final totals straight
-// into the text components; there is no count-up to animate.
-func TestResultsShowFinalValuesImmediately(t *testing.T) {
-	kills := int32(135)
-	menu := newResultsMenu(resultsData{Survival: true, Score: 1000, Kills: &kills})
-	if menu.shownScore() != 1000 || menu.shownKills() != 135 {
-		t.Fatalf("values %d %d", menu.shownScore(), menu.shownKills())
-	}
-	if newResultsMenu(resultsData{Survival: true, Score: 5}).shownKills() != 0 {
-		t.Fatal("absent kills row must stay zero")
-	}
-}

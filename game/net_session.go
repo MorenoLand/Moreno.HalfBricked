@@ -547,7 +547,12 @@ func (a *app) updateGuestResults() error {
 		}
 	}
 	if a.resultsScreen != nil {
+		// Port addition (results_count.go): guests see the count-up too; a press finishes it.
+		if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			a.resultsScreen.finishCount()
+		}
 		a.resultsScreen.update(1.0/60.0, false)
+		a.playResultsTick(a.resultsScreen)
 	}
 	return nil
 }

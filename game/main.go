@@ -31,6 +31,7 @@ import (
 )
 
 type app struct {
+	inputHook                                    func() playerInput // headless playthrough tests inject the primary player's input
 	rng                                          *weapons.NativeRNG
 	pack                                         *content.Pack
 	levels                                       []formats.LevelInfo
@@ -174,6 +175,10 @@ type zombieState struct {
 	spawnAway        bool
 	dying            bool
 	deathAge         float64
+	deathState       int     // native death state (zombie_gib.go): 0 unclassified, 1 normal, 2 gib
+	deathDelay       float64 // hit timer before the death transition; 0 = zombieDeathDelay
+	gibbed           bool    // a gib body presenting Disintegrate (playState.gibBodies)
+	presentAge       float64 // seconds into the Disintegrate presentation
 	scriptControlled bool
 	collision        float64
 	mirrorExploding  bool // guests only: the host says this one is an exploding zombie
@@ -203,6 +208,7 @@ type playState struct {
 	time                                                   float64
 	moving                                                 bool
 	hurt                                                   float64
+	vitals                                                 playerVitals // player_vitals.go
 	deathStarted                                           bool
 	banner                                                 waveBanner
 	bannerSeen                                             int
@@ -319,7 +325,12 @@ type playState struct {
 	statistics                                             *stats.StatsData
 	statsPositionX, statsPositionY                         float64
 	waveElapsed                                            float64
+	waveEndTimer                                           int // wave_timing.go: native end_wave_time countdown (ms)
+	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
+	waveEndStamp                                           float64
+	waveEndInit                                            bool
 	waveSpawned                                            []int
+	survival                                               *survivalState
 	rng                                                    *weapons.NativeRNG
 	rex                                                    rexBossField
 	zombies                                                []zombieState
@@ -335,6 +346,7 @@ type playState struct {
 	combo                                                  comboSystem
 	portals                                                []portalState
 	bloodPops                                              []bloodPop
+	gibBodies                                              []zombieState // gib bodies presenting Disintegrate (zombie_gib.go)
 	explosions                                             []explosionState
 	zombieBlasts                                           []zombieBlast
 	hudVisible                                             bool
@@ -343,8 +355,12 @@ type playState struct {
 	dialogueAge                                            float64
 }
 
-const playerBaseSpeed = 180.0
-const playerCollisionRadius = 16.0
+// Native player update FUN_00096818: velocity = input (length <= 1) * 0.81 (DAT_00096bfc,
+// the digital keyboard counts as a full stick) and pos += dt * velocity * base
+// * walkSpeedFactor, with the base per build (playerWalkBase, vitals). The body is
+// pushed out of the level by FUN_000be3c0 with radius 0.2 * the 64 px player body
+// (DAT_00097498) = 12.8 px. (Earlier port values: 180 and 16, neither found in the binary.)
+const playerCollisionRadius = 0.2 * 64
 
 var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-6, 24}, {4, 26}, {13, 24}, {22, 17}, {27, 11}, {30, 2}, {28, -10}, {24, -18}, {10, -22}, {-22, -22}, {-26, -14}, {-28, -1}, {-28, 7}, {-25, 15}, {-18, 21}, {-8, 25}}
 
@@ -591,6 +607,9 @@ func (a *app) Update() error {
 		defer a.flushPickupVoices(statsPlay)
 		defer a.flushSfxQueue(statsPlay)
 		defer a.flushSpinAudio(statsPlay)
+		// The camera shake advances once per logic tick, after the tick's script and camera work
+		// (native: the per-camera updater runs the shake step); drawing only reads the offset.
+		defer statsPlay.stepShakeTick()
 		if a.netGuest() {
 			return a.updateNetGuest()
 		}
@@ -1489,6 +1508,7 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves) - 1
 		wave := a.play.world.Level.Waves[a.play.waveIndex]
 		a.play.waveElapsed = wave.RunTime + wave.EndWaveTime
+		a.play.waveEndInit, a.play.waveEndTimer, a.play.waveEndStamp = true, 1, a.play.waveElapsed
 		a.play.levelKills = a.play.levelZombieTotal
 		a.play.updateWaves()
 		return a.updateLevelCompletion()
@@ -2464,9 +2484,7 @@ func (a *app) drawBarryMenu(screen *ebiten.Image) {
 	a.drawImage(screen, image, options)
 }
 func (a *app) drawPlay(screen *ebiten.Image) {
-	if !a.play.paused {
-		a.play.shakeOffX, a.play.shakeOffY = a.play.updateShake(1.0 / 60.0)
-	}
+	a.play.shakeOffX, a.play.shakeOffY = a.play.shakeOffset()
 	// The shake moves only the world: the HUD and menus stay put.
 	a.play.world.CameraX += a.play.shakeOffX
 	a.play.world.CameraY += a.play.shakeOffY
@@ -2506,6 +2524,11 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 				a.drawBloodPop(target, pop)
 			}
 		}
+		for _, body := range a.play.gibBodies {
+			if body.y <= a.play.y {
+				a.drawZombie(target, body)
+			}
+		}
 		a.drawDepthSorted(target, drawOrder, true)
 		a.drawMines(target)
 		a.drawThrown(target)
@@ -2523,6 +2546,11 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		for _, pop := range a.play.bloodPops {
 			if pop.y > a.play.y {
 				a.drawBloodPop(target, pop)
+			}
+		}
+		for _, body := range a.play.gibBodies {
+			if body.y > a.play.y {
+				a.drawZombie(target, body)
 			}
 		}
 		for _, explosion := range a.play.explosions {
@@ -3051,6 +3079,10 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if zombie.bossRage || zombie.rexRageTimer > 0 {
 		animation, hasAnimation = a.spriteAnimation(textureName, "Rage")
 	}
+	gibClip, gibFrame, isGibClip := a.zombieGibClip(zombie)
+	if isGibClip {
+		animation, hasAnimation = gibClip, true
+	}
 	texturePath := commonSDTexture(textureName)
 	columns, rows := 5, 4
 	if hasAnimation {
@@ -3072,6 +3104,9 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		angle, flipX = nativeSpriteDirection(entity.rotation, columns)
 	}
 	frame := int(math.Floor(zombie.frame)) % rows
+	if isGibClip {
+		frame = gibFrame
+	}
 	if frame < 0 {
 		frame += rows
 	}
@@ -3080,6 +3115,10 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		atlas = animation.Atlas
 	}
 	rect := atlasCellRect(atlas, angle, frame, columns, rows, texture.Bounds().Dx(), texture.Bounds().Dy())
+	if isGibClip && gibClip.Angles <= 1 {
+		// Disintegrate is a one-angle strip with its frames across (zombie_gib.go).
+		rect = zombieGibStripCell(frame, gibClip.Frames, texture.Bounds())
+	}
 	if rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
 	}
@@ -3538,13 +3577,30 @@ func (a *app) openPlay() error {
 			}
 		}
 	}
+	if a.mode == 1 && !a.netGuest() {
+		// Survival opens with scripts/survival_tute.script (GET READY... / HERE THEY COME!): the native survival game
+		// state loads it from virtual slot 16 (1.2.5 FUN_000995a8), the sibling of the story state's entry-script
+		// loader FUN_00098a1c, and the waves only start once it has finished.
+		source, err := a.pack.ScriptSource(survivalIntroScript)
+		switch {
+		case err != nil && strings.Contains(err.Error(), "not found"):
+			log.Printf("no %s in this data set; survival starts directly", survivalIntroScript)
+		case err != nil:
+			return err
+		default:
+			play.scriptRuntime, err = scripting.New(source, &playScriptHost{app: a, play: play}, scriptCallbacks)
+			if err != nil {
+				return fmt.Errorf("%s: %w", survivalIntroScript, err)
+			}
+		}
+	}
 	if a.coopPlayers > 1 {
 		play.startCoop(a.coopPlayers, false)
 	}
 	a.stopWeaponPlayback()
 	a.noteAchievementLevelEntry(a.play, level.Info)
 	a.play = play
-	a.setWorldMusic(level.Info.WorldIndex)
+	a.setLevelMusic(level.Info)
 	a.play.centerCamera()
 	if a.newDismissed == nil {
 		a.newDismissed = map[string]bool{}
@@ -3553,6 +3609,9 @@ func (a *app) openPlay() error {
 	a.netBroadcastStart()
 	return a.savePlayerProfile()
 }
+
+// survivalIntroScript is the script every survival level starts with (see openPlay).
+const survivalIntroScript = "Common0/Scripts/Survival_Tute.script"
 
 func entryScriptPath(info formats.LevelInfo) string {
 	parts := strings.Split(filepath.ToSlash(info.SourceXML), "/")
@@ -3610,7 +3669,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 	if mobile {
 		p.aimActive = pointerDown && p.stick == 2
 	} else {
-		p.aimActive = pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace)
+		p.aimActive = pointerDown || ebiten.IsKeyPressed(ebiten.KeySpace) || p.input.aiming()
 	}
 	tileSize := p.tileSize
 	if tileSize <= 0 {
@@ -3774,6 +3833,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 // script walking).
 func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary bool) {
 	p.hurt = math.Max(0, p.hurt-1.0/60.0)
+	p.stepVitals(1.0 / 60.0)
 	if p.cheats.infiniteAmmo {
 		p.restockAmmo()
 	}
@@ -3791,7 +3851,8 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 	p.moving = dx != 0 || dy != 0
 	if p.moving {
 		length := math.Sqrt(dx*dx + dy*dy)
-		moveX, moveY := dx/length*playerBaseSpeed/60, dy/length*playerBaseSpeed/60
+		walk := playerWalkBase(p.waveBuild()) * p.vitals.walkSpeedFactor()
+		moveX, moveY := dx/length*walk/60, dy/length*walk/60
 		stepLength := math.Sqrt(moveX*moveX + moveY*moveY)
 		steps := int(math.Ceil(stepLength / playerCollisionStep))
 		if steps < 1 {
@@ -3800,7 +3861,7 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 		for step := 0; step < steps; step++ {
 			candidateX, candidateY := p.x+moveX/float64(steps), p.y+moveY/float64(steps)
 			for resolve := 0; resolve < 4; resolve++ {
-				pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
+				pushX, pushY, hit := p.playerTileDisplacement(candidateX, candidateY, radius, tileSize)
 				if !hit {
 					break
 				}
@@ -3813,7 +3874,7 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 				candidateY += zombiePushY
 			}
 			for resolve := 0; resolve < 4; resolve++ {
-				pushX, pushY, hit := p.collisionDisplacement(candidateX, candidateY, radius, tileSize)
+				pushX, pushY, hit := p.playerTileDisplacement(candidateX, candidateY, radius, tileSize)
 				if !hit {
 					break
 				}
@@ -3829,8 +3890,10 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 	if primary && p.scriptWalking {
 		p.moving = true
 	}
-	for resolve := 0; resolve < 4; resolve++ {
-		pushX, pushY, hit := p.collisionDisplacement(p.x, p.y, radius, tileSize)
+	for resolve := 0; resolve < 4 && !(primary && p.scriptWalking); resolve++ {
+		// A scripted walk (WalkPlayerTo) skips tile collision natively (FUN_000f3280: the walk-flag branch
+		// adds the step straight to the position), so it must not be pushed back out of a wall either.
+		pushX, pushY, hit := p.playerTileDisplacement(p.x, p.y, radius, tileSize)
 		if !hit {
 			break
 		}
@@ -3841,7 +3904,7 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 		p.x += pushX
 		p.y += pushY
 		for resolve := 0; resolve < 4; resolve++ {
-			pushX, pushY, tileHit := p.collisionDisplacement(p.x, p.y, radius, tileSize)
+			pushX, pushY, tileHit := p.playerTileDisplacement(p.x, p.y, radius, tileSize)
 			if !tileHit {
 				break
 			}
@@ -3918,6 +3981,7 @@ func (p *playState) updateBulletsAndKills() {
 			p.markProjectileHit(b.projectile, b.origin)
 			if b.explodes() {
 				p.rocketContactDamage(b, &p.zombies[index])
+				p.classifyZombieDeath(&p.zombies[index], 0x13, b.x, b.y)
 				p.detonateFrom(b.x, b.y, b.explosionSound(), b.origin)
 				hit = true
 				break
@@ -3940,6 +4004,7 @@ func (p *playState) updateBulletsAndKills() {
 				p.creditKill(b.origin)
 				p.zombies[index].dying = true
 				p.zombies[index].deathAge = 0
+				p.classifyZombieDeath(&p.zombies[index], bulletNativeKind(b), b.x, b.y)
 			}
 			hit = true
 			if bulletStopsAtFirstTarget(b) {
@@ -3977,7 +4042,15 @@ func (p *playState) updateBulletsAndKills() {
 			p.score = int(int32(p.score) + award)
 		}
 		if !zombie.spawnAway {
-			pop := bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3}
+			if zombie.dying && zombie.deathState == zombieDeathGib {
+				// A gib makes no blood pop: the body plays Disintegrate (zombie_gib.go).
+				p.addZombieGibBody(zombie)
+				if !p.isExplodingZombie(zombie) {
+					p.queueZombieDeathSound()
+				}
+				continue
+			}
+				pop := bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3}
 			if zombie.native.kind != 0 {
 				pop.variant, pop.x = p.zombieDeathPop(zombie)
 			}
@@ -3998,44 +4071,61 @@ func (p *playState) updateWaves() {
 		return
 	}
 	p.noteWave()
-	wave := p.world.Level.Waves[p.waveIndex]
+	// The wave block (FUN_000c0cec / FUN_00123180) runs only while the living enemy count is below the build's
+	// limit. The gate reads the count before this frame's spawns, and the spawners, the timer and the advance
+	// all sit behind it, so they pause together (waveZombieLimit).
+	if p.livingZombies() >= p.waveGateLimit() {
+		return
+	}
+	wave := p.waveNow()
 	if len(p.waveSpawned) != len(wave.Spawners) {
 		p.waveSpawned = make([]int, len(wave.Spawners))
 	}
 	p.waveElapsed += 1000.0 / 60.0
 	allSpawned := true
 	for index, spawner := range wave.Spawners {
-		if spawner.Index < 1 || spawner.Index > 13 || spawner.Count <= 0 || len(spawner.Types) == 0 {
+		count := spawner.Count
+		if count <= 0 {
+			// FUN_000bf120 drops a spawner whose count is below 1 right after its first FUN_000bec48 call, and that
+			// call still spawns once when the delay timer is already due: delay 0 / count 0 (the president boss,
+			// a few bonus crates) spawns one, a delayed count 0 spawner never does.
+			count = 0
+			if spawner.DelayTime <= 1000.0/60 {
+				count = 1
+			}
+		}
+		if spawner.Index < 1 || spawner.Index > 13 || count <= 0 || len(spawner.Types) == 0 {
 			continue
 		}
-		interval := waveSpawnerInterval(wave.RunTime, spawner.DelayTime, spawner.Count)
-		for p.waveSpawned[index] < spawner.Count && p.waveElapsed >= spawner.DelayTime+float64(p.waveSpawned[index])*interval {
-			p.spawnZombie(spawner, p.waveSpawned[index])
+		interval := waveSpawnerInterval(wave.RunTime, spawner.DelayTime, count)
+		for p.waveSpawned[index] < count && p.waveElapsed >= spawner.DelayTime+float64(p.waveSpawned[index])*interval {
+			p.spawnZombieFor(spawner, p.waveTurns(index), p.waveSpawned[index])
 			p.waveSpawned[index]++
 		}
-		if p.waveSpawned[index] < spawner.Count {
+		if p.waveSpawned[index] < count {
 			allSpawned = false
 		}
 	}
-	activeZombies := 0
-	for _, zombie := range p.zombies {
-		if !zombie.dying && zombie.health > 0 {
-			activeZombies++
-		}
+	alive := p.livingZombies()
+	if waveEndRule == waveEndAllDead {
+		alive = p.waveAliveForEnd()
 	}
-	if allSpawned && activeZombies <= wave.EndWaveZombies && p.waveElapsed >= wave.RunTime+wave.EndWaveTime {
-		next := p.waveIndex + 1
-		if wave.NextWave > 0 && wave.NextWave < len(p.world.Level.Waves) {
-			next = wave.NextWave
+	if p.waveEndStep(wave, !allSpawned, alive) {
+		// The next wave is next_wave, or the one after this when next_wave is below 1. Past the last wave none
+		// follows and the level ends. The banner moves with the index on this same frame.
+		next := wave.NextWave
+		if next < 1 {
+			next = p.waveIndex + 1
 		}
 		if next < len(p.world.Level.Waves) {
+			p.survivalAdvance(next)
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
 		} else {
 			p.waveIndex, p.wavesFinished = next, true
-			p.noteWave()
 		}
+		p.noteWave()
 	}
 }
 func waveSpawnerInterval(runTime, delayTime float64, count int) float64 {
@@ -4048,6 +4138,11 @@ func waveSpawnerInterval(runTime, delayTime float64, count int) float64 {
 
 // spawnZombieAt creates one zombie of the given type, opening a portal there.
 func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
+	p.spawnZombieAtTurn(entry, point, nil)
+}
+
+// spawnZombieAtTurn is spawnZombieAt. A non-nil turn is the native turnSpeed range of a survival type (survival.go).
+func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec2, turn *turnRange) {
 	native := nativeZombieTypes[entry.Name]
 	waveZombie := native >= zombieKindPlain && native <= zombieKindProspect
 	var record zombieSpawnRecord
@@ -4066,7 +4161,11 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 	if waveZombie {
 		// Types 2..9 come from the native spawn record (zombie_model.go): rolled speed,
 		// size and strength instead of the averages the port used before.
-		record = rollZombieSpawnRecord(entry, p.rng)
+		if turn != nil {
+			record = rollSurvivalSpawnRecord(entry, *turn, p.rng)
+		} else {
+			record = rollZombieSpawnRecord(entry, p.rng)
+		}
 		speed = float64(record.Speed)
 		if record.Speed < 0 {
 			speed = 30 + float64(zombieRandom(p.rng, 30))
@@ -4102,15 +4201,22 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 }
 
 func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
+	p.spawnZombieFor(spawner, nil, ordinal)
+}
+
+// spawnZombieFor is spawnZombie for one spawner of the running wave. turns are the spawner's native turn ranges after
+// a survival advance (survival.go); nil keeps each type's single turnSpeed.
+func (p *playState) spawnZombieFor(spawner formats.Spawner, turns []turnRange, ordinal int) {
 	points := p.spawnPoints(spawner.Index)
 	if len(points) == 0 {
 		return
 	}
-	point := points[ordinal%len(points)]
-	entry, ok := chooseSpawnType(spawner.Types, p.rng)
+	index, ok := chooseSpawnIndex(spawner.Types, p.rng)
 	if !ok {
 		return
 	}
+	entry := spawner.Types[index]
+	point := p.nativeSpawnPoint(points) // native: random tile and random point inside it (wave_timing.go)
 	if entry.Name == "train" {
 		p.spawnTrain()
 		return
@@ -4121,6 +4227,11 @@ func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
 	}
 	if isBossType(entry.Name) && p.bossPresent(entry.Name) {
 		// A script (AddRobotBossZombie, AddWesternBossZombie) already staged this boss.
+		return
+	}
+	if turns != nil && index < len(turns) {
+		turn := turns[index]
+		p.spawnZombieAtTurn(entry, point, &turn)
 		return
 	}
 	p.spawnZombieAt(entry, point)
@@ -4192,7 +4303,17 @@ func bulletHitsZombie(previousX, previousY, x, y float64, zombie zombieState) bo
 	return zombie.x >= left-halfWidth && zombie.x <= right+halfWidth && zombie.y >= top-halfHeight && zombie.y <= bottom+halfHeight
 }
 
+// chooseSpawnType is the weighted type roll of a spawner (see chooseSpawnIndex).
 func chooseSpawnType(types []formats.SpawnType, rng *weapons.NativeRNG) (formats.SpawnType, bool) {
+	index, ok := chooseSpawnIndex(types, rng)
+	if !ok {
+		return formats.SpawnType{}, false
+	}
+	return types[index], true
+}
+
+// chooseSpawnIndex is the weighted type roll: rnd(total chance), then the first type whose running chance covers it.
+func chooseSpawnIndex(types []formats.SpawnType, rng *weapons.NativeRNG) (int, bool) {
 	total := uint32(0)
 	for _, entry := range types {
 		if entry.Chance > 0 {
@@ -4200,20 +4321,20 @@ func chooseSpawnType(types []formats.SpawnType, rng *weapons.NativeRNG) (formats
 		}
 	}
 	if total == 0 {
-		return formats.SpawnType{}, false
+		return 0, false
 	}
 	value := rng.Bounded(total)
-	for _, entry := range types {
+	for index, entry := range types {
 		if entry.Chance <= 0 {
 			continue
 		}
 		chance := uint32(int64(entry.Chance))
 		if value < chance {
-			return entry, true
+			return index, true
 		}
 		value -= chance
 	}
-	return formats.SpawnType{}, false
+	return 0, false
 }
 
 func (p *playState) spawnPoints(index int) []formats.Vec2 {
@@ -4240,6 +4361,7 @@ func (p *playState) updateZombies() {
 	const dt = 1.0 / 60.0
 	p.refreshNav()
 	p.updateAlertNoise(dt)
+	p.updateZombieGibBodies(dt)
 	p.updateZombieShots(dt)
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
@@ -4277,9 +4399,19 @@ func (p *playState) updateZombies() {
 			stopDistance = entity.targetRange
 		}
 		moved := false
+		unstickIntent, unstickAlert := 0.0, false
 		scriptIdle := p.scriptRuntime == nil || p.scriptRuntime.Done() || p.scriptZombiesActive
 		switch {
-		case scriptWalk && distance <= stopDistance:
+		case scriptWalk && distance < stopDistance:
+			// native arrival test (FUN_001013c4): squared distance strictly below the squared range
+			entity.walking = false
+			if entity.stopOnArrival {
+				zombie.speed, entity.speed = 0, 0
+			}
+		case scriptWalk && p.scriptWalkGivesUp(entity, distance, dt):
+			// Port watchdog, not in the native code: a scripted zombie that cannot get any closer for
+			// scriptWalkPatience seconds (a wall corner between its spawn ring point and the target, a script that
+			// zeroed its speed) would hold the level-complete cutscene in its IsZombieWalking loop forever.
 			entity.walking = false
 			if entity.stopOnArrival {
 				zombie.speed, entity.speed = 0, 0
@@ -4292,20 +4424,36 @@ func (p *playState) updateZombies() {
 					aimX, aimY = navX*math.Max(distance, 2), navY*math.Max(distance, 2)
 				}
 			}
+			forceX, forceY, forced := p.zombieUnstickDirection(zombie, prey.index) // port addition (zombie_unstick.go)
+			if forced {
+				aimX, aimY = forceX*math.Max(distance, 2), forceY*math.Max(distance, 2)
+			}
 			moveX, moveY := p.stepZombieAI(zombie, dx, dy, aimX, aimY, dt)
+			if forced {
+				zombieUnstickAssist(zombie, forceX, forceY)
+			}
 			if scriptIdle && speed > 0 {
 				zombie.x += moveX
 				zombie.y += moveY
 				moved = moveX != 0 || moveY != 0
+				unstickIntent, unstickAlert = math.Hypot(moveX, moveY), true
 			}
 		case scriptWalk || scriptIdle:
 			// Staged zombies (scripts, capture scenes, bosses): straight chase.
-			if distance > stopDistance && speed > 0 {
+			if distance > 0 && (distance > stopDistance || scriptWalk) && speed > 0 {
 				step := math.Min(speed*dt, distance-stopDistance)
+				if scriptWalk {
+					// Native steps the full speed*dt toward the target (the clamp above landed exactly on the range edge,
+					// where float rounding then kept the strict `<` arrival test false forever).
+					step = speed * dt
+				}
 				dirX, dirY := p.rexSteer(zombie, prey.index, dx/distance, dy/distance)
 				zombie.x += dirX * step
 				zombie.y += dirY * step
 				moved = step > 0
+				if p.isRexBoss(zombie) {
+					unstickIntent = step // port addition (zombie_unstick.go)
+				}
 			}
 		}
 		// FUN_000a17cc: after every move the body is pushed out of blocking tiles.
@@ -4313,6 +4461,9 @@ func (p *playState) updateZombies() {
 			pushX, pushY := p.nativeTilePush(zombie.x, zombie.y, zombieBodyScale*zombie.size.X)
 			zombie.x += pushX
 			zombie.y += pushY
+			p.zombieUnstickObserve(zombie, distance, unstickIntent, pushX, pushY, dt, unstickAlert)
+		} else {
+			p.zombieUnstickObserve(zombie, distance, 0, 0, 0, dt, unstickAlert)
 		}
 		p.separateZombie(index, dt)
 		if zombie.native.kind == zombieKindSpeedy {
@@ -4355,19 +4506,32 @@ func (p *playState) updatePlayerDeath() bool {
 		p.deathTimer = 2
 		p.achieve.died = true
 		p.resetMultiplier()
-		if p.lives > 0 {
-			p.lives--
+		if p.coopActive() {
+			if p.lives > 0 {
+				p.lives--
+			}
+		} else {
+			p.lives-- // native FUN_00094c6c: +0x3ec -= 1; only a negative counter ends the run
 		}
+		p.vitals.speedBoost = 0
+		// FUN_00094c6c stores the respawn spot (+0x48) at the moment of death: the least
+		// crowded start marker (FUN_000bdf7c, player_vitals.go).
+		p.spawnX, p.spawnY = p.respawnPoint()
+		// FUN_00094c6c on death: FUN_0009458c(player, 0, 0) puts the pistol back in
+		// the primary slot (the secondary slot reset, FUN_0009458c(player, 8, 0), is
+		// UNRESOLVED: the attach ammo of the type-8 weapon was not decoded).
+		p.equipWeapon(p.pistolWeapon())
 		p.bloodPops = append(p.bloodPops, bloodPop{x: p.x, y: p.y, variant: len(p.bloodPops) % 3})
 		p.scriptWalking = false
 		p.moveControl, p.shootControl = false, false
 	}
 	p.deathTimer = math.Max(0, p.deathTimer-1.0/60.0)
-	if p.deathTimer > 0 || p.lives <= 0 {
+	if p.deathTimer > 0 || p.outOfLives() {
 		return true
 	}
 	p.x, p.y = p.spawnX, p.spawnY
 	p.health = p.maxHealth
+	p.startRespawnGrace()
 	p.achievementTracking.Reset()
 	p.achievementMotionX, p.achievementMotionY = 0, 0
 	p.deathTimer = 0
@@ -4446,6 +4610,9 @@ func zombieCollisionRadius(zombie zombieState) float64 {
 }
 
 func (p *playState) zombieCollisionDisplacement(x, y, radius float64) (float64, float64, bool) {
+	if !playerBlockedByZombies {
+		return 0, 0, false
+	}
 	if p.scriptRuntime != nil && !p.scriptRuntime.Done() && !p.scriptCollideZombies {
 		return 0, 0, false
 	}
@@ -4747,7 +4914,7 @@ func (p *playState) updateCamera() {
 			progress = 1
 		}
 		zoom := p.scriptCameraPanStartZoom + (p.scriptCameraPanTargetZoom-p.scriptCameraPanStartZoom)*progress
-		p.world.SetZoom(zoom)
+		p.world.SetZoom(portZoomFromNative(zoom))
 		p.setScriptCamera(p.scriptCameraPanStartX+(p.scriptCameraPanTargetX-p.scriptCameraPanStartX)*progress, p.scriptCameraPanStartY+(p.scriptCameraPanTargetY-p.scriptCameraPanStartY)*progress)
 		if progress >= 1 {
 			p.scriptCameraPanActive = false
@@ -4778,10 +4945,17 @@ func (p *playState) updateCamera() {
 		}
 		targetX, targetY = entity.x, entity.y
 	}
+	// SD look-ahead (native FUN_00096818 block, camera_lookahead.go): the centre leads the player by the eased offset.
+	if cameraIsV7(p.waveBuild()) && !p.scriptCameraFollow && !p.coopActive() {
+		lookX, lookY := p.cameraLookaheadTick(1.0 / 60.0)
+		targetX += lookX
+		targetY += lookY
+	}
 	targetX = math.Max(0, math.Min(maxX, targetX+offsetX-float64(logicalWidth)/(2*zoom)))
 	targetY = math.Max(0, math.Min(maxY, targetY+offsetY-float64(logicalHeight)/(2*zoom)))
-	p.world.CameraX = math.Max(0, math.Min(maxX, p.world.CameraX+(targetX-p.world.CameraX)*0.15))
-	p.world.CameraY = math.Max(0, math.Min(maxY, p.world.CameraY+(targetY-p.world.CameraY)*0.15))
+	ease := p.playCameraEase()
+	p.world.CameraX = math.Max(0, math.Min(maxX, p.world.CameraX+(targetX-p.world.CameraX)*ease))
+	p.world.CameraY = math.Max(0, math.Min(maxY, p.world.CameraY+(targetY-p.world.CameraY)*ease))
 	p.world.ViewportX, p.world.ViewportY = 0, 0
 }
 func (p *playState) collisionDisplacement(x, y, radius float64, tileSize int) (float64, float64, bool) {
@@ -4945,7 +5119,16 @@ func Run() {
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
+	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (port option: every spawner done and no zombie alive) or native (FUN_000bf120 timer and alive limit)")
 	flag.Parse()
+	switch *waveEnd {
+	case "all-dead":
+		waveEndRule = waveEndAllDead
+	case "native":
+		waveEndRule = waveEndNative
+	default:
+		log.Fatalf("-wave-end must be all-dead or native, not %q", *waveEnd)
+	}
 	game, err := newApp(*assets, *debug, *mobile, *silent)
 	if err != nil {
 		log.Fatal(err)

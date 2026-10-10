@@ -28,6 +28,7 @@ type resultsMenu struct {
 	phase                     float32
 	ready, closing, delivered bool
 	pending                   resultsAction
+	count                     resultsCount // port addition: number count-up (results_count.go)
 }
 
 func resultsVisible(survival bool, flags uint32) bool { return survival || flags&4 != 0 }
@@ -76,6 +77,7 @@ func (menu *resultsMenu) update(dt float32, externalActive bool) resultsAction {
 		}
 		menu.ready = true
 	}
+	menu.advanceCount(dt)
 	return resultsNone
 }
 func (menu *resultsMenu) hit(variables formats.FrontendVariables, x, y float64) resultsAction {
@@ -171,27 +173,36 @@ func (a *app) drawResultsMenuLegacy(screen *ebiten.Image, menu *resultsMenu, gam
 		text, position string
 		offset         formats.Vec2
 	}{
-		{"Score", "ENDSCREEN_SCORE_TITLE_POS", scoreOffset}, {fmt.Sprintf("%d", menu.shownScore()), "ENDSCREEN_SCORE_AMOUNT_POS", scoreOffset},
+		{"Score", "ENDSCREEN_SCORE_TITLE_POS", scoreOffset},
 		{menuLabel, "ENDSCREEN_MENU_BOX_INNER_POS_VAR", mainOffset}, {nextLabel, "ENDSCREEN_REPLAY_BOX_INNER_POS_VAR", mainOffset},
 	} {
 		a.drawLegacyResultsText(screen, label.text, label.position, label.offset, false, false)
 	}
+	scoreMult, scoreGold := menu.popEffect(0)
+	a.drawLegacyResultsTextFX(screen, fmt.Sprintf("%d", menu.shownScore()), "ENDSCREEN_SCORE_AMOUNT_POS", scoreOffset, false, false, scoreMult, scoreGold)
 	for _, row := range []struct {
 		label, slot string
 		value       *int32
-	}{{"Highscore:", "B", menu.Data.Highscore}, {"Zombie Kills:", "A", menu.Data.Kills}} {
+		pop         int
+	}{{"Highscore:", "B", menu.Data.Highscore, 2}, {"Zombie Kills:", "A", menu.Data.Kills, 1}} {
 		if row.value == nil {
 			continue
 		}
 		a.drawLegacyResultsText(screen, row.label, "ENDSCREEN_STAT_TITLE_POS_"+row.slot, mainOffset, true, false)
-		shown := *row.value
+		shown := menu.shownHighscore()
 		if row.slot == "A" {
 			shown = menu.shownKills()
 		}
-		a.drawLegacyResultsText(screen, fmt.Sprintf("%d", shown), "ENDSCREEN_STAT_NUM_POS_"+row.slot, mainOffset, true, true)
+		mult, gold := menu.popEffect(row.pop)
+		a.drawLegacyResultsTextFX(screen, fmt.Sprintf("%d", shown), "ENDSCREEN_STAT_NUM_POS_"+row.slot, mainOffset, true, true, mult, gold)
 	}
 }
 func (a *app) drawLegacyResultsText(screen *ebiten.Image, text, positionName string, offset formats.Vec2, small, right bool) {
+	a.drawLegacyResultsTextFX(screen, text, positionName, offset, small, right, 1, 0)
+}
+
+// drawLegacyResultsTextFX adds the port's landing pop (size multiplier, gold).
+func (a *app) drawLegacyResultsTextFX(screen *ebiten.Image, text, positionName string, offset formats.Vec2, small, right bool, mult, gold float64) {
 	position, ok := a.variables.Vec2Value(positionName)
 	if !ok || a.font == nil || a.font.LineHeight == 0 {
 		return
@@ -204,6 +215,7 @@ func (a *app) drawLegacyResultsText(screen *ebiten.Image, text, positionName str
 	if !ok {
 		return
 	}
+	size *= mult
 	scale := size / float64(a.font.LineHeight)
 	x, y := position.X+offset.X, position.Y+offset.Y
 	if right {
@@ -214,5 +226,5 @@ func (a *app) drawLegacyResultsText(screen *ebiten.Image, text, positionName str
 	if !small {
 		y -= size / 2
 	}
-	a.drawFont(screen, a.font, text, x, y, scale)
+	a.drawFontTinted(screen, text, x, y, scale, gold)
 }

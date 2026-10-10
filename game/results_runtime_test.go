@@ -34,7 +34,7 @@ func TestEndWorldOutroEntersNativeResultsOnce(t *testing.T) {
 	}
 }
 func TestSurvivalGameOverEntersReplayResults(t *testing.T) {
-	a := &app{mode: 1, play: &playState{score: 123, health: 0, lives: 0}}
+	a := &app{mode: 1, play: &playState{score: 123, health: 0, lives: -1}}
 	if err := a.updateLevelCompletion(); err != nil {
 		t.Fatal(err)
 	}

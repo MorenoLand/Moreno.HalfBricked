@@ -25,8 +25,10 @@ func TestBossCorpseRemainsAvailableToOriginalOutro(t *testing.T) {
 			t.Fatal("dead corpse considered a live enemy")
 		}
 		delete(p.scriptEntities, 9)
-		if _, err := host.Call("GetFirstEntityOfType", []scripting.Value{"boss_rex"}); err == nil {
-			t.Fatal("destroyed registry entry returned")
+		// Native 1.2.5 closure 0x0013e574 pushes the null handle 0 when no entity of the type is left.
+		result, err = host.Call("GetFirstEntityOfType", []scripting.Value{"boss_rex"})
+		if err != nil || len(result.Values) != 1 || result.Values[0] != 0 {
+			t.Fatalf("destroyed registry entry returned: %+v %v", result, err)
 		}
 	}
 }

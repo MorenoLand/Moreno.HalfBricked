@@ -61,10 +61,11 @@ type bodyState struct {
 	moving                 bool
 	hurt                   float64 // seconds left on the red damage flash
 	gun                    gunState
+	vitals                 playerVitals // regeneration, respawn grace, speed boost (player_vitals.go)
 }
 
 func (p *playState) body() bodyState {
-	return bodyState{x: p.x, y: p.y, spawnX: p.spawnX, spawnY: p.spawnY, angle: p.angle, flipX: p.flipX, health: p.health, maxHealth: p.maxHealth, weapon: p.weapon, shootCooldown: p.shootCooldown, secondaryShootCooldown: p.secondaryShootCooldown, flash: p.flash, deathTimer: p.deathTimer, grenades: p.grenades, secondaryType: p.secondaryType, secondaryWeapon: p.secondaryWeapon, moving: p.moving, hurt: p.hurt, gun: p.gun}
+	return bodyState{x: p.x, y: p.y, spawnX: p.spawnX, spawnY: p.spawnY, angle: p.angle, flipX: p.flipX, health: p.health, maxHealth: p.maxHealth, weapon: p.weapon, shootCooldown: p.shootCooldown, secondaryShootCooldown: p.secondaryShootCooldown, flash: p.flash, deathTimer: p.deathTimer, grenades: p.grenades, secondaryType: p.secondaryType, secondaryWeapon: p.secondaryWeapon, moving: p.moving, hurt: p.hurt, gun: p.gun, vitals: p.vitals}
 }
 
 func (p *playState) setBody(b bodyState) {
@@ -72,7 +73,7 @@ func (p *playState) setBody(b bodyState) {
 	p.health, p.maxHealth, p.weapon = b.health, b.maxHealth, b.weapon
 	p.shootCooldown, p.secondaryShootCooldown, p.flash, p.deathTimer = b.shootCooldown, b.secondaryShootCooldown, b.flash, b.deathTimer
 	p.grenades, p.secondaryType, p.secondaryWeapon, p.moving, p.hurt = b.grenades, b.secondaryType, b.secondaryWeapon, b.moving, b.hurt
-	p.gun = b.gun
+	p.gun, p.vitals = b.gun, b.vitals
 }
 
 type coopPlayer struct {
@@ -194,14 +195,23 @@ func (p *playState) damagePlayer(index int, amount float64) {
 		return
 	}
 	if index == 0 {
+		// FUN_00094c6c: nothing while dead or inside the 1.5 s respawn grace.
+		if p.health <= 0 || p.vitals.invulnMS > 0 {
+			return
+		}
 		p.health = math.Max(0, p.health-amount)
 		p.hurt = hurtFlashDuration
+		p.vitals.noteHit(p.health)
 		return
 	}
 	for _, c := range p.coop.players {
 		if c.index == index {
+			if c.body.health <= 0 || c.body.vitals.invulnMS > 0 {
+				return
+			}
 			c.body.health = math.Max(0, c.body.health-amount)
 			c.body.hurt = hurtFlashDuration
+			c.body.vitals.noteHit(c.body.health)
 		}
 	}
 }
@@ -289,7 +299,7 @@ func (p *playState) resolveBody(x, y *float64) {
 		radius = playerCollisionRadius
 	}
 	for resolve := 0; resolve < 4; resolve++ {
-		pushX, pushY, hit := p.collisionDisplacement(*x, *y, radius, p.tileSize)
+		pushX, pushY, hit := p.playerTileDisplacement(*x, *y, radius, p.tileSize)
 		if !hit {
 			break
 		}
@@ -366,6 +376,7 @@ func (p *playState) coopDeath(c *coopPlayer, living []playerTarget) {
 	}
 	p.x, p.y = living[0].x+20, living[0].y
 	p.health = p.maxHealth
+	p.startRespawnGrace()
 	p.weapon = p.pistolWeapon()
 	p.grenades, p.secondaryType = 0, ""
 	c.dead, c.canReturn = false, false

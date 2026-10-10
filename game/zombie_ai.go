@@ -103,6 +103,7 @@ const (
 	zombieNoiseMax        = 350.0 // DAT_00094a7c
 	zombieNoiseRegen      = .5    // FUN_000962f4: +0x3e0 regrows to 1 at 0.5/s
 	zombiePushScale       = 10.0  // DAT_000a2090
+	playerScriptPushScale = 2.5   // DAT_000a207c (1.2.5 DAT_00101004): Barry pushed by overlap * dt * 2.5
 	zombieSeparationSize  = 1.25  // DAT_000a2074
 	zombieContactDamage   = .075  // DAT_0009f79c: damage per second while deeply overlapping
 	zombieContactDepth    = .075  // DAT_0009f79c * player body 64 = 4.8 px of overlap
@@ -271,6 +272,8 @@ func (p *playState) separateZombie(index int, dt float64) {
 		pushX -= dx / dist * overlap
 		pushY -= dy / dist * overlap
 	}
+	scripted := p.scriptRuntime != nil && !p.scriptRuntime.Done()
+	pushX, pushY = p.separatePlayers(z, dt, pushX, pushY, scripted)
 	if pushX != 0 || pushY != 0 {
 		z.x += pushX
 		z.y += pushY
@@ -279,10 +282,68 @@ func (p *playState) separateZombie(index int, dt float64) {
 	}
 }
 
+// separatePlayers is the player part of FUN_000a1b08 (1.2.5: FUN_00100b80, where a
+// player is a type-0 entity). Barry is registered in the grid over +-0.45 * 64 px
+// (FUN_00096818 -> FUN_00091918, DAT_0009749c; 1.2.5 DAT_000f3fc8) and a zombie over
+// +-0.3 * 64 (FUN_000a17cc, DAT_000a18cc). A living player whose box shares a grid
+// cell with the zombie's, and whose centre is closer than 0.3 * (zombie width + 64),
+// is a candidate. Without a running script the zombie is pushed away from him by
+// overlap * dt * 10 (returned in pushX/pushY, the zombie push of separateZombie); with
+// a script running and SetAllowThumbsticksDuringScripts on, he is pushed away from
+// the zombie by overlap * dt * 2.5 and the zombie is left alone. The contact damage is
+// zombieContact (FUN_0009f6e8, 1.2.5 FUN_000ff018), not this function.
+func (p *playState) separatePlayers(z *zombieState, dt, pushX, pushY float64, scripted bool) (float64, float64) {
+	z.grid.register(z.x, z.y)
+	if p.health > 0 {
+		pushX, pushY = p.separatePlayer(z, &p.x, &p.y, dt, pushX, pushY, scripted)
+	}
+	if p.coopActive() {
+		for _, c := range p.coop.players {
+			if c.joined && !c.dead && c.body.health > 0 {
+				pushX, pushY = p.separatePlayer(z, &c.body.x, &c.body.y, dt, pushX, pushY, scripted)
+			}
+		}
+	}
+	return pushX, pushY
+}
+
+// separatePlayer tests one living body against the zombie (see separatePlayers).
+func (p *playState) separatePlayer(z *zombieState, bx, by *float64, dt, pushX, pushY float64, scripted bool) (float64, float64) {
+	if !z.grid.sharesCell(entityGridBox(*bx, *by, entityGridPlayerRegister)) {
+		return pushX, pushY
+	}
+	dx, dy := *bx-z.x, *by-z.y
+	dist := math.Hypot(dx, dy)
+	reach := zombieBodyReachFactor*z.size.X + zombieBodyReachFactor*entityGridPlayerBody
+	if dist >= reach {
+		return pushX, pushY
+	}
+	overlap := reach - dist
+	var nx, ny float64
+	if dist >= .001 {
+		nx, ny = dx/dist, dy/dist
+	} else {
+		angle := uint16(zombieBounded(p.rng, 0xff3a))
+		nx, ny = cosU16(angle), sinU16(angle)
+	}
+	if scripted {
+		if p.scriptAllowThumbsticks {
+			*bx += nx * overlap * dt * playerScriptPushScale
+			*by += ny * overlap * dt * playerScriptPushScale
+		}
+		return pushX, pushY
+	}
+	return pushX - nx*overlap*dt*zombiePushScale, pushY - ny*overlap*dt*zombiePushScale
+}
+
 // zombieContact is FUN_0009f6e8: against the player the contact reach is
 // 0.3 * (zombie width + player width 64); only an overlap deeper than 0.075 * 64
-// hurts, at 0.075 health per second (dt * 0.075 per frame).
+// hurts, at 0.075 health per second (dt * 0.075 per frame). The native caller is the
+// candidate block of FUN_000a1b08, which a rising zombie (state 0) never reaches.
 func (p *playState) zombieContact(z *zombieState, prey playerTarget, dt float64) {
+	if zombieIsRising(z) {
+		return
+	}
 	reach := zombieBodyReachFactor*z.size.X + zombieBodyReachFactor*entityGridPlayerBody
 	overlap := reach - math.Hypot(prey.x-z.x, prey.y-z.y)
 	if overlap > zombieContactDepth*entityGridPlayerBody {

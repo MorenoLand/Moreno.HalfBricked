@@ -159,6 +159,7 @@ type zombieNative struct {
 	facing     uint16  // +0x36
 	ai         zombieAI
 	trail      zombieTrail
+	unstick    zombieUnstick // port addition (zombie_unstick.go)
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.
@@ -277,6 +278,11 @@ func bulletStopsAtFirstTarget(b bullet) bool {
 // hit timer runs and back to 0xff afterwards, so a hit flashes the zombie dark
 // (not red) for 0.1 s, and every zombie is 0.8..1.0 as bright as the art.
 func zombieTint(z zombieState) float32 {
+	if z.dying && z.deathState == zombieDeathGib {
+		// FUN_0009fb10 writes the flash colour, then the gib update (FUN_000a10fc
+		// state 2, FUN_001002bc) copies the default colour over it: no darkening.
+		return 1
+	}
 	brightness := z.native.brightness
 	if brightness <= 0 {
 		brightness = 1

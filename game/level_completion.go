@@ -20,7 +20,7 @@ func (p *playState) readyForExitScript() bool {
 }
 func (a *app) updateLevelCompletion() error {
 	if a.mode != 0 || a.play == nil {
-		if a.mode == 1 && a.play != nil && a.play.health <= 0 && a.play.lives <= 0 && a.play.allPlayersDown() {
+		if a.mode == 1 && a.play != nil && a.play.health <= 0 && a.play.outOfLives() && a.play.allPlayersDown() {
 			a.openLevelResults()
 		}
 		return nil
@@ -92,6 +92,19 @@ func (a *app) storyLevelSelection(id string) (int, int, error) {
 	return 0, 0, fmt.Errorf("story continuation level %q not found", id)
 }
 func (a *app) continueStoryLevel(info formats.LevelInfo) error {
+	if info.NextLevel == "" {
+		// Terminal story level (World5Level2, president_story_2): there is nothing to continue into. The native
+		// end-of-story branch (credits / rate prompt for ENDSTORY, RATEONFINISH, SHOWCREDITS) is not decoded, so
+		// leave the level for the main menu instead of failing the frame.
+		if err := a.recordStoryCompletion(info); err != nil {
+			return err
+		}
+		a.stopWeaponPlayback()
+		a.play.closeScript()
+		a.play, a.page = nil, 0
+		a.setMenuMusic()
+		return a.savePlayerProfile()
+	}
 	world, level, err := a.storyLevelSelection(info.NextLevel)
 	if err != nil {
 		return err

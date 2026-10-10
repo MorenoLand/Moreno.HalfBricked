@@ -78,6 +78,10 @@ func (a *app) currentCoopLaunch() coopLaunch {
 // desktop, that pad drives player 1 while player 0 stays on keyboard and mouse.
 func (a *app) gatherPlayerInputs() [maxCoopPlayers]playerInput {
 	var inputs [maxCoopPlayers]playerInput
+	if a.inputHook != nil {
+		inputs[0] = a.inputHook()
+		return inputs
+	}
 	pads := attachedGamepads()
 	if a.netHosting() && a.play != nil {
 		if len(pads) > 0 {

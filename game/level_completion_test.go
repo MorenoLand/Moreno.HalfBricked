@@ -47,10 +47,18 @@ func TestCachedStoryProgressionDestinations(t *testing.T) {
 }
 
 func TestFinalWaveRetiresOnce(t *testing.T) {
-	p := &playState{world: &viewer.Viewer{Level: formats.Level{Waves: []formats.Wave{{RunTime: 5000, EndWaveTime: 3000}}}}, waveElapsed: 8000, health: 1}
-	p.updateWaves()
-	if !p.wavesFinished || p.waveIndex != 1 {
-		t.Fatal("final cleanup wave did not retire")
+	useNativeWaveEnd(t)
+	p := &playState{world: &viewer.Viewer{Level: formats.Level{Waves: []formats.Wave{{RunTime: 5000, EndWaveTime: 3000}}}}, waveElapsed: 0, health: 1}
+	// Native FUN_000bf120: the end_wave_time timer starts at 3000 - 10 ms and loses
+	// (int)(dt * 1000) = 17 ms per 60 Hz frame; with no spawner left the wave
+	// retires the frame it reaches zero (ceil(2990 / 17) = 176 frames).
+	frames := 0
+	for !p.wavesFinished && frames < 400 {
+		p.updateWaves()
+		frames++
+	}
+	if !p.wavesFinished || p.waveIndex != 1 || frames != 176 {
+		t.Fatalf("final cleanup wave did not retire correctly (finished %v index %d after %d frames)", p.wavesFinished, p.waveIndex, frames)
 	}
 	time := p.waveElapsed
 	p.updateWaves()

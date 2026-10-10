@@ -15,11 +15,12 @@ func TestNewPickupCollectionPreservesCatalog(t *testing.T) {
 			t.Fatalf("%s lost catalog data", kind)
 		}
 	}
-	p := playState{health: 1, maxHealth: 5, grenades: 2, weapons: formats.WeaponCatalog{{GunType: "GRENADE", Ammo: 5}}}
+	p := playState{health: 1, maxHealth: 5, lives: 3, grenades: 2, weapons: formats.WeaponCatalog{{GunType: "GRENADE", Ammo: 5}}}
 	p.collectPickup("p_grenade")
 	p.collectPickup("p_health")
-	if p.grenades != 5 || p.health != 5 {
-		t.Fatalf("grenades %d health %v", p.grenades, p.health)
+	// p_health is the native 1UP (FUN_000928f4 type 0x23: lives + 1), not a heal.
+	if p.grenades != 5 || p.health != 1 || p.lives != 4 {
+		t.Fatalf("grenades %d health %v lives %d", p.grenades, p.health, p.lives)
 	}
 }
 func TestNewPickupNativeCellsAndDimensions(t *testing.T) {

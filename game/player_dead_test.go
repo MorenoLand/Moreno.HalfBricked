@@ -3,9 +3,12 @@ package game
 import "testing"
 
 func TestStoryGameOverOnlyAfterLastLifeAndDeathAnimation(t *testing.T) {
-	p := &playState{health: 0, lives: 0}
+	p := &playState{health: 0, lives: -1}
 	if !p.storyGameOver(0) {
-		t.Fatal("expected game over at zero lives")
+		t.Fatal("expected game over once the native counter went below zero")
+	}
+	if (&playState{health: 0, lives: 0}).storyGameOver(0) {
+		t.Fatal("native lives == 0 still respawns (the counter ends at -1)")
 	}
 	if p.storyGameOver(1) {
 		t.Fatal("survival uses the results menu")
@@ -62,7 +65,7 @@ func TestStoryDeathOpensTheResultsScreenWithRetry(t *testing.T) {
 }
 
 func TestOutOfLivesDeathBloodsOnlyOnce(t *testing.T) {
-	p := &playState{health: 0, lives: 0}
+	p := &playState{health: 0, lives: 0} // the fourth death: lives 0 -> -1
 	for frame := 0; frame < 60*7; frame++ {
 		p.updatePlayerDeath()
 	}

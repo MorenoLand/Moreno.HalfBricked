@@ -178,6 +178,11 @@ func (p *playState) rexSteer(zombie *zombieState, playerIndex int, dirX, dirY fl
 	if lx, ly, ok := p.rexLungeDirection(zombie); ok {
 		return lx, ly
 	}
+	// Port addition (zombie_unstick.go): a rex wedged against geometry follows the
+	// navigation field / wall tangent for a moment.
+	if fx, fy, ok := p.zombieUnstickDirection(zombie, playerIndex); ok {
+		return fx, fy
+	}
 	if p.world != nil && p.tileSize > 0 {
 		prey := p.nearestPlayer(zombie.x, zombie.y)
 		if !p.lineClear(zombie.x, zombie.y, prey.x, prey.y, zombieCollisionRadius(*zombie)*.8) {
