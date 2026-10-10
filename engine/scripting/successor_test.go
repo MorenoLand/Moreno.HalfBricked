@@ -63,3 +63,35 @@ func TestBusyPollingLoopYieldsAndKeepsResults(t *testing.T) {
 		t.Fatalf("poll results were lost across yields: result=%v", got)
 	}
 }
+
+type namedHost struct{ called []string }
+
+func (h *namedHost) Call(name string, args []Value) (CallResult, error) {
+	h.called = append(h.called, name)
+	return CallResult{}, nil
+}
+
+// An exit script runs on the entry script's VM. When the entry script defined its own Lua function with the name of
+// a registered host callback (world1_level0_entry defines Update, world0_level0_entry SpawnZombiesAroundPlayer),
+// the successor must keep calling the Lua function instead of shadowing it with the host binding.
+func TestSuccessorKeepsScriptDefinedFunctionsOfHostCallbackNames(t *testing.T) {
+	host := &namedHost{}
+	first, err := New("function Update() entryUpdates = (entryUpdates or 0) + 1 end\nUpdate()", host, []string{"Update", "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Step(); err != nil || !first.Done() {
+		t.Fatalf("first script: %v done=%v", err, first.Done())
+	}
+	second, err := first.Successor("Update()\nUpdate()\nOther()\nif entryUpdates ~= 3 then error('entry Update was shadowed: ' .. tostring(entryUpdates)) end", host, []string{"Update", "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := second.Step(); err != nil || second.Status() != StatusComplete {
+		t.Fatalf("successor: %v status=%v", err, second.Status())
+	}
+	if len(host.called) != 1 || host.called[0] != "Other" {
+		t.Fatalf("host calls = %v, want only the undefined Other callback to reach the host", host.called)
+	}
+}

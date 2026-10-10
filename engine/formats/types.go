@@ -44,6 +44,7 @@ type Level struct {
 	Props         []Prop                 `json:"props"`
 	AnimatedProps []AnimatedProp         `json:"animatedProps"`
 	Waves         []Wave                 `json:"waves"`
+	WaveBuild     string                 `json:"-"`
 }
 
 type Wave struct {

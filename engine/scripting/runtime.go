@@ -99,6 +99,11 @@ func (r *Runtime) Successor(source string, host Host, callbacks []string) (*Runt
 		if name == "" {
 			continue
 		}
+		if existing, ok := r.state.GetGlobal(name).(*lua.LFunction); ok && !existing.IsG {
+			// The previous script defined its own Lua function of this name (Update, Wait,
+			// SpawnZombiesAroundPlayer ...). The native VM keeps it; do not shadow it with the host binding.
+			continue
+		}
 		r.state.SetGlobal(name, r.state.NewFunction(hostFunction(host, name, next)))
 	}
 	if r.cancel != nil {

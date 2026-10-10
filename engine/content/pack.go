@@ -21,6 +21,40 @@ type PackManifest struct {
 	TileSets      map[string]formats.TileSet `json:"tileSets"`
 	Textures      map[string]string          `json:"textures"`
 	Files         map[string]string          `json:"files"`
+	WaveBuild     string                     `json:"-"`
+}
+
+// Builds whose wave rules were recovered from libmortargame.so (Research/native/wave-advance-2026-10-09.md).
+// Each data cache follows the build it was imported from.
+const (
+	WaveBuildV7  = "1.2.1" // SD cache: libmortargame.so (v7), the 1.2.1 build
+	WaveBuild125 = "1.2.5" // HD cache: the 1.2.5 build
+)
+
+// apkSourceBuilds maps the SHA-256 of an imported APK (written by PrepareAPK to .apk-source.sha256) to its build.
+var apkSourceBuilds = map[string]string{
+	"db68e6368192520b2d68c7af49ad90d6e66e2a7f57dacddd7b20607e73b8836a": WaveBuild125,
+	"eed8fd097359d60b5142f4000ad11c885cb3146547ba717268c8e5ad2fef958c": WaveBuildV7,
+}
+
+// waveBuildOf reads the build of a cache from its .apk-source.sha256 marker. A cache whose marker is missing
+// or unknown follows the 1.2.5 rule (the HD cache is the default data set).
+func waveBuildOf(source AssetSource) string {
+	r, err := source.Open(".apk-source.sha256")
+	if err != nil {
+		return WaveBuild125
+	}
+	defer r.Close()
+	data, err := io.ReadAll(io.LimitReader(r, 256))
+	if err != nil {
+		return WaveBuild125
+	}
+	if fields := strings.Fields(string(data)); len(fields) > 0 {
+		if build, ok := apkSourceBuilds[strings.ToLower(fields[0])]; ok {
+			return build
+		}
+	}
+	return WaveBuild125
 }
 
 type AssetSource interface {
@@ -58,6 +92,7 @@ func NewPack(source AssetSource) (*Pack, error) {
 	if manifest.SchemaVersion != 1 {
 		return nil, fmt.Errorf("unsupported cache schema %d", manifest.SchemaVersion)
 	}
+	manifest.WaveBuild = waveBuildOf(source)
 	if err := hydrateLevelMetadata(source, &manifest); err != nil {
 		return nil, err
 	}
@@ -103,6 +138,7 @@ func (p *Pack) Load(id string) (formats.Level, error) {
 			break
 		}
 	}
+	level.WaveBuild = p.manifest.WaveBuild
 	p.levels[id] = level
 	return level, nil
 }

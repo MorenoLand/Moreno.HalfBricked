@@ -52,6 +52,11 @@ func (f *Font) Draw(screen *ebiten.Image, value string, x, y, scale float64) {
 	f.DrawScaled(screen, value, x, y, scale, scale)
 }
 func (f *Font) DrawScaled(screen *ebiten.Image, value string, x, y, scaleX, scaleY float64) {
+	f.DrawScaledTinted(screen, value, x, y, scaleX, scaleY, 1, 1, 1)
+}
+
+// DrawScaledTinted is DrawScaled with the glyph colour multiplied by (r, g, b).
+func (f *Font) DrawScaledTinted(screen *ebiten.Image, value string, x, y, scaleX, scaleY float64, r, g, b float32) {
 	if f == nil || f.Atlas == nil {
 		return
 	}
@@ -70,6 +75,9 @@ func (f *Font) DrawScaled(screen *ebiten.Image, value string, x, y, scaleX, scal
 			source := f.Atlas.SubImage(image.Rect(glyph.X, glyph.Y, glyph.X+glyph.Width, glyph.Y+glyph.Height)).(*ebiten.Image)
 			options := &ebiten.DrawImageOptions{}
 			options.Filter = ebiten.FilterNearest
+			if r != 1 || g != 1 || b != 1 {
+				options.ColorScale.Scale(r, g, b, 1)
+			}
 			options.GeoM.Scale(scaleX, scaleY)
 			options.GeoM.Translate(x+float64(glyph.XOffset)*scaleX, y+float64(glyph.YOffset)*scaleY)
 			screen.DrawImage(source, options)
