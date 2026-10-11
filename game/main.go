@@ -2536,7 +2536,7 @@ func (a *app) drawBackdrop(screen *ebiten.Image) {
 	}
 }
 func (a *app) drawStartup(screen *ebiten.Image) {
-	screen.Fill(colorDark)
+	screen.Fill(color.Black)
 	if !a.splashLoaded {
 		a.splashLoaded = true
 		if source, err := a.Source("Common0/Textures/splashscreen"); err == nil {
@@ -2546,7 +2546,9 @@ func (a *app) drawStartup(screen *ebiten.Image) {
 	if a.splash != nil {
 		sw, sh := float64(a.splash.Bounds().Dx()), float64(a.splash.Bounds().Dy())
 		ow, oh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
-		scale := math.Min(ow/sw, oh/sh)
+		// Cover, not contain: the splash fills the whole window (a wide or tall window crops a little of its black
+		// margin instead of showing bars).
+		scale := math.Max(ow/sw, oh/sh)
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		options.GeoM.Scale(scale, scale)
 		options.GeoM.Translate((ow-sw*scale)/2, (oh-sh*scale)/2)
