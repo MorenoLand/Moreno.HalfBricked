@@ -337,6 +337,7 @@ type playState struct {
 	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
 	slowMoLeft, slowMoTotal, slowMoAccum float64 // slowmo.go: slow motion on the kill that ends a wave
 	slowInterp                           bool
+	waveLastAlive                        int
 	slowPrev                             slowSnap
 	waveEndStamp                                           float64
 	waveEndInit                                            bool
@@ -4170,6 +4171,22 @@ func (p *playState) updateWaves() {
 	if waveEndRule == waveEndAllDead {
 		alive = p.waveAliveForEnd()
 	}
+	// PORT ADDITION: the slow-motion effect starts on the kill that leaves nothing alive once the wave's spawners
+	// are done, whichever rule ends the wave. The last wave of a level gets the longer one.
+	if living := p.waveAliveForEnd(); allSpawned && p.waveLastAlive > 0 && living == 0 {
+		following := wave.NextWave
+		if following < 1 {
+			following = p.waveIndex + 1
+		}
+		if following >= len(p.world.Level.Waves) {
+			p.startSlowMo(slowMoFinalSecs)
+		} else {
+			p.startSlowMo(slowMoWaveSecs)
+		}
+		p.waveLastAlive = 0
+	} else {
+		p.waveLastAlive = living
+	}
 	if p.waveEndStep(wave, !allSpawned, alive) {
 		// The next wave is next_wave, or the one after this when next_wave is below 1. Past the last wave none
 		// follows and the level ends. The banner moves with the index on this same frame.
@@ -4182,17 +4199,11 @@ func (p *playState) updateWaves() {
 			// FUN_000998ac submits it as SPECIFIC "wave" (see Research/native/achievement-audit-2026-10-10.md).
 			p.achieve.waveAdvances++
 			p.survivalAdvance(next)
-			if waveEndRule == waveEndAllDead {
-				p.startSlowMo(slowMoWaveSecs)
-			}
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
 		} else {
 			p.waveIndex, p.wavesFinished = next, true
-			if waveEndRule == waveEndAllDead {
-				p.startSlowMo(slowMoFinalSecs)
-			}
 		}
 		p.noteWave()
 	}
@@ -5197,7 +5208,7 @@ func Run() {
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
-	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (port option: every spawner done and no zombie alive) or native (FUN_000bf120 timer and alive limit)")
+	waveEnd := flag.String("wave-end", "native", "wave end rule: native (FUN_000bf120 timer and alive limit, the original) or all-dead (port option: every spawner done and no zombie alive)")
 	flag.Parse()
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
