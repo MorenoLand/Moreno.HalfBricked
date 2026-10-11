@@ -2746,7 +2746,12 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 		multiplierY = 5
 	}
 	a.drawComboHUD(screen, multiplierX, multiplierY)
-	a.drawWaveBanner(screen)
+	// Native draws wave text only in survival (v7 FUN_000d0a64, 1.2.5 FUN_00133f54); story levels, boss fights
+	// included, show none (Research/native/boss-wave-counter-2026-10-11.md).
+	survivalHUD := a.play.isSurvival()
+	if survivalHUD {
+		a.drawWaveBanner(screen)
+	}
 	waveX, waveXOK := a.variables.FloatValue("HUD_WAVE_TEXT_POS_X_VAR")
 	if !waveXOK {
 		waveX = 440
@@ -2760,7 +2765,9 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 		}
 	}
 	waveText := fmt.Sprintf("wave %d", shownWave)
-	a.text(screen, waveText, waveX-a.fontTextWidth(waveText, .4), 5, .4)
+	if survivalHUD {
+		a.text(screen, waveText, waveX-a.fontTextWidth(waveText, .4), 5, .4)
+	}
 	if icon, err := a.Texture("Common0/Textures/LifeIcon"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(.5, .5)
