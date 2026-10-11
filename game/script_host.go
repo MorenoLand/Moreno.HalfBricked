@@ -1930,6 +1930,10 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 		atlas = animation.Atlas
 	}
 	rect := atlasCellRect(atlas, col, frame, columns, rows, texture.Bounds().Dx(), texture.Bounds().Dy())
+	if hasAnimation && columns == 1 && rows > 1 && texture.Bounds().Dx() > texture.Bounds().Dy() {
+		// A one-angle clip on a landscape sheet runs its frames across it (the opening car of World1Level2).
+		rect = zombieGibStripCell(frame, rows, texture.Bounds())
+	}
 	if rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
 	}

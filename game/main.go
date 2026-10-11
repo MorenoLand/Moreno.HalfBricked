@@ -3286,6 +3286,9 @@ func (a *app) drawBarryPart(screen *ebiten.Image, name string, x, y, scale float
 	frame = ((frame % rows) + rows) % rows
 	texW, texH := texture.Bounds().Dx(), texture.Bounds().Dy()
 	rect := barryCellRect(angle, frame, columns, rows, texW, texH)
+	if columns == 1 && rows > 1 && texW > texH {
+		rect = zombieGibStripCell(frame, rows, texture.Bounds()) // a one-angle landscape sheet runs its frames across
+	}
 	cellWidth, cellHeight := float64(rect.Dx()), float64(rect.Dy())
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
@@ -3340,6 +3343,9 @@ func (a *app) drawBarryFlash(screen *ebiten.Image, x, y, scale float64, angle in
 	}
 	texW, texH := texture.Bounds().Dx(), texture.Bounds().Dy()
 	rect := barryCellRect(angle, frame, columns, rows, texW, texH)
+	if columns == 1 && rows > 1 && texW > texH {
+		rect = zombieGibStripCell(frame, rows, texture.Bounds()) // a one-angle landscape sheet runs its frames across
+	}
 	cellWidth, cellHeight := float64(rect.Dx()), float64(rect.Dy())
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
