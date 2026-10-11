@@ -142,6 +142,10 @@ func (a *app) recordStoryCompletion(info formats.LevelInfo) error {
 	if a.unlocked == nil {
 		a.unlocked = map[string]bool{}
 	}
+	if a.completed == nil {
+		a.completed = map[string]bool{}
+	}
+	a.completed[info.ID] = true
 	if info.NextLevel != "" {
 		a.unlocked[info.NextLevel] = true
 	}

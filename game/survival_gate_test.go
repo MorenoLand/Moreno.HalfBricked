@@ -2,7 +2,8 @@ package game
 
 import "testing"
 
-// A world's survival maps stay shut until the world is reached in story mode (port addition).
+// A survival map opens when the story level that unlocks it (unlockLevels, the ENDWORLD level) is completed,
+// whatever the STARTUNLOCKED flag says; being inside the world is not enough.
 func TestSurvivalMapsFollowStoryProgress(t *testing.T) {
 	a := newHeadlessApp(t, "bin/data-cache")
 	check := func(id string, want bool) {
@@ -17,12 +18,13 @@ func TestSurvivalMapsFollowStoryProgress(t *testing.T) {
 		}
 		t.Fatalf("level %s missing", id)
 	}
+	a.unlocked["World0Survival0"], a.unlocked["World4Survival0"] = true, true
+	check("World0Survival0", false)
+	a.unlocked["World4Level0"], a.unlocked["World4Level1"] = true, true
+	check("World4Survival0", false) // inside world 4 but its last level is not finished
+	a.completed = map[string]bool{"World0Level2": true}
 	check("World0Survival0", true)
-	for _, item := range a.levels {
-		if item.ID == "World3Survival0" && a.unlocked[item.ID] {
-			check("World3Survival0", false)
-		}
-	}
-	a.unlocked["World3Level0"] = true
-	check("World3Survival0", a.unlocked["World3Survival0"])
+	a.unlocked["World4Level2"] = true
+	a.completed["World4Level2"] = true
+	check("World4Survival0", true)
 }

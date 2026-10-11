@@ -19,6 +19,7 @@ type playerProfile struct {
 	Highscores         map[string]int32 `json:"highscores,omitempty"`
 	Extras             *extraSettings   `json:"extras,omitempty"`
 	LastPlayed         map[string]string `json:"lastPlayed,omitempty"`
+	Completed          map[string]bool   `json:"completed,omitempty"`
 }
 
 func (a *app) loadPlayerProfile() error {
@@ -46,6 +47,7 @@ func (a *app) loadPlayerProfile() error {
 		a.extras = *profile.Extras
 	}
 	a.lastPlayed = profile.LastPlayed
+	a.completed = profile.Completed
 	if a.statistics.Available == nil {
 		a.statistics.Available = map[string]bool{}
 	}
@@ -59,7 +61,7 @@ func (a *app) savePlayerProfile() error {
 	if !a.profileWritable {
 		return nil
 	}
-	data, err := json.MarshalIndent(playerProfile{Options: a.options.Settings(), Stats: a.statistics, Unlocked: a.unlocked, NewDismissed: a.newDismissed, AchievementUnlocks: a.achievementUnlocks, DeathFreeLevels: a.achieveSession.deathFree, AchievementBest: a.achievementBest, Highscores: a.highscores, Extras: &a.extras, LastPlayed: a.lastPlayed}, "", "  ")
+	data, err := json.MarshalIndent(playerProfile{Options: a.options.Settings(), Stats: a.statistics, Unlocked: a.unlocked, NewDismissed: a.newDismissed, AchievementUnlocks: a.achievementUnlocks, DeathFreeLevels: a.achieveSession.deathFree, AchievementBest: a.achievementBest, Highscores: a.highscores, Extras: &a.extras, LastPlayed: a.lastPlayed, Completed: a.completed}, "", "  ")
 	if err != nil {
 		return err
 	}

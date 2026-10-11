@@ -43,6 +43,7 @@ type app struct {
 	options                                      optionsMenu
 	extras                                       extraSettings // extras.go
 	lastPlayed                                   map[string]string // last_played.go
+	completed                                    map[string]bool   // story levels finished (survival_gate.go)
 	depthBand                                    viewer.EntityBand
 	depthBandActive                              bool
 	perf                                         perfCounters // perf_overlay.go
