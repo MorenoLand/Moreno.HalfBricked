@@ -345,6 +345,7 @@ type comboSystem struct {
 	hudPulse           float64 // +0x98
 	mirror             []wireCombo
 	mirrorFlash        float64
+	kill               killPopState // combo_kill_pop.go: the count pop-up that replaces the live badge
 }
 
 // comboPopup is the drawable form of a tracker.
@@ -515,6 +516,7 @@ func (p *playState) updateCombo(dt float64) {
 	}
 	c.popups = live
 	c.updateHUD(dt, p.multiplier)
+	p.updateKillPop(dt)
 }
 
 // liveCounter is the held tracker whose popup stands for the one shared count: the primary, or the secondary when

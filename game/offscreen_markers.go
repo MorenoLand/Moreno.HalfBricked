@@ -358,6 +358,11 @@ func (a *app) drawPickupMarkers(screen *ebiten.Image) {
 // pickupIconSource is the weapon icon cell the crate overlay uses (drawScriptEntity); special
 // crates draw their own "?" and have no icon.
 func (a *app) pickupIconSource(e *scriptEntity) (*ebiten.Image, image.Rectangle, bool) {
+	if portMysteryMark && isLifeCrate(e.texture) {
+		if icon, err := a.Texture("Common0/Textures/LifeIcon"); err == nil {
+			return icon, icon.Bounds(), true
+		}
+	}
 	if pickupCrateTexture(e.texture) == "Common0/Textures/Special_Crate" || (e.mystery && portMysteryMark) {
 		return nil, image.Rectangle{}, false
 	}

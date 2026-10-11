@@ -1990,6 +1990,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 		if a.drawMysteryMark(screen, entity, screenX, screenY, zoom) {
 			return
 		}
+		if a.drawLifeCrateIcon(screen, entity, screenX, screenY, zoom) {
+			return
+		}
 		if pickupCrateTexture(entity.texture) == "Common0/Textures/Special_Crate" {
 			// Mystery crates show their own "?" and no weapon icon.
 			return

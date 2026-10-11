@@ -21,10 +21,8 @@ type wireCombo struct {
 // ("x35") would be a second counter and is not drawn. Their multiplier bonus still goes to the score multiplier.
 func (p *playState) comboShownTrackers() []*comboTracker {
 	var list []*comboTracker
-	// The counter is shown by hits and kills, not by holding a weapon: nothing is drawn while the count is 0.
-	if live := p.combo.liveCounter(); live != nil && p.combo.sharedHits() > 0 {
-		list = append(list, live)
-	}
+	// The live counter is not drawn as a badge any more: the count is a pop-up that appears on each hit or kill
+	// and fades away (combo_kill_pop.go, killPopPopup).
 	for _, t := range p.combo.popups {
 		if !strings.HasPrefix(t.text, "x") {
 			list = append(list, t)
@@ -49,6 +47,9 @@ func (p *playState) comboWire() ([]wireCombo, float64, [3]float64) {
 		if popup, ok := p.combo.shownPopup(t); ok {
 			out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 		}
+	}
+	if popup, ok := p.killPopPopup(); ok {
+		out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 	}
 	return out, p.combo.hudFlash, p.combo.hudColor
 }
@@ -77,6 +78,9 @@ func (p *playState) comboPopups() []comboPopup {
 			list = append(list, popup)
 		}
 	}
+	if popup, ok := p.killPopPopup(); ok {
+		list = append(list, popup)
+	}
 	return list
 }
 
@@ -101,6 +105,9 @@ func (a *app) drawComboHUD(screen *ebiten.Image, x, y float64) {
 		if popup, ok := a.play.combo.shownPopup(t); ok {
 			a.drawComboText(screen, popup, t)
 		}
+	}
+	if popup, ok := a.play.killPopPopup(); ok {
+		a.drawComboText(screen, popup, nil)
 	}
 }
 
