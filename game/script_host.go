@@ -1928,7 +1928,17 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 			if zoom <= 0 {
 				zoom = 1
 			}
-			a.drawPickupBox(screen, (entity.x-a.play.world.CameraX)*zoom+a.play.world.ViewportX, (entity.y-a.play.world.CameraY)*zoom+a.play.world.ViewportY-entity.lift*zoom, zoom, entity.texture)
+			boxX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
+			boxY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY - entity.lift*zoom
+			boxName := entity.texture
+			if entity.mystery && portMysteryMark {
+				boxName = "p_shotgun"
+			}
+			a.drawPickupBox(screen, boxX, boxY, zoom, boxName)
+			// A crate without a weapon icon sheet (extra life, shield, random) still gets its own picture.
+			if !a.drawMysteryMark(screen, entity, boxX, boxY, zoom) {
+				a.drawLifeCrateIcon(screen, entity, boxX, boxY, zoom)
+			}
 		}
 		return
 	}
