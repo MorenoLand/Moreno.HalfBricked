@@ -14,17 +14,41 @@ func TestAllDeadWaveEndWaitsForEveryZombie(t *testing.T) {
 	t.Cleanup(func() { waveEndRule = old })
 
 	p := &playState{}
-	timed := formats.Wave{RunTime: 1000, EndWaveTime: 2000, EndWaveZombies: 0}
-	if p.waveEndStep(timed, false, 2) {
-		t.Fatal("two zombies alive: the timed wave must not end at its timer")
+	zombies := []formats.Spawner{{Index: 1, Count: 3, Types: []formats.SpawnType{{Name: "zombie"}}}}
+	timed := formats.Wave{RunTime: 1000, EndWaveTime: 2000, EndWaveZombies: 0, Spawners: zombies}
+	// Everything is dead long before the 2 s timer: the wave still waits it out (the gap between waves).
+	frames := 0
+	for ; frames < 600; frames++ {
+		p.waveElapsed += 1000.0 / 60.0
+		if p.waveEndStep(timed, false, 0) {
+			break
+		}
 	}
-	if p.waveEndStep(timed, true, 0) {
-		t.Fatal("a spawner still has zombies to deliver: no end")
+	if frames < 100 || frames > 140 {
+		t.Fatalf("cleared wave ended after %d frames, want about its 2 s timer", frames)
 	}
-	if !p.waveEndStep(timed, false, 0) {
-		t.Fatal("spawners done and nothing alive: the wave ends")
+	q := &playState{}
+	for i := 0; i < 400; i++ {
+		q.waveElapsed += 1000.0 / 60.0
+		if q.waveEndStep(timed, false, 2) {
+			t.Fatal("two zombies alive: the wave must not end at its timer")
+		}
 	}
-	limited := formats.Wave{EndWaveTime: 0, EndWaveZombies: 10}
+	q.waveElapsed += 1000.0 / 60.0
+	if q.waveEndStep(timed, false, 2) {
+		t.Fatal("still two alive")
+	}
+	if !q.waveEndStep(timed, false, 0) {
+		t.Fatal("timer run out, spawners done, nothing alive: the wave ends")
+	}
+	r := &playState{}
+	for i := 0; i < 400; i++ {
+		r.waveElapsed += 1000.0 / 60.0
+		if r.waveEndStep(timed, true, 0) {
+			t.Fatal("a spawner still has zombies to deliver: no end")
+		}
+	}
+	limited := formats.Wave{EndWaveTime: 0, EndWaveZombies: 10, Spawners: zombies}
 	if p.waveEndStep(limited, false, 1) {
 		t.Fatal("one zombie alive is not below the native limit, and the all-dead rule needs none")
 	}

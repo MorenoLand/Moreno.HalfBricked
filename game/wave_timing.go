@@ -59,9 +59,9 @@ var waveEndRule = waveEndAllDead
 // waveEndStep is FUN_000bf120's end test for one frame (after the spawners ran).
 // spawnersLeft is "the spawner list is not empty".
 func (p *playState) waveEndStep(wave formats.Wave, spawnersLeft bool, alive int) bool {
-	if waveEndRule == waveEndAllDead {
-		return !spawnersLeft && alive == 0
-	}
+	// The all-dead rule keeps the native pacing: the wave's end_wave_time still has to run out (that is the gap
+	// between waves, and what keeps a crate-only or breather wave on screen for its 3 s), and then, instead of
+	// the native "fewer than end_wave_zombies alive", every zombie has to be dead.
 	if !p.waveEndInit || p.waveElapsed < p.waveEndStamp {
 		p.waveEndInit = true
 		p.waveEndTimer = int(wave.EndWaveTime) - waveEndTimerOffsetMS
@@ -73,12 +73,18 @@ func (p *playState) waveEndStep(wave formats.Wave, spawnersLeft bool, alive int)
 			return false
 		}
 		if !spawnersLeft {
+			if waveEndRule == waveEndAllDead {
+				return alive == 0
+			}
 			return true
 		}
 		p.waveEndTimer = waveEndRecheckMS
 	}
 	if spawnersLeft {
 		return false
+	}
+	if waveEndRule == waveEndAllDead {
+		return alive == 0
 	}
 	return alive < wave.EndWaveZombies
 }
