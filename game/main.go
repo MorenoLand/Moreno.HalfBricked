@@ -40,6 +40,8 @@ type app struct {
 	menuSelection                                int
 	options                                      optionsMenu
 	extras                                       extraSettings // extras.go
+	depthBand                                    viewer.EntityBand
+	depthBandActive                              bool
 	extraRow                                     int
 	extraDrag                                    bool
 	discord                                      discordRPC
@@ -2582,55 +2584,67 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	// Zombies layer by depth: lower on screen draws in front.
 	drawOrder := append([]zombieState(nil), a.play.zombies...)
 	sort.SliceStable(drawOrder, func(i, j int) bool { return drawOrder[i].y < drawOrder[j].y })
-	a.play.world.DrawWithEntities(screen, func(target *ebiten.Image) {
-		if !a.play.playerUnspawned && a.play.health > 0 {
-			a.drawBarryShadow(target, screenX, screenY-24*scale, scale)
-		}
-		a.drawTrain(target, a.play.train) // FUN_000fde94 submits at once: under every bucketed entity
-		a.drawZombieShadows(target)
-		a.drawRexShockwaves(target)
-		a.drawRexVenom(target)
-		for _, portal := range a.play.portals {
-			a.drawPortal(target, portal)
+	// The entities are drawn in depth bands with the low props between them (viewer.DrawWithEntityBands): a parked
+	// car covers whoever stands behind its ground line and is walked in front of by whoever is before it.
+	a.play.world.DrawWithEntityBands(screen, func(target *ebiten.Image, band viewer.EntityBand) {
+		a.depthBand, a.depthBandActive = band, true
+		if band.First {
+			if !a.play.playerUnspawned && a.play.health > 0 {
+				a.drawBarryShadow(target, screenX, screenY-24*scale, scale)
+			}
+			a.drawTrain(target, a.play.train) // FUN_000fde94 submits at once: under every bucketed entity
+			a.drawZombieShadows(target)
+			a.drawRexShockwaves(target)
+			a.drawRexVenom(target)
+			for _, portal := range a.play.portals {
+				a.drawPortal(target, portal)
+			}
+			a.drawMines(target)
 		}
 		for _, pop := range a.play.bloodPops {
-			if pop.y <= a.play.y {
+			if pop.y <= a.play.y && a.inDepthBand(pop.y) {
 				a.drawBloodPop(target, pop)
 			}
 		}
 		for _, body := range a.play.gibBodies {
-			if body.y <= a.play.y {
+			if body.y <= a.play.y && a.inDepthBand(body.y) {
 				a.drawZombie(target, body)
 			}
 		}
 		a.drawDepthSorted(target, drawOrder, true)
-		a.drawMines(target)
-		a.drawThrown(target)
-		if !a.play.playerUnspawned && a.play.health > 0 {
+		if band.Last {
+			a.drawThrown(target)
+		}
+		if !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y) {
 			a.barryTint = hurtTint(a.play.hurt, a.play.time, [3]float32{})
 			a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 			a.barryTint = [3]float32{}
 			a.drawShield(target)
 		}
-		if a.play.flash > 0 && !a.play.playerUnspawned && a.play.health > 0 {
+		if a.play.flash > 0 && !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y) {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
-		a.drawBullets(target)
+		if band.Last {
+			a.drawBullets(target)
+		}
 		a.drawDepthSorted(target, drawOrder, false)
 		for _, pop := range a.play.bloodPops {
-			if pop.y > a.play.y {
+			if pop.y > a.play.y && a.inDepthBand(pop.y) {
 				a.drawBloodPop(target, pop)
 			}
 		}
 		for _, body := range a.play.gibBodies {
-			if body.y > a.play.y {
+			if body.y > a.play.y && a.inDepthBand(body.y) {
 				a.drawZombie(target, body)
 			}
 		}
-		for _, explosion := range a.play.explosions {
-			a.drawExplosion(target, explosion)
+		if band.Last {
+			for _, explosion := range a.play.explosions {
+				a.drawExplosion(target, explosion)
+			}
 		}
 	})
+	a.depthBandActive = false
 	a.drawTrainMarker(screen)
 	a.drawScriptFade(screen)
 	a.drawScriptTextures(screen)

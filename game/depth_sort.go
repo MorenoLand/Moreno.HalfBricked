@@ -21,24 +21,24 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, behin
 	}
 	var items []item
 	for index := range zombies {
-		if (zombies[index].y <= p.y) == behind {
+		if (zombies[index].y <= p.y) == behind && a.inDepthBand(zombies[index].y) {
 			items = append(items, item{y: zombies[index].y, order: 1, zombie: &zombies[index]})
 		}
 	}
 	if p.coopActive() {
 		for _, c := range p.coop.players {
-			if (c.body.y <= p.y) == behind {
+			if (c.body.y <= p.y) == behind && a.inDepthBand(c.body.y) {
 				items = append(items, item{y: c.body.y, order: 2, player: c})
 			}
 		}
 	}
 	for _, entity := range p.scriptEntities {
-		if entity != nil && entity.kind != "zombie" && (entity.y <= p.y) == behind {
+		if entity != nil && entity.kind != "zombie" && (entity.y <= p.y) == behind && a.inDepthBand(entity.y) {
 			items = append(items, item{y: entity.y, order: 0, entity: entity})
 		}
 	}
 	for index := range p.sentries {
-		if (p.sentries[index].y <= p.y) == behind {
+		if (p.sentries[index].y <= p.y) == behind && a.inDepthBand(p.sentries[index].y) {
 			items = append(items, item{y: p.sentries[index].y, order: 0, sentry: &p.sentries[index]})
 		}
 	}

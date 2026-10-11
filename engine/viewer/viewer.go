@@ -355,15 +355,20 @@ func isCanopyProp(texture string, height float64) bool {
 	return false
 }
 
-func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
-	type propDraw struct {
-		texture                      string
-		x, y, height, scaleX, scaleY float64
-		uv1X, uv1Y, uv2X, uv2Y       float64
-		xFrames, yFrames             int
-		frameTime                    float64
-		animated                     bool
-	}
+// propDraw is one prop (static or animated) ready to draw.
+type propDraw struct {
+	texture                      string
+	x, y, height, scaleX, scaleY float64
+	uv1X, uv1Y, uv2X, uv2Y       float64
+	xFrames, yFrames             int
+	frameTime                    float64
+	animated                     bool
+}
+
+// sortedProps is every prop of the level in ground-y order. The height is a visual lift (the draw subtracts it), so
+// a car parked in front of a tall building (World1Level2: height 1 at y 152 against height 2 at y 128) is drawn over
+// its base. The native scene-list order is UNRESOLVED (rendering pass 2026-09-07).
+func (v *Viewer) sortedProps() []propDraw {
 	props := make([]propDraw, 0, len(v.Level.Props)+len(v.Level.AnimatedProps))
 	for _, prop := range v.Level.Props {
 		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, uv1X: prop.UV1X, uv1Y: prop.UV1Y, uv2X: prop.UV2X, uv2Y: prop.UV2Y})
@@ -371,14 +376,91 @@ func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
 	for _, prop := range v.Level.AnimatedProps {
 		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, xFrames: prop.XFrames, yFrames: prop.YFrames, frameTime: prop.FrameTime, animated: true})
 	}
-	sort.SliceStable(props, func(i, j int) bool {
-		// Ground position only: the height is a visual lift (the draw subtracts it), so a car parked in front of a
-		// tall building (World1Level2: height 1 at y 152 against height 2 at y 128) is drawn over its base.
-		// The native scene-list order is UNRESOLVED (rendering pass 2026-09-07).
-		return props[i].y < props[j].y
-	})
+	sort.SliceStable(props, func(i, j int) bool { return props[i].y < props[j].y })
+	return props
+}
+
+func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
+	var list []propDraw
+	for _, prop := range v.sortedProps() {
+		if isCanopyProp(prop.texture, prop.height) == overHigh {
+			list = append(list, prop)
+		}
+	}
+	v.drawPropList(screen, list)
+}
+
+// propOnScreen reports whether the prop's quad touches the viewport (a cheap test for the band split).
+func (v *Viewer) propOnScreen(prop propDraw) bool {
+	scaleX, scaleY := prop.scaleX, prop.scaleY
+	if scaleX == 0 {
+		scaleX = 1
+	}
+	if scaleY == 0 {
+		scaleY = 1
+	}
+	worldWidth, worldHeight := scaleX*float64(v.tileSize()), scaleY*float64(v.tileSize())
+	left := (prop.x - worldWidth/2 - v.CameraX) * v.Zoom
+	top := (prop.y - prop.height*float64(v.tileSize()) - worldHeight/2 - v.CameraY) * v.Zoom
+	return left+worldWidth*v.Zoom > -v.ViewportX && left < 480-v.ViewportX && top+worldHeight*v.Zoom > -v.ViewportY && top < 320-v.ViewportY
+}
+
+// EntityBand is one slice of the draw order handed to the entity callback of DrawWithEntityBands: the entities
+// whose ground y is in [Lo, Hi). First and Last are true for the first and the last slice, which draw the parts
+// that are not tied to a depth (shadows, portals, the train; bullets, explosions).
+type EntityBand struct {
+	Lo, Hi      float64
+	First, Last bool
+}
+
+// DrawWithEntityBands is DrawWithEntities with the low props interleaved into the entity depth order: a prop is drawn
+// after the entities that stand behind its ground line (smaller y) and before the ones in front of it, so a car
+// parked on the street covers Barry and the zombies behind it and is walked in front of by the ones before it.
+func (v *Viewer) DrawWithEntityBands(screen *ebiten.Image, entities func(*ebiten.Image, EntityBand)) {
+	screen.Fill(color.Black)
+	tileSize := v.tileSize()
+	for _, kind := range formats.BaseRenderLayerKinds {
+		if v.Layers[kind] {
+			v.drawLayer(screen, kind, tileSize)
+		}
+	}
+	lo := math.Inf(-1)
+	first := true
+	if v.Props && v.Textures != nil {
+		for _, prop := range v.sortedProps() {
+			if isCanopyProp(prop.texture, prop.height) || !v.propOnScreen(prop) {
+				continue
+			}
+			if entities != nil {
+				entities(screen, EntityBand{Lo: lo, Hi: prop.y, First: first})
+			}
+			first = false
+			v.drawPropList(screen, []propDraw{prop})
+			lo = prop.y
+		}
+	} else if v.Props {
+		v.drawProps(screen, false)
+	}
+	if entities != nil {
+		entities(screen, EntityBand{Lo: lo, Hi: math.Inf(1), First: first, Last: true})
+	}
+	if v.Layers[formats.LayerH] {
+		v.drawLayer(screen, formats.LayerH, tileSize)
+	}
+	if v.Props {
+		v.drawProps(screen, true)
+	}
+	if v.Layers[formats.LayerC] {
+		v.drawCollision(screen, tileSize)
+	}
+	if v.Grid {
+		v.drawGrid(screen, tileSize)
+	}
+}
+
+func (v *Viewer) drawPropList(screen *ebiten.Image, props []propDraw) {
 	for _, prop := range props {
-		if v.Textures == nil || isCanopyProp(prop.texture, prop.height) != overHigh {
+		if v.Textures == nil {
 			continue
 		}
 		textureName := prop.texture
