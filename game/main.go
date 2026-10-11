@@ -2624,13 +2624,13 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		if band.Last {
 			a.drawThrown(target)
 		}
-		if !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y) {
+		if !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y+playerFeetOffset) {
 			a.barryTint = hurtTint(a.play.hurt, a.play.time, [3]float32{})
 			a.drawBarry(target, screenX, screenY, scale, frame, a.play.angle, a.play.flipX)
 			a.barryTint = [3]float32{}
 			a.drawShield(target)
 		}
-		if a.play.flash > 0 && !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y) {
+		if a.play.flash > 0 && !a.play.playerUnspawned && a.play.health > 0 && a.inDepthBand(a.play.y+playerFeetOffset) {
 			a.drawBarryFlash(target, screenX, screenY, scale, a.play.angle, a.play.flipX)
 		}
 		if band.Last {
@@ -4529,6 +4529,12 @@ func (p *playState) updateZombies() {
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
 		zombie.rexRageTimer = math.Max(0, zombie.rexRageTimer-1000*dt)
 		if zombie.dying {
+			if zombie.native.car.active {
+				if !zombie.native.car.wrecked {
+					p.leaveCarWreck(zombie)
+				}
+				zombie.alpha = 0 // the wreck sprite stands in for the car from now on
+			}
 			p.stepGibFlames(zombie)
 			zombie.deathAge += dt
 			continue

@@ -47,8 +47,41 @@ const (
 
 // gangsterCar is the per-zombie state of the car.
 type gangsterCar struct {
-	active bool
-	dir    float64
+	active  bool
+	dir     float64
+	wrecked bool // the wreck sprite has replaced the car (leaveCarWreck)
+}
+
+// leaveCarWreck replaces the dying car with its "Death" sprite (gangstercar_death: one 256x128 frame, the wrecked
+// car), which stays on the street: world1_level2_exit pans to the boss's position and waits four seconds on it
+// before the level-complete text. The car used to vanish the moment it died.
+func (p *playState) leaveCarWreck(z *zombieState) {
+	z.native.car.wrecked = true
+	definition, ok := p.sprites.Find(z.texture)
+	if !ok {
+		return
+	}
+	index := -1
+	for i, name := range definition.AnimationOrder {
+		if name == "death" {
+			index = i
+		}
+	}
+	if index < 0 {
+		return
+	}
+	if p.scriptEntities == nil {
+		p.scriptEntities = map[int]*scriptEntity{}
+	}
+	if p.scriptNextEntity <= 0 {
+		p.scriptNextEntity = 1
+	}
+	id := p.scriptNextEntity
+	p.scriptNextEntity++
+	// The wreck art is twice as wide as one car frame at the same pixel scale.
+	scale := z.size.X / 128
+	p.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: "car_wreck", texture: z.texture, animation: index,
+		x: z.x, y: z.y, scaleX: 256 * scale, scaleY: 128 * scale, sized: true, alpha: 1, flipX: z.flipX}
 }
 
 func isGangsterCarName(name string) bool { return name == "boss_gangster" }

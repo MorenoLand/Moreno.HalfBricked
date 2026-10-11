@@ -21,7 +21,7 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, behin
 	}
 	var items []item
 	for index := range zombies {
-		if (zombies[index].y <= p.y) == behind && a.inDepthBand(zombies[index].y) {
+		if (zombies[index].y <= p.y) == behind && a.inDepthBand(zombieFeetY(&zombies[index])) {
 			items = append(items, item{y: zombies[index].y, order: 1, zombie: &zombies[index]})
 		}
 	}

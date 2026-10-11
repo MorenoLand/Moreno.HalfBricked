@@ -84,3 +84,24 @@ func TestGangsterCarFlipFollowsTheDriveDirection(t *testing.T) {
 		t.Fatal("driving left: the car art already faces left")
 	}
 }
+
+// A dead car leaves its wreck sprite on the street instead of vanishing (the exit script pans to it).
+func TestGangsterCarLeavesAWreck(t *testing.T) {
+	p, z := carRig()
+	p.sprites = newHeadlessApp(t, "bin/data-cache").sprites
+	z.native.ai.state = 1
+	z.health, z.dying = 0, true
+	p.updateZombies()
+	found := false
+	for _, e := range p.scriptEntities {
+		if e.entityType == "car_wreck" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no wreck entity after the car died")
+	}
+	if z.alpha != 0 {
+		t.Fatalf("the dying car is still drawn (alpha %v)", z.alpha)
+	}
+}
