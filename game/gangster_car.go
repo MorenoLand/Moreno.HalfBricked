@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
@@ -43,6 +44,7 @@ const (
 	carPistolRounds     = 20
 	carTileSize         = 32.0
 	carGunRollRange     = 14
+	carRenderAnchor     = .2 // FUN_000b732c: +0x2d4
 )
 
 // gangsterCar is the per-zombie state of the car.
@@ -57,6 +59,12 @@ type gangsterCar struct {
 // before the level-complete text. The car used to vanish the moment it died.
 func (p *playState) leaveCarWreck(z *zombieState) {
 	z.native.car.wrecked = true
+	// FUN_000b6c58 (the car's death): a mine-class blast at the car (hit-player 0, hit-entities 1), a camera shake,
+	// the wreck animation and SFX_CAR_DEATH (0x33). The shake arguments (1.5, 1.0, 1.0) are read as duration and
+	// amplitudes; that mapping is inferred.
+	p.sfxQueue = append(p.sfxQueue, "SFX_CAR_DEATH")
+	p.spawnBlast(z.x, z.y, zombieBlastSound, killOrigin{}, true)
+	p.startCameraShake(z.x, z.y, 1.5, 1, 1, cameraShakeAngleMul(p.waveBuild()))
 	definition, ok := p.sprites.Find(z.texture)
 	if !ok {
 		return
@@ -146,6 +154,8 @@ func (p *playState) rollCarGun(z *zombieState) {
 	gun.interval *= carRateBase + frac*carRateHealthSpan
 	gun.timer = gun.interval - carRateTimerLead
 	z.native.ai.gun = gun
+	// FUN_000b70b4 ends with FUN_000ca410(0x31 + rnd(2)): SFX_CAR_TIRE_SCREECH_1 / _2 at the spawn and at every turn.
+	p.sfxQueue = append(p.sfxQueue, fmt.Sprintf("SFX_CAR_TIRE_SCREECH_%d", 1+zombieBounded(p.rng, 2)))
 }
 
 // carMayShoot is FUN_000b6e00.
