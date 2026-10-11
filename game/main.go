@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"runtime"
+	"time"
 	"image/color"
 	"image/draw"
 	"image/png"
@@ -43,6 +44,9 @@ type app struct {
 	extras                                       extraSettings // extras.go
 	depthBand                                    viewer.EntityBand
 	depthBandActive                              bool
+	perf                                         perfCounters // perf_overlay.go
+	cursorMode                                   ebiten.CursorModeType
+	cursorModeSet                                bool
 	extraRow                                     int
 	extraDrag                                    bool
 	discord                                      discordRPC
@@ -507,6 +511,7 @@ func worldMusicTrack(world int) (string, int64, bool) {
 	return tracks[world].path, tracks[world].loopPoint, true
 }
 func (a *app) Update() error {
+	defer a.perfTrackUpdate(time.Now())
 	if uiKeyJustPressed(ebiten.KeyEnter) && (ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 		return nil
@@ -1022,10 +1027,17 @@ func (a *app) mainMenuHit(x, y int) int {
 	return -1
 }
 func (a *app) Draw(screen *ebiten.Image) {
-	// Hide the OS cursor during play so the red reticule crosshair shows instead.
-	ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	defer a.perfTrackDraw(time.Now())
+	defer a.drawPerfOverlay(screen)
+	// Hide the OS cursor during play so the red reticule crosshair shows instead. The mode is only written when it
+	// changes: in the browser every SetCursorMode is a call into JavaScript.
+	cursor := ebiten.CursorModeVisible
 	if a.play != nil && !a.mobile && !a.play.paused && !a.sandboxOpen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && a.page != creditsPage && !a.play.storyGameOver(a.mode) {
-		ebiten.SetCursorMode(ebiten.CursorModeHidden)
+		cursor = ebiten.CursorModeHidden
+	}
+	if cursor != a.cursorMode || !a.cursorModeSet {
+		ebiten.SetCursorMode(cursor)
+		a.cursorMode, a.cursorModeSet = cursor, true
 	}
 	a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
 	a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
@@ -1716,6 +1728,16 @@ func (a *app) Layout(outsideWidth, outsideHeight int) (int, int) {
 	if outsideHeight < 1 {
 		outsideHeight = logicalHeight
 	}
+	// In the browser the screen is laid out at the canvas size and then scaled by the page. A big window means a big
+	// screen to fill every frame in a single-threaded WebAssembly build, so the internal resolution is capped
+	// (the picture is scaled up by the browser, as with any other canvas).
+	if runtime.GOOS == "js" {
+		const maxWidth, maxHeight = 960, 640
+		if outsideWidth > maxWidth || outsideHeight > maxHeight {
+			scale := math.Min(float64(maxWidth)/float64(outsideWidth), float64(maxHeight)/float64(outsideHeight))
+			outsideWidth, outsideHeight = max(1, int(float64(outsideWidth)*scale)), max(1, int(float64(outsideHeight)*scale))
+		}
+	}
 	a.outputWidth, a.outputHeight = outsideWidth, outsideHeight
 	return outsideWidth, outsideHeight
 }
@@ -2090,6 +2112,11 @@ func resolutionRect(rect image.Rectangle, scale float64) image.Rectangle {
 }
 
 func drawNineSlice(a *app, screen, texture *ebiten.Image, source, target image.Rectangle) {
+	drawNineSliceAlpha(a, screen, texture, source, target, 1)
+}
+
+// drawNineSliceAlpha is drawNineSlice with an overall opacity.
+func drawNineSliceAlpha(a *app, screen, texture *ebiten.Image, source, target image.Rectangle, alpha float32) {
 	const edge = 8
 	sourceParts := []image.Rectangle{
 		image.Rect(source.Min.X, source.Min.Y, source.Min.X+edge, source.Min.Y+edge),
@@ -2120,6 +2147,9 @@ func drawNineSlice(a *app, screen, texture *ebiten.Image, source, target image.R
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Scale(float64(targetParts[index].Dx())/float64(sourceParts[index].Dx()), float64(targetParts[index].Dy())/float64(sourceParts[index].Dy()))
 		options.GeoM.Translate(float64(targetParts[index].Min.X), float64(targetParts[index].Min.Y))
+		if alpha < 1 {
+			options.ColorScale.ScaleAlpha(alpha)
+		}
 		a.drawImage(screen, texture.SubImage(sourceParts[index]).(*ebiten.Image), options)
 	}
 }

@@ -138,11 +138,24 @@ func (a *app) drawLobbyBox(screen *ebiten.Image, y int, text string, muted bool)
 }
 
 func (a *app) drawLobbyButton(screen *ebiten.Image, button lobbyButton, hover bool) {
-	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
-		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), button.rect)
-	}
+	// A disabled button is the same plate drawn faint with faint grey text: no overlay rectangle (the old black one
+	// read as a box over the button).
+	plateAlpha := float32(1)
 	if !button.enabled {
-		a.drawRect(screen, float64(button.rect.Min.X), float64(button.rect.Min.Y), float64(button.rect.Dx()), float64(button.rect.Dy()), color.RGBA{0, 0, 0, 150})
+		plateAlpha = .38
+	}
+	if texture, err := a.Texture("Common0/Textures/Backing_Square"); err == nil {
+		drawNineSliceAlpha(a, screen, texture, image.Rect(0, 0, 64, 64), button.rect, plateAlpha)
+	}
+	if a.font != nil && a.font.LineHeight > 0 && !button.enabled {
+		size := 13.0
+		scale := size / float64(a.font.LineHeight)
+		centerX := float64(button.rect.Min.X) + float64(button.rect.Dx())/2
+		top := float64(button.rect.Min.Y) + (float64(button.rect.Dy())-size)/2
+		x := centerX - a.fontTextWidth(button.label, scale)/2
+		fx, fy := a.renderScale()
+		a.font.DrawScaledTintedAlpha(screen, button.label, x*fx, top*fy, scale*fx, scale*fy, .75, .75, .78, .42)
+		return
 	}
 	if a.font != nil && a.font.LineHeight > 0 {
 		size := 13.0

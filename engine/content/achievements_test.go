@@ -61,3 +61,16 @@ func TestHDResourceResolutionPreservesExistingSD(t *testing.T) {
 		t.Fatal("ambiguous mixed catalog silently selected HD")
 	}
 }
+
+func TestPresidentialCharactersAreHDScale(t *testing.T) {
+	p := &Pack{manifest: PackManifest{Textures: map[string]string{
+		"abrahambarry_idle": "textures/DLC2/Textures/characters/AbrahamBarry_Idle.png",
+		"barryidle_sd":      "textures/Common0/Textures/Characters/barryidle_SD.png",
+	}}}
+	if p.TextureSourceScale("Textures/Characters/AbrahamBarry_Idle") != 2 {
+		t.Fatal("Abe Barry ships at HD resolution")
+	}
+	if p.TextureSourceScale("Common0/Textures/Characters/barryidle_SD") != 1 {
+		t.Fatal("an SD texture stays at scale 1")
+	}
+}

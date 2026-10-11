@@ -199,7 +199,10 @@ func (p *Pack) TextureSourceScale(name string) float64 {
 	}
 	scale := 1.0
 	path, ok := p.TexturePath(name)
-	if ok && strings.HasSuffix(strings.ToLower(strings.TrimSuffix(path, filepath.Ext(path))), "_hd") {
+	lower := strings.ToLower(filepath.ToSlash(strings.TrimSuffix(path, filepath.Ext(path))))
+	if ok && (strings.HasSuffix(lower, "_hd") || strings.Contains(lower, "/dlc2/textures/characters/")) {
+		// The presidential characters (AbrahamBarry_Idle, GeorgeWashington, ...) ship at HD resolution without the
+		// "_HD" suffix; read as SD they were drawn twice as big (7-1: a huge Abe Barry).
 		scale = 2
 	}
 	p.textureScales.Store(name, scale)
