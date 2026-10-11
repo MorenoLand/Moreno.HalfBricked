@@ -352,8 +352,9 @@ type playState struct {
 	statistics                                             *stats.StatsData
 	statsPositionX, statsPositionY                         float64
 	waveElapsed                                            float64
-	waveEndTimer                                           int         // wave_timing.go: native end_wave_time countdown (ms)
-	waveBreather                                           float64     // wave_timing.go: seconds left of the pause before the next wave
+	waveEndTimer                                           int     // wave_timing.go: native end_wave_time countdown (ms)
+	wavePending                                            float64 // wave_timing.go: seconds of rest left before the next wave
+	wavePendingStarted                                     bool
 	lookahead                                              v7Lookahead // camera_lookahead.go: SD player look-ahead state
 	slowMoLeft, slowMoTotal, slowMoAccum                   float64     // slowmo.go: slow motion on the kill that ends a wave
 	slowInterp                                             bool
@@ -4235,10 +4236,15 @@ func (p *playState) updateWaves() {
 		return
 	}
 	p.noteWave()
-	// PORT ADDITION: a breather between waves (wave_timing.go, -wave-gap). The next wave's spawners and timers wait.
-	if p.waveBreather > 0 {
-		p.waveBreather -= 1.0 / 60.0
-		return
+	// PORT ADDITION: a rest between waves (wave_timing.go, -wave-gap). Once a wave is over its "WAVE N COMPLETE"
+	// shows and nothing else happens: the next wave (its number, its banner and its spawners) only starts when the
+	// rest is over.
+	if p.wavePending > 0 {
+		p.wavePending -= 1.0 / 60.0
+		if p.wavePending > 0 {
+			return
+		}
+		p.wavePending = 0
 	}
 	// The wave block (FUN_000c0cec / FUN_00123180) runs only while the living enemy count is below the build's
 	// limit. The gate reads the count before this frame's spawns, and the spawners, the timer and the advance
@@ -4302,6 +4308,13 @@ func (p *playState) updateWaves() {
 		if next < 1 {
 			next = p.waveIndex + 1
 		}
+		if next < len(p.world.Level.Waves) && waveEndRule == waveEndAllDead && portWaveBreather > 0 && !p.wavePendingStarted {
+			p.wavePendingStarted = true
+			p.wavePending = portWaveBreather
+			p.banner = waveBanner{active: true, from: p.waveIndex + 1, finished: true, count: p.waveIndex + 1, native: p.waveBuild() != content.WaveBuildV7}
+			return
+		}
+		p.wavePendingStarted = false
 		if next < len(p.world.Level.Waves) {
 			// Native advance: the wave counter (1.2.5 +0x450f0) goes up by one and, in survival, the mode hook
 			// FUN_000998ac submits it as SPECIFIC "wave" (see Research/native/achievement-audit-2026-10-10.md).
@@ -4310,8 +4323,11 @@ func (p *playState) updateWaves() {
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
-			if waveEndRule == waveEndAllDead {
-				p.waveBreather = portWaveBreather
+			if waveEndRule == waveEndAllDead && portWaveBreather > 0 {
+				// The complete line already showed during the rest: only the new wave's title comes now.
+				p.bannerSeen = p.waveIndex
+				p.startBanner(0, p.waveIndex+1)
+				p.banner.timer = nativeBannerSeconds
 			}
 		} else {
 			p.waveIndex, p.wavesFinished = next, true
@@ -5410,7 +5426,7 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
-	waveGap := flag.Float64("wave-gap", 3, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
+	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")

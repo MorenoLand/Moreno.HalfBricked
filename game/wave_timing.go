@@ -187,4 +187,4 @@ func (p *playState) nativeSpawnPoint(points []formats.Vec2) formats.Vec2 {
 // begins when the last zombie is gone. Under the all-dead rule the port holds the next wave back for this many
 // seconds after the previous one is cleared (the "WAVE N COMPLETE" banner shows meanwhile). -wave-gap changes it;
 // 0 starts the next wave at once.
-var portWaveBreather = 3.0
+var portWaveBreather = 5.0
