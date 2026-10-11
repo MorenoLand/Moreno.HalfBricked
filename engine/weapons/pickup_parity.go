@@ -81,6 +81,9 @@ func PickupParityVoice(prefix, symbol string) (string, bool) {
 		// FUN_000928f4 plays voice id 8 for the p_shield pickup; the voice symbol
 		// table (_INIT_70) lists SFX_VO_SHIELD in that slot.
 		suffix = "Shield"
+	case "SFX_VO_EXTRA_LIFE":
+		// FUN_000928f4 type '#' (p_health) plays voice id 2; the same voice table has SFX_VO_EXTRA_LIFE there.
+		suffix = "Extra_Life"
 	case "SFX_VO_DYNAMITE":
 		suffix = "Dynamite"
 	case "SFX_VO_PEACEMAKER":

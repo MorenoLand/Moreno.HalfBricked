@@ -1347,6 +1347,12 @@ func (h *playScriptHost) entityProperty(name string, args []scripting.Value) (sc
 		entity.animation, err = scriptID(args, 1)
 		entity.playing = true
 		entity.frame, entity.frameTime = 0, 0
+		// FUN_0009a0bc (v7): besides the clip, SetAnimation(n) sets the entity's heading from a fixed table:
+		// 0 -> 0 (east), 1 -> 0x3f46 (south, +y), 2 -> 0xbff4 (north), 3 -> 0. A walking character is therefore
+		// turned the way the script walks it (Tanaka walking down in 4-2 was drawn facing right).
+		if err == nil && entity.animation >= 0 && entity.animation < len(scriptAnimationHeadings) {
+			entity.rotation, entity.rotationSet = scriptAnimationHeadings[entity.animation], true
+		}
 	case "SetFrame":
 		entity.frame, err = scriptID(args, 1)
 		entity.frameTime = 0
@@ -1698,6 +1704,10 @@ func (p *playState) collectPickup(name string) {
 		// FUN_000928f4 type 0x23: +0x3ec += 1 and the text "Lives + 1" (0x00562133); the
 		// pickup never touches the health bar (it regrows by itself, player_vitals.go).
 		p.lives++
+		// ... and plays voice id 2, SFX_VO_EXTRA_LIFE (FUN_000cadc8(2)), like the shield's voice id 8.
+		if path, voiced := weapons.PickupParityVoice(p.levelInfo.VoiceoverPrefix, "SFX_VO_EXTRA_LIFE"); voiced {
+			p.pickupVoices = append(p.pickupVoices, path)
+		}
 	case "P_HOVER":
 		p.collectHover()
 	default:
@@ -2327,3 +2337,6 @@ func (a *app) resolveScriptSoundPath(name string) string {
 	}
 	return filepath.ToSlash(filepath.Join("audio", "sound", "sfx", name+".ogg"))
 }
+
+// scriptAnimationHeadings is the heading (degrees) SetAnimation(n) gives an entity: 0x0000, 0x3f46, 0xbff4, 0x0000.
+var scriptAnimationHeadings = [...]float64{0, float64(0x3f46) / 182.04167175, float64(0xbff4) / 182.04167175, 0}

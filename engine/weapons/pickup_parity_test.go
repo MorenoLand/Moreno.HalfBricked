@@ -51,3 +51,10 @@ func TestPickupParityVoiceAssets(t *testing.T) {
 		t.Fatal("sentinel is not a voice")
 	}
 }
+
+func TestPickupParityExtraLifeVoice(t *testing.T) {
+	path, ok := PickupParityVoice("VO_Caveman", "SFX_VO_EXTRA_LIFE")
+	if !ok || path != "audio/sound/sfx/VO_Caveman_Extra_Life.ogg" {
+		t.Fatalf("voice %s %v", path, ok)
+	}
+}

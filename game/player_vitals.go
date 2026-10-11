@@ -24,8 +24,10 @@ import (
 //     speed by 2 * clamp(t + 0.5, 0.5, 1) = 1..2 (ramping down over the last
 //     half second).
 const (
-	playerRegenRate      = .75 // health per second, DAT_00096b78
-	playerRegenBaseDelay = .5  // DAT_00095044: delay = (1 - health) + 0.5
+	playerRegenRate      = .75 // health per second, v7 DAT_00096b78
+	playerRegenRate125   = .25 // 1.2.5 FUN_000f3280 DAT_000f3700
+	playerRegenBaseDelay = .5  // v7 DAT_00095044: delay = (1 - health) + 0.5
+	playerRegenDelay125  = 1.0 // 1.2.5 FUN_000f2208: fixed 1.0 s after a damaging hit
 	playerRespawnGraceMS = 1500
 	playerSpeedBoostTime = 2.0
 	playerSpeedBoostMax  = 2.0
@@ -57,13 +59,28 @@ func (p *playState) stepVitals(dt float64) {
 	if limit <= 0 {
 		limit = 1
 	}
-	if p.health < limit {
+	if p.health >= limit {
+		return
+	}
+	if p.waveBuild() == content.WaveBuildV7 {
 		p.health = math.Min(limit, p.health+dt*playerRegenRate)
+		return
+	}
+	// 1.2.5 (HD cache, FUN_000f3280 0xf385c-0xf38d0): 0.25/s, and the new value is stored only when it stays in the
+	// same third of the bar (floor(h / 0.3333f)), so health recovers to the top of the third it is in and no further.
+	const third = float32(1.0 / 3.0)
+	next := math.Min(limit, p.health+dt*playerRegenRate125)
+	if math.Floor(float64(float32(next)/third)) == math.Floor(float64(float32(p.health)/third)) {
+		p.health = next
 	}
 }
 
 // noteHit is the tail of FUN_00094c6c for a damaging hit.
-func (v *playerVitals) noteHit(healthAfter float64) {
+func (v *playerVitals) noteHit(healthAfter float64, build string) {
+	if build != content.WaveBuildV7 {
+		v.regenDelay = playerRegenDelay125
+		return
+	}
 	v.regenDelay = (1 - healthAfter) + playerRegenBaseDelay
 }
 

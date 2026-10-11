@@ -205,7 +205,7 @@ func (p *playState) damagePlayer(index int, amount float64) {
 		}
 		p.health = math.Max(0, p.health-amount)
 		p.hurt = hurtFlashDuration
-		p.vitals.noteHit(p.health)
+		p.vitals.noteHit(p.health, p.waveBuild())
 		return
 	}
 	for _, c := range p.coop.players {
@@ -215,7 +215,7 @@ func (p *playState) damagePlayer(index int, amount float64) {
 			}
 			c.body.health = math.Max(0, c.body.health-amount)
 			c.body.hurt = hurtFlashDuration
-			c.body.vitals.noteHit(c.body.health)
+			c.body.vitals.noteHit(c.body.health, p.waveBuild())
 		}
 	}
 }

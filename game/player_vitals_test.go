@@ -1,6 +1,7 @@
 package game
 
 import (
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"math"
@@ -10,7 +11,8 @@ import (
 // FUN_00094c6c sets +0x98 = (1 - health) + 0.5 on a hit; FUN_00096818 then waits
 // that long and regrows the health by 0.75 per second.
 func TestPlayerHealthRegeneratesAfterTheNativeDelay(t *testing.T) {
-	p := &playState{health: 1, maxHealth: 1}
+	p := &playState{health: 1, maxHealth: 1, world: &viewer.Viewer{}}
+	p.world.Level.WaveBuild = content.WaveBuildV7
 	p.damagePlayer(0, .5)
 	if p.health != .5 || math.Abs(p.vitals.regenDelay-1.0) > 1e-9 {
 		t.Fatalf("health %v delay %v, want .5 and 1.0 (= 0.5 + 0.5)", p.health, p.vitals.regenDelay)
@@ -44,6 +46,22 @@ func TestPlayerHealthRegeneratesAfterTheNativeDelay(t *testing.T) {
 	p.stepVitals(1)
 	if p.health != 0 {
 		t.Fatal("dead players do not heal")
+	}
+}
+
+// 1.2.5 (HD cache, the default): FUN_000f3280 regrows 0.25/s after a fixed 1.0 s, never past the top of the
+// third of the bar the health is in; FUN_000f2208 sets the delay.
+func TestPlayerHealthRegeneratesPerThird125(t *testing.T) {
+	p := &playState{health: 1, maxHealth: 1}
+	p.damagePlayer(0, .9) // 0.1, the lowest third
+	if p.vitals.regenDelay != 1.0 {
+		t.Fatalf("delay %v, want the fixed 1.0", p.vitals.regenDelay)
+	}
+	for i := 0; i < 60*10; i++ {
+		p.stepVitals(1.0 / 60)
+	}
+	if p.health <= .3 || p.health >= 1.0/3.0 {
+		t.Fatalf("health %v: must stop just under a third", p.health)
 	}
 }
 
