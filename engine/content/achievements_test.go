@@ -50,11 +50,13 @@ func TestHDResourceResolutionPreservesExistingSD(t *testing.T) {
 		t.Fatal("missing original asset fabricated")
 	}
 	p.manifest.Textures["frontend0/textures/portal_menu_sd"] = "textures/Portal_Menu_SD.png"
+	p.resetTextureCache()
 	if path, ok := p.TexturePath("Frontend0/Textures/Portal_Menu_SD"); !ok || path != "textures/Portal_Menu_SD.png" || p.TextureSourceScale("Frontend0/Textures/Portal_Menu_SD") != 1 {
 		t.Fatal("existing SD overridden")
 	}
 	delete(p.manifest.Textures, "frontend0/textures/portal_menu_sd")
 	p.manifest.Files["Common0/Xml/Common0_Sprites_SD.xml"] = "sd"
+	p.resetTextureCache()
 	if _, ok := p.TexturePath("Frontend0/Textures/Portal_Menu_SD"); ok {
 		t.Fatal("ambiguous mixed catalog silently selected HD")
 	}

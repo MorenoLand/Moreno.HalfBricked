@@ -1797,12 +1797,47 @@ func (a *app) drawScriptEntities(screen *ebiten.Image, behind bool) {
 	}
 }
 
+// spriteAnimMemo remembers sprite-catalog lookups: every zombie asked for its animation twice a frame, and each
+// lookup built candidate lists and lowercased keys.
+type spriteAnimMemo struct {
+	byName  map[[2]string]spriteAnimResult
+	byIndex map[spriteIndexKey]spriteAnimResult
+}
+
+type spriteIndexKey struct {
+	name  string
+	index int
+}
+
+type spriteAnimResult struct {
+	animation formats.SpriteAnimation
+	ok        bool
+}
+
 func (a *app) spriteAnimation(name, preferred string) (formats.SpriteAnimation, bool) {
-	return findSpriteAnimation(a.sprites, name, preferred)
+	key := [2]string{name, preferred}
+	if hit, found := a.spriteMemo.byName[key]; found {
+		return hit.animation, hit.ok
+	}
+	animation, ok := findSpriteAnimation(a.sprites, name, preferred)
+	if a.spriteMemo.byName == nil {
+		a.spriteMemo.byName = map[[2]string]spriteAnimResult{}
+	}
+	a.spriteMemo.byName[key] = spriteAnimResult{animation, ok}
+	return animation, ok
 }
 
 func (a *app) spriteAnimationByIndex(name string, index int) (formats.SpriteAnimation, bool) {
-	return findSpriteAnimationByIndex(a.sprites, name, index)
+	key := spriteIndexKey{name, index}
+	if hit, found := a.spriteMemo.byIndex[key]; found {
+		return hit.animation, hit.ok
+	}
+	animation, ok := findSpriteAnimationByIndex(a.sprites, name, index)
+	if a.spriteMemo.byIndex == nil {
+		a.spriteMemo.byIndex = map[spriteIndexKey]spriteAnimResult{}
+	}
+	a.spriteMemo.byIndex[key] = spriteAnimResult{animation, ok}
+	return animation, ok
 }
 
 func findSpriteAnimation(catalog formats.SpriteCatalog, name, preferred string) (formats.SpriteAnimation, bool) {
@@ -2237,7 +2272,21 @@ var nativeSFXFiles = map[string]string{
 	"sfx_gw_usa_vomit": "presidentvomit", "sfx_gw_usa_sting_1": "presidentsting1", "sfx_gw_usa_sting_2": "presidentsting2",
 }
 
+// scriptSoundPath is the sound file for a script / weapon sound name. The answer is memoized: resolving it walks
+// the whole manifest, and a fast weapon asked for it on every shot.
 func (a *app) scriptSoundPath(name string) string {
+	if path, ok := a.soundPaths[name]; ok {
+		return path
+	}
+	path := a.resolveScriptSoundPath(name)
+	if a.soundPaths == nil {
+		a.soundPaths = map[string]string{}
+	}
+	a.soundPaths[name] = path
+	return path
+}
+
+func (a *app) resolveScriptSoundPath(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" || name == "0" {
 		return ""

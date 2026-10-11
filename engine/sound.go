@@ -18,7 +18,14 @@ type SoundSystem struct {
 	music        *audio.Player
 	musicEnabled bool
 	cache        map[string][]byte
+	pcm          map[string][]byte // decoded short sounds
+	pcmBytes     int64
 }
+
+const (
+	maxCachedPCMBytes = 6 << 20   // one sound
+	maxCachedPCMTotal = 192 << 20 // all of them
+)
 
 func NewSoundSystem(source SoundSource) *SoundSystem {
 	return newSoundSystem(source, true)
@@ -75,17 +82,42 @@ func (s *SoundSystem) PlayTracked(path string, volume float64, loopPointSamples 
 	if s == nil || s.context == nil {
 		return nil, io.ErrClosedPipe
 	}
-	data, err := s.bytes(path)
-	if err != nil {
-		return nil, err
-	}
-	stream, err := vorbis.DecodeF32(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
+	// Short sounds are decoded once and replayed from PCM: decoding the whole Ogg for every shot of a fast weapon
+	// was a frame-time spike each time (long music streams are still decoded per play, they are rare).
+	var stream io.ReadSeeker
+	var streamLength int64
+	if pcm, ok := s.pcm[path]; ok {
+		stream, streamLength = bytes.NewReader(pcm), int64(len(pcm))
+	} else {
+		data, err := s.bytes(path)
+		if err != nil {
+			return nil, err
+		}
+		decoded, err := vorbis.DecodeF32(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		streamLength = decoded.Length()
+		stream = decoded
+		if streamLength > 0 && streamLength <= maxCachedPCMBytes && s.pcmBytes+streamLength <= maxCachedPCMTotal {
+			if pcm, err := io.ReadAll(decoded); err == nil && int64(len(pcm)) == streamLength {
+				if s.pcm == nil {
+					s.pcm = map[string][]byte{}
+				}
+				s.pcm[path] = pcm
+				s.pcmBytes += streamLength
+				stream = bytes.NewReader(pcm)
+			} else {
+				// the stream was consumed: decode again for this play
+				if again, err := vorbis.DecodeF32(bytes.NewReader(data)); err == nil {
+					stream = again
+				}
+			}
+		}
 	}
 	var source io.Reader = stream
 	if loopPointSamples >= 0 {
-		intro, length := musicLoopBounds(loopPointSamples, stream.Length())
+		intro, length := musicLoopBounds(loopPointSamples, streamLength)
 		source = audio.NewInfiniteLoopWithIntroF32(stream, intro, length)
 	}
 	player, err := s.context.NewPlayerF32(source)
@@ -95,6 +127,37 @@ func (s *SoundSystem) PlayTracked(path string, volume float64, loopPointSamples 
 	player.SetVolume(volume)
 	player.Play()
 	return player, nil
+}
+
+// Warm decodes a short sound into the PCM cache without playing it, so its first play costs nothing.
+func (s *SoundSystem) Warm(path string) {
+	if s == nil || s.source == nil || s.context == nil {
+		return
+	}
+	if _, ok := s.pcm[path]; ok {
+		return
+	}
+	data, err := s.bytes(path)
+	if err != nil {
+		return
+	}
+	decoded, err := vorbis.DecodeF32(bytes.NewReader(data))
+	if err != nil {
+		return
+	}
+	length := decoded.Length()
+	if length <= 0 || length > maxCachedPCMBytes || s.pcmBytes+length > maxCachedPCMTotal {
+		return
+	}
+	pcm, err := io.ReadAll(decoded)
+	if err != nil || int64(len(pcm)) != length {
+		return
+	}
+	if s.pcm == nil {
+		s.pcm = map[string][]byte{}
+	}
+	s.pcm[path] = pcm
+	s.pcmBytes += length
 }
 
 func (s *SoundSystem) MusicEnabled(enabled bool) {

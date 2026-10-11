@@ -82,6 +82,15 @@ type Pack struct {
 	sprites         formats.SpriteCatalog
 	spriteErr       error
 	spritesOK       bool
+	// texturePaths and textureScales memoize TexturePath / TextureSourceScale: the draw code asks for both once
+	// per sprite per frame, and each call lowercases, splits and probes several maps.
+	texturePaths  sync.Map // name -> texturePathResult
+	textureScales sync.Map // name -> float64
+}
+
+type texturePathResult struct {
+	path string
+	ok   bool
 }
 
 func NewPack(source AssetSource) (*Pack, error) {
@@ -155,6 +164,16 @@ func (p *Pack) LoadScriptLevel(name string, world int) (formats.Level, error) {
 	return p.Load(name)
 }
 func (p *Pack) TexturePath(name string) (string, bool) {
+	if cached, ok := p.texturePaths.Load(name); ok {
+		result := cached.(texturePathResult)
+		return result.path, result.ok
+	}
+	path, ok := p.texturePathUncached(name)
+	p.texturePaths.Store(name, texturePathResult{path, ok})
+	return path, ok
+}
+
+func (p *Pack) texturePathUncached(name string) (string, bool) {
 	pathName := strings.ToLower(strings.TrimSuffix(filepath.ToSlash(name), filepath.Ext(name)))
 	if path, ok := p.manifest.Textures[pathName]; ok {
 		return path, true
@@ -175,11 +194,48 @@ func (p *Pack) TexturePath(name string) (string, bool) {
 	return path, ok
 }
 func (p *Pack) TextureSourceScale(name string) float64 {
+	if cached, ok := p.textureScales.Load(name); ok {
+		return cached.(float64)
+	}
+	scale := 1.0
 	path, ok := p.TexturePath(name)
 	if ok && strings.HasSuffix(strings.ToLower(strings.TrimSuffix(path, filepath.Ext(path))), "_hd") {
-		return 2
+		scale = 2
 	}
-	return 1
+	p.textureScales.Store(name, scale)
+	return scale
+}
+
+// resetTextureCache drops the memoized texture lookups (only tests that edit the manifest need it).
+func (p *Pack) resetTextureCache() {
+	p.texturePaths.Range(func(key, _ any) bool { p.texturePaths.Delete(key); return true })
+	p.textureScales.Range(func(key, _ any) bool { p.textureScales.Delete(key); return true })
+}
+
+// SFXPaths lists the sound-effect files of the pack (the paths Open takes).
+func (p *Pack) SFXPaths() []string {
+	var out []string
+	for _, path := range p.manifest.Files {
+		lower := strings.ToLower(filepath.ToSlash(path))
+		if strings.HasSuffix(lower, ".ogg") && strings.Contains(lower, "/sound/sfx/") {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TexturePaths lists every distinct texture file of the pack.
+func (p *Pack) TexturePaths() map[string]string {
+	out := make(map[string]string, len(p.manifest.Textures))
+	seen := map[string]bool{}
+	for name, path := range p.manifest.Textures {
+		if !seen[path] {
+			seen[path] = true
+			out[name] = path
+		}
+	}
+	return out
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) {
 	reader, err := p.source.Open(path)

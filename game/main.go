@@ -84,6 +84,13 @@ type app struct {
 	sound                                        *engine.SoundSystem
 	weaponPlayback                               weaponPlayback
 	images                                       map[string]*ebiten.Image
+	imageByName                                  map[string]*ebiten.Image // main.go Texture: by the spelling asked for
+	imageByPath                                  map[string]*ebiten.Image
+	sourceByPath                                 map[string]image.Image
+	textureMiss                                  map[string]error
+	soundPaths                                   map[string]string // script_host.go scriptSoundPath memo
+	drawOrderBuf                                 []zombieState
+	spriteMemo                                   spriteAnimMemo
 	sources                                      map[string]image.Image
 	view                                         *viewer.Viewer
 	play                                         *playState
@@ -2583,7 +2590,8 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		scale = 1
 	}
 	// Zombies layer by depth: lower on screen draws in front.
-	drawOrder := append([]zombieState(nil), a.play.zombies...)
+	a.drawOrderBuf = append(a.drawOrderBuf[:0], a.play.zombies...) // reused: a fresh copy per frame fed the GC
+	drawOrder := a.drawOrderBuf
 	sort.SliceStable(drawOrder, func(i, j int) bool { return drawOrder[i].y < drawOrder[j].y })
 	// The entities are drawn in depth bands with the low props between them (viewer.DrawWithEntityBands): a parked
 	// car covers whoever stands behind its ground line and is walked in front of by whoever is before it.
@@ -3714,6 +3722,7 @@ func (a *app) openPlay() error {
 		play.startCoop(a.coopPlayers, false)
 	}
 	a.stopWeaponPlayback()
+	a.warmTextures(level.Info)
 	a.noteAchievementLevelEntry(a.play, level.Info)
 	a.play = play
 	a.setLevelMusic(level.Info)
@@ -5178,13 +5187,33 @@ func (p *playState) collisionValue(tileX, tileY int) uint32 {
 func (a *app) TextureSourceScale(name string) float64 { return a.pack.TextureSourceScale(name) }
 
 func (a *app) Texture(name string) (*ebiten.Image, error) {
+	// The draw code asks for the same few hundred names every frame: answer from a map keyed by the spelling as
+	// given before any lowercasing, and remember misses so a missing texture is not looked up again each frame.
+	if image, ok := a.imageByName[name]; ok {
+		return image, nil
+	}
+	if err, ok := a.textureMiss[name]; ok {
+		return nil, err
+	}
 	key := strings.ToLower(strings.TrimSuffix(name, ".tex"))
 	if image, ok := a.images[key]; ok {
+		a.rememberTextureName(name, image)
 		return image, nil
 	}
 	path, ok := a.pack.TexturePath(name)
 	if !ok {
-		return nil, fmt.Errorf("texture %q not found", name)
+		err := fmt.Errorf("texture %q not found", name)
+		if a.textureMiss == nil {
+			a.textureMiss = map[string]error{}
+		}
+		a.textureMiss[name] = err
+		return nil, err
+	}
+	if image, ok := a.imageByPath[path]; ok {
+		a.images[key] = image
+		a.sources[key] = a.sourceByPath[path]
+		a.rememberTextureName(name, image)
+		return image, nil
 	}
 	reader, err := a.pack.Open(path)
 	if err != nil {
@@ -5202,7 +5231,47 @@ func (a *app) Texture(name string) (*ebiten.Image, error) {
 	image := ebiten.NewImageFromImage(source)
 	a.sources[key] = source
 	a.images[key] = image
+	a.ensureTextureMaps()
+	a.imageByPath[path], a.sourceByPath[path] = image, source
+	a.rememberTextureName(name, image)
 	return image, nil
+}
+
+func (a *app) ensureTextureMaps() {
+	if a.imageByPath == nil {
+		a.imageByPath, a.sourceByPath = map[string]*ebiten.Image{}, map[string]image.Image{}
+	}
+}
+
+func (a *app) rememberTextureName(name string, image *ebiten.Image) {
+	if a.imageByName == nil {
+		a.imageByName = map[string]*ebiten.Image{}
+	}
+	a.imageByName[name] = image
+}
+
+// warmTextures decodes the textures a level can show before it starts (every Common0 texture and the level's own
+// world directory), so no first sighting of an enemy, a weapon or an effect decodes a PNG in the middle of a frame.
+func (a *app) warmTextures(info formats.LevelInfo) {
+	if a.silent {
+		return // captures and the headless tests do not draw
+	}
+	world := ""
+	if parts := strings.Split(filepath.ToSlash(info.SourceXML), "/"); len(parts) > 0 {
+		world = strings.ToLower(parts[0])
+	}
+	if a.sound != nil {
+		for _, path := range a.pack.SFXPaths() {
+			a.sound.Warm(path)
+		}
+	}
+	for name, path := range a.pack.TexturePaths() {
+		lower := strings.ToLower(filepath.ToSlash(path))
+		if !(strings.Contains(lower, "/common0/") || (world != "" && strings.Contains(lower, "/"+world+"/"))) {
+			continue
+		}
+		_, _ = a.Texture(name)
+	}
 }
 func (a *app) Source(name string) (image.Image, error) {
 	key := strings.ToLower(strings.TrimSuffix(name, ".tex"))
