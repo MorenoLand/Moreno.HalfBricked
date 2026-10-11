@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"runtime"
 	"image/color"
 	"image/draw"
 	"image/png"
@@ -5261,8 +5262,10 @@ func (a *app) rememberTextureName(name string, image *ebiten.Image) {
 // warmTextures decodes the textures a level can show before it starts (every Common0 texture and the level's own
 // world directory), so no first sighting of an enemy, a weapon or an effect decodes a PNG in the middle of a frame.
 func (a *app) warmTextures(info formats.LevelInfo) {
-	if a.silent {
-		return // captures and the headless tests do not draw
+	if a.silent || runtime.GOOS == "js" {
+		// Captures and the headless tests do not draw. In the browser every texture and sound is its own HTTP
+		// request: warming the whole pack at level start flooded the server (503) and stalled the load.
+		return
 	}
 	world := ""
 	if parts := strings.Split(filepath.ToSlash(info.SourceXML), "/"); len(parts) > 0 {

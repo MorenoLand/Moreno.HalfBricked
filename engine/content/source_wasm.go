@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"syscall/js"
+	"time"
 )
 
 type webSource struct{ base string }
@@ -25,11 +26,34 @@ func (s webSource) Open(path string) (io.ReadCloser, error) {
 	for i := range parts {
 		parts[i] = url.PathEscape(parts[i])
 	}
-	value, err := fetchBytes(s.base + strings.Join(parts, "/"))
+	target := s.base + strings.Join(parts, "/")
+	// A busy or rate-limited server answers 429 / 5xx (nginx limit_req gives 503): retry with a growing pause
+	// instead of failing the level load. A missing file (404) is final.
+	var value []byte
+	var err error
+	for attempt := 0; attempt < fetchAttempts; attempt++ {
+		value, err = fetchBytes(target)
+		if err == nil || !retryableFetch(err) {
+			break
+		}
+		time.Sleep(time.Duration(250*(attempt+1)) * time.Millisecond)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return io.NopCloser(bytes.NewReader(value)), nil
+}
+
+const fetchAttempts = 6
+
+func retryableFetch(err error) bool {
+	message := err.Error()
+	for _, code := range []string{"HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"} {
+		if strings.Contains(message, code) {
+			return true
+		}
+	}
+	return strings.Contains(message, "failed:") // network error from fetch itself
 }
 func (s webSource) Manifest() (PackManifest, error) {
 	r, err := s.Open("pack.json")
