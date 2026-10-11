@@ -77,6 +77,25 @@ func (a *app) currentCoopLaunch() coopLaunch {
 // drives player i (player 0 also keeps keyboard and mouse); with one pad on
 // desktop, that pad drives player 1 while player 0 stays on keyboard and mouse.
 func (a *app) gatherPlayerInputs() [maxCoopPlayers]playerInput {
+	inputs := a.gatherRawPlayerInputs()
+	if a.inputHook == nil && a.play != nil && a.play.controls.PadRadius > 0 && !a.play.controls.Normal {
+		for index := range inputs {
+			inputs[index] = flipPadSticks(inputs[index])
+		}
+	}
+	return inputs
+}
+
+// flipPadSticks is the options screen "Flip Controls": the settings object's Normal flag
+// (+0x88, default 1 from FUN_0006f178) selects which stick pair FUN_00096818 reads the move
+// vector from, so with it cleared the right stick moves and the left stick aims and fires.
+func flipPadSticks(in playerInput) playerInput {
+	in.moveX, in.aimX = in.aimX, in.moveX
+	in.moveY, in.aimY = in.aimY, in.moveY
+	return in
+}
+
+func (a *app) gatherRawPlayerInputs() [maxCoopPlayers]playerInput {
 	var inputs [maxCoopPlayers]playerInput
 	if a.inputHook != nil {
 		inputs[0] = a.inputHook()

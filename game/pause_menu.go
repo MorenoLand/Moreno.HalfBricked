@@ -80,19 +80,43 @@ func (a *app) quitToMenu() error {
 	return a.savePlayerProfile()
 }
 func (a *app) updatePauseMenu() error {
+	pausePadFocus.touch(padBackend.Tick())
 	if a.pauseOnline {
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyP) {
+		if uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyP) {
 			a.pauseOnline = false
+			pausePadFocus.reset()
+		} else if move := menuFocusMove(); move != 0 {
+			if pausePadFocus.step(move, len(pauseOnlineLabels)) {
+				a.playControllerMove()
+			}
+		} else if uiKeyJustPressed(ebiten.KeyEnter) && pausePadFocus.active {
+			row := pausePadFocus.row
+			pausePadFocus.reset()
+			a.activatePauseOnline(row)
 		} else if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			pausePadFocus.reset()
 			x, y := a.pointer()
 			a.activatePauseOnline(pauseRowHit(x, y, len(pauseOnlineLabels)))
 		}
 		return nil
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
+	if uiKeyJustPressed(ebiten.KeyP) {
 		return a.activatePauseMenu(0)
 	}
+	// Controller focus (PauseScreen.txt: the resume node is the default, Up/Down walk the rows).
+	if move := menuFocusMove(); move != 0 {
+		if pausePadFocus.step(move, len(pauseMenuOrder)) {
+			a.playControllerMove()
+		}
+		return nil
+	}
+	if uiKeyJustPressed(ebiten.KeyEnter) && pausePadFocus.active {
+		action := pauseMenuOrder[pausePadFocus.row]
+		pausePadFocus.reset()
+		return a.activatePauseMenu(action)
+	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		pausePadFocus.reset()
 		x, y := a.pointer()
 		return a.activatePauseMenu(pauseMenuHit(x, y))
 	}
@@ -116,7 +140,8 @@ func (a *app) drawPauseMenu(screen *ebiten.Image) {
 	pointerX, pointerY := a.pointer()
 	hoveredRow := pauseRowHit(pointerX, pointerY, len(labels))
 	for index, label := range labels {
-		amount := a.hoverAmount("pause"+label, index == hoveredRow && a.confirm == nil)
+		focused := pausePadFocus.active && index == pausePadFocus.row
+		amount := a.hoverAmount("pause"+label, (index == hoveredRow || focused) && a.confirm == nil)
 		a.drawHoverText(screen, label, logicalWidth/2, float64(pauseMenuTop+5+index*pauseMenuStride), .5, amount)
 	}
 }

@@ -89,17 +89,17 @@ func (a *app) updateConfirm() (bool, error) {
 		return false, nil
 	}
 	yesButton, noButton := confirmButtons()
-	accept := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeyY)
-	cancel := inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyN)
+	accept := uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) || uiKeyJustPressed(ebiten.KeyY)
+	cancel := uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyN)
 	if c.native {
 		// Enter presses the focused button: Back unless focus moved to Quit.
-		enter := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter)
-		accept = inpututil.IsKeyJustPressed(ebiten.KeyY) || (enter && c.focusYes)
+		enter := uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter)
+		accept = uiKeyJustPressed(ebiten.KeyY) || (enter && c.focusYes)
 		cancel = cancel || (enter && !c.focusYes)
-		if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
+		if uiKeyJustPressed(ebiten.KeyLeft) {
 			c.focusYes = true // Back Left:Quit
 		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyRight) {
+		if uiKeyJustPressed(ebiten.KeyRight) {
 			c.focusYes = false // Quit Right:Back
 		}
 	}

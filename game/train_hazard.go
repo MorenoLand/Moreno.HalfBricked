@@ -434,6 +434,7 @@ func (a *app) syncTrainChug() {
 // edge while the train is on the field but off screen (FUN_000fde94, first half).
 func (a *app) drawTrainMarker(screen *ebiten.Image) {
 	a.syncTrainChug()
+	a.drawOffscreenMarkers(screen)
 	if a.play == nil || a.play.train == nil || !a.play.train.active || a.play.world == nil {
 		return
 	}

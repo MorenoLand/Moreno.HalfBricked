@@ -26,8 +26,15 @@ import (
 //     state 1 -> 2 (brake 4/s) -> 3 (wait for timer >= interval, FUN_0009f7e4 fires
 //     and resets the timer) -> 4 (accelerate back to walking) -> 1.
 //   - FUN_0009f7e4 (fire): rounds -1; per pellet a projectile of the gun's kind at
-//     the zombie position, heading = facing +- 2*spread, width = 0.46875 * body
-//     height (0.3 for venom), hit-player 1, hit-entities 0, owner = the zombie.
+//     the zombie position, heading = facing +- 2*spread, visual lift (+0x78 of
+//     the bullet, the "height" argument of the init FUN_000a4868) = 0.46875 * body
+//     height (0.3 for venom), fall rate (+0x7c) = (lift - 23.6) / (distance to the
+//     player / speed), hit-player 1, hit-entities 0, owner = the zombie. The bullet
+//     keeps its own 10 x -20 size (FUN_000a57e4 doubles the base 5 x -10). FUN_000a5f74
+//     lowers the lift by dt * fall and ends the bullet when it goes below 0.
+//     Nothing in the fire path plays a sound: the hook the zombie calls after each
+//     bullet (slot +0x64 v7 / +0x70 1.2.5) is a bare return for the plain zombie
+//     class. The XML Sound_Cue (only the THROWN record has one) is a resource handle.
 //     For kind 0x10 the projectile pass FUN_000a5f74 tests the player ellipse
 //     (0.3 * 64 + 0.5 * width) and FUN_000a521c deals 0.1 health and removes the
 //     bullet. A bullet also ends on life, or on a collision value 1 tile.
@@ -40,7 +47,8 @@ import (
 const (
 	zombieGunInterval     = 2.25 // DAT_000a0da0: armed_zombie interval multiplier
 	zombieGunArmedTimer   = -.75 // 0xbf400000
-	zombieShotWidth       = .46875
+	zombieShotLift        = .46875 // DAT_0009fae4: bullet lift per unit of body height
+	zombieShotLiftFloor   = 23.6   // DAT_0009faec 0x41bccccd
 	zombieShotPlayerHit   = .1  // DAT_000a5330
 	zombieShotPlayerScale = .5  // DAT_000a63d8
 	zombieBrakeRate       = 4.0 // DAT_0009f51c
@@ -58,13 +66,21 @@ type zombieGun struct {
 	life     float64
 	speed    float64
 	kind     uint8
+	sound    string // PORT ADDITION: fire sound, see portZombieGunSound
 }
 
 // zombieShot is a projectile fired by a zombie (kind 0x10 only).
 type zombieShot struct {
 	projectile weapons.NativeWeaponProjectile
 	age        float64
+	fall       float64 // +0x7c: lift lost per second
 }
+
+// PORT ADDITION (not in the original binary): zombie guns fire with the matching weapon sound. The native fire path
+// plays none (see the header), so the original zombies shoot silently. Switch it off with -zombie-gun-sound=false.
+var portZombieGunSound = true
+
+var zombieGunSounds = map[string]string{"PISTOL": "SFX_HANDGUN", "SHOTGUN": "SFX_SHOTGUN_1", "UZI": "SFX_UZI", "MINIGUN": "SFX_MINIGUN", "SNIPER": "SFX_RIFLE_1"}
 
 func zombieGunName(id int) string {
 	for name, value := range zombieGunIDs {
@@ -87,7 +103,7 @@ func newZombieGun(kind, gunID int, catalog formats.ZombieWeaponCatalog) zombieGu
 		if !ok {
 			bullet = 0x10
 		}
-		gun := zombieGun{rounds: record.Ammo * 2, interval: record.RateOfFire, timer: record.RecoilSeconds, spread: record.SpreadUnits, pellets: record.AmmoPerShot, life: record.Life, speed: record.Speed, kind: bullet}
+		gun := zombieGun{sound: zombieGunSounds[name], rounds: record.Ammo * 2, interval: record.RateOfFire, timer: record.RecoilSeconds, spread: record.SpreadUnits, pellets: record.AmmoPerShot, life: record.Life, speed: record.Speed, kind: bullet}
 		if kind == zombieKindArmed {
 			gun.timer = zombieGunArmedTimer
 			gun.interval *= zombieGunInterval
@@ -150,18 +166,41 @@ func (p *playState) zombieFire(z *zombieState) {
 			ai.sightRamp, gun.timer = 0, zombieSightResetTimer
 		}
 	}
+	if portZombieGunSound && gun.sound != "" {
+		p.sfxQueue = append(p.sfxQueue, gun.sound)
+	}
+	lift := z.native.sizeZ * zombieShotLift
+	fall := zombieShotFall(lift, gun.speed, p.zombieShotDistance(z))
 	jitter := int(gun.spread + gun.spread)
 	for pellet := 0; pellet < gun.pellets; pellet++ {
 		heading := z.native.facing
 		if jitter > 0 {
 			heading = heading - uint16(jitter) + uint16(zombieBounded(p.rng, uint32(jitter<<1)))
 		}
-		width := z.native.sizeZ * zombieShotWidth
-		shot := zombieShot{projectile: weapons.NativeWeaponProjectile{X: z.x, Y: z.y, Direction: heading, Life: gun.life, Lift: width, Width: width, Height: -width, EntityType: gun.kind, Texture: "Common0/Textures/Bullet_SD"}}
+		shot := zombieShot{fall: fall, projectile: weapons.NativeWeaponProjectile{X: z.x, Y: z.y, Direction: heading, Life: gun.life, Lift: lift, Width: 10, Height: -20, EntityType: gun.kind, Texture: "Common0/Textures/Bullet_SD"}}
 		shot.projectile.VX = cosU16(heading) * gun.speed
 		shot.projectile.VY = sinU16(heading) * gun.speed
 		p.zombieShots = append(p.zombieShots, shot)
 	}
+}
+
+// zombieShotDistance is the distance from the zombie to the player the native fire code reads (the position the
+// last player update stored; the nearest living player here). Both z values are 0 on the ground.
+func (p *playState) zombieShotDistance(z *zombieState) float64 {
+	best := math.Inf(1)
+	for _, target := range p.livingPlayers() {
+		best = math.Min(best, math.Hypot(target.x-z.x, target.y-z.y))
+	}
+	if math.IsInf(best, 1) {
+		return 0
+	}
+	return best
+}
+
+// zombieShotFall is the +0x7c argument of the bullet init: (lift - 23.6) / (distance / speed), float32 as native.
+func zombieShotFall(lift, speed, distance float64) float64 {
+	flight := float32(distance) / float32(speed)
+	return float64((float32(lift) - float32(zombieShotLiftFloor)) / flight)
 }
 
 // updateZombieShots moves zombie bullets and applies FUN_000a521c to the players.

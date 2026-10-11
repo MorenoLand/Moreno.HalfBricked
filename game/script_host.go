@@ -51,6 +51,9 @@ type scriptEntity struct {
 	// ended on the ground (the only frames in which the pickup can be collected).
 	drop, landed  bool
 	lift, liftVel float64
+	// markerAlpha is the off-screen "markerweapon" arrow alpha (v7 +0x244, 1.2.5 +0x240), see
+	// offscreen_markers.go.
+	markerAlpha float64
 }
 
 type scriptTexture struct {
@@ -1929,6 +1932,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	screenX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 	screenY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
 	if entity.kind == "pickup" {
+		a.drawPickupShadow(screen, entity, screenX, screenY, zoom) // v7 FUN_000930c8 else branch
 		screenY -= entity.lift * zoom // FUN_000930c8: y - size * 0.375 - height (+0x1c)
 		a.drawPickupBox(screen, screenX, screenY, zoom, entity.texture)
 		if pickupCrateTexture(entity.texture) == "Common0/Textures/Special_Crate" {

@@ -160,6 +160,9 @@ type zombieNative struct {
 	ai         zombieAI
 	trail      zombieTrail
 	unstick    zombieUnstick // port addition (zombie_unstick.go)
+
+	// markerAlpha is the off-screen arrow alpha (v7 +0x2c4, 1.2.5 +0x2c8), see offscreen_markers.go.
+	markerAlpha int
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.

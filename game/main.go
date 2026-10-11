@@ -44,6 +44,8 @@ type app struct {
 	resultsScreen                                *resultsMenu
 	achievements                                 formats.AchievementCatalog
 	achievementUnlocks                           map[string]bool
+	achievementBest                              map[string]int32 // achievement_progress.go
+	achievementSaveClock                         int
 	achieveSession                               achievementSession
 	achievementOffset, achievementsBackPage      int
 	statsClock                                   float32
@@ -333,6 +335,7 @@ type playState struct {
 	waveElapsed                                            float64
 	waveEndTimer                                           int // wave_timing.go: native end_wave_time countdown (ms)
 	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
+	slowMoLeft, slowMoTotal, slowMoAccum float64 // slowmo.go: slow motion on the kill that ends a wave
 	waveEndStamp                                           float64
 	waveEndInit                                            bool
 	waveSpawned                                            []int
@@ -479,7 +482,7 @@ func worldMusicTrack(world int) (string, int64, bool) {
 	return tracks[world].path, tracks[world].loopPoint, true
 }
 func (a *app) Update() error {
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) && (ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)) {
+	if uiKeyJustPressed(ebiten.KeyEnter) && (ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 		return nil
 	}
@@ -499,6 +502,7 @@ func (a *app) Update() error {
 	}
 	a.menuTime += 1.0 / 60.0
 	a.updateAchievementToasts(1.0 / 60.0)
+	a.updateControllerNotice(1.0 / 60.0)
 	if handled, err := a.updateConfirm(); handled || err != nil {
 		return err
 	}
@@ -520,7 +524,7 @@ func (a *app) Update() error {
 		}
 	}
 	a.updateMenuZombieMotion(float32(1.0 / 60.0))
-	if inpututil.IsKeyJustPressed(ebiten.KeyF2) {
+	if uiKeyJustPressed(ebiten.KeyF2) {
 		a.debugPanelVisible = !a.debugPanelVisible
 	}
 	if a.debugPanelVisible && a.updateDebugPanel() {
@@ -536,7 +540,7 @@ func (a *app) Update() error {
 		return a.updateAchievements()
 	}
 	if a.page == 4 && a.statsScreen != nil {
-		if inpututil.IsKeyJustPressed(ebiten.KeyA) {
+		if uiKeyJustPressed(ebiten.KeyA) {
 			a.openAchievements()
 			return nil
 		}
@@ -547,7 +551,7 @@ func (a *app) Update() error {
 				return nil
 			}
 		}
-		back := inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+		back := uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 		if a.statsScreen.update(1.0/60.0, back, false, false) == statsMainMenu {
 			a.statsScreen = nil
 			a.page = 0
@@ -566,7 +570,7 @@ func (a *app) Update() error {
 	}
 	if a.page == 3 && !a.titleScreen && a.view == nil {
 		action := optionsNone
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if uiKeyJustPressed(ebiten.KeyEscape) {
 			action = optionsBack
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -595,7 +599,7 @@ func (a *app) Update() error {
 		if a.titleCocking {
 			return nil
 		}
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) || uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) || uiKeyJustPressed(ebiten.KeySpace) {
 			a.titleCocking = true
 			a.titleSoundElapsed = 0
 			a.titleSoundStage = 1
@@ -635,9 +639,9 @@ func (a *app) Update() error {
 		a.play.controlWidth, a.play.controlHeight = a.outputWidth, a.outputHeight
 		pointerX, pointerY := a.pointer()
 		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
-		a.play.secondaryButtonJustPressed = inpututil.IsKeyJustPressed(ebiten.KeyG) || inpututil.IsKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonJustPressed = uiKeyJustPressed(ebiten.KeyG) || uiKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
 		a.play.secondaryPointerDown = a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if uiKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {
 				a.play.paused = false
 				return nil
@@ -650,6 +654,9 @@ func (a *app) Update() error {
 		}
 		if a.play.storyGameOver(a.mode) {
 			a.openDeathResults()
+			return nil
+		}
+		if a.play.dialogueIndex >= len(a.play.dialogue) && a.play.slowMoSkipTick() {
 			return nil
 		}
 		if a.play.dialogueIndex < len(a.play.dialogue) {
@@ -672,7 +679,7 @@ func (a *app) Update() error {
 			}
 			a.play.updatePortals()
 			a.play.updatePickups()
-			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			if uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) || uiKeyJustPressed(ebiten.KeySpace) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 				a.play.dialogueIndex++
 				a.play.dialogueAge = 0
 			}
@@ -719,7 +726,7 @@ func (a *app) Update() error {
 		}
 		return a.updateLevelCompletion()
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if uiKeyJustPressed(ebiten.KeyEscape) {
 		if a.page == 2 {
 			a.leaveLevelSelect()
 		} else if a.page > 0 {
@@ -752,34 +759,34 @@ func (a *app) Update() error {
 			a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 		}
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyDown) {
+	if uiKeyJustPressed(ebiten.KeyDown) {
 		a.move(1)
 		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
+	if uiKeyJustPressed(ebiten.KeyUp) {
 		a.move(-1)
 		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
-	if a.page == 2 && inpututil.IsKeyJustPressed(ebiten.KeyC) {
+	if a.page == 2 && uiKeyJustPressed(ebiten.KeyC) {
 		return a.activateCoop()
 	}
-	if a.page == 2 && inpututil.IsKeyJustPressed(ebiten.KeyH) {
+	if a.page == 2 && uiKeyJustPressed(ebiten.KeyH) {
 		a.startNetHost()
 		return nil
 	}
-	if a.page == 2 && inpututil.IsKeyJustPressed(ebiten.KeyJ) {
+	if a.page == 2 && uiKeyJustPressed(ebiten.KeyJ) {
 		a.startNetJoin()
 		return nil
 	}
-	if a.page == 2 && (inpututil.IsKeyJustPressed(ebiten.KeyLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA)) {
+	if a.page == 2 && (uiKeyJustPressed(ebiten.KeyLeft) || uiKeyJustPressed(ebiten.KeyA)) {
 		a.move(-1)
 		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
-	if a.page == 2 && (inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyD)) {
+	if a.page == 2 && (uiKeyJustPressed(ebiten.KeyRight) || uiKeyJustPressed(ebiten.KeyD)) {
 		a.move(1)
 		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) {
+	if uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) {
 		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 		if a.page == 0 {
 			return a.beginMenuClick(a.menuSelection)
@@ -1020,6 +1027,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 	}
 	a.drawConfirm(screen)
 	a.drawAchievementToasts(screen)
+	a.drawControllerNotice(screen)
 	if a.capture != nil {
 		if err := a.capture.Save(screen, a.captureState()); err != nil {
 			log.Printf("capture: %v", err)
@@ -3722,7 +3730,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		p.paused = !p.paused
 		return false
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
+	if uiKeyJustPressed(ebiten.KeyP) {
 		p.paused = !p.paused
 		return false
 	}
@@ -3889,7 +3897,7 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 	p.moving = dx != 0 || dy != 0
 	if p.moving {
 		length := math.Sqrt(dx*dx + dy*dy)
-		walk := playerWalkBase(p.waveBuild()) * p.vitals.walkSpeedFactor()
+		walk := playerWalkBase(p.waveBuild()) * p.vitals.walkSpeedFactor() * analogMoveScale(length)
 		moveX, moveY := dx/length*walk/60, dy/length*walk/60
 		stepLength := math.Sqrt(moveX*moveX + moveY*moveY)
 		steps := int(math.Ceil(stepLength / playerCollisionStep))
@@ -4170,11 +4178,17 @@ func (p *playState) updateWaves() {
 			// FUN_000998ac submits it as SPECIFIC "wave" (see Research/native/achievement-audit-2026-10-10.md).
 			p.achieve.waveAdvances++
 			p.survivalAdvance(next)
+			if waveEndRule == waveEndAllDead {
+				p.startSlowMo(slowMoWaveSecs)
+			}
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
 		} else {
 			p.waveIndex, p.wavesFinished = next, true
+			if waveEndRule == waveEndAllDead {
+				p.startSlowMo(slowMoFinalSecs)
+			}
 		}
 		p.noteWave()
 	}
@@ -5177,8 +5191,12 @@ func Run() {
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
+	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (port option: every spawner done and no zombie alive) or native (FUN_000bf120 timer and alive limit)")
 	flag.Parse()
+	portSlowMo = *slowMotion
+	portZombieGunSound = *zombieGunSound
 	switch *waveEnd {
 	case "all-dead":
 		waveEndRule = waveEndAllDead

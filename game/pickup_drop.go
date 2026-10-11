@@ -15,8 +15,8 @@ package game
 // So a pickup cannot be collected while it falls or while a bounce is in the air; once it
 // rests it re-enters the ground branch every frame (speed gains -11.7 per frame and the
 // bounce restores a quarter of it). The crate and the weapon icon are drawn with
-// y - size * 0.375 - height (FUN_000930c8). Not ported: the off-screen arrow that
-// FUN_000930c8 draws while the pickup is outside the camera (+0x240 / +0x244).
+// y - size * 0.375 - height (FUN_000930c8). The off-screen arrow FUN_000930c8 draws while the
+// pickup is outside the camera (+0x240 / +0x244, "markerweapon") lives in offscreen_markers.go.
 const (
 	pickupDropHeight  = 250.0
 	pickupGravity     = 700.0
@@ -40,4 +40,7 @@ func (p *playState) stepPickupDrops(dt float64) {
 		}
 		e.lift, e.liftVel = float64(height), float64(speed)
 	}
+	// The off-screen arrows share the 60 Hz step (offscreen_markers.go).
+	p.stepPickupMarkers(dt)
+	p.stepZombieMarkers(dt)
 }

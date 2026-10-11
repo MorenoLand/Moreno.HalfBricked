@@ -31,6 +31,16 @@ func (a *app) updateGameplayAchievements(p *playState) error {
 		a.unlockAchievement(entry)
 		changed = true
 	}
+	if a.noteAchievementProgress(p) {
+		a.achievementSaveClock = 1
+	}
+	if a.achievementSaveClock > 0 {
+		a.achievementSaveClock++
+		if changed || a.achievementSaveClock > 600 {
+			a.achievementSaveClock = 0
+			return a.savePlayerProfile()
+		}
+	}
 	if changed {
 		return a.savePlayerProfile()
 	}
@@ -68,7 +78,7 @@ func (a *app) closeAchievements() error {
 	return a.savePlayerProfile()
 }
 func (a *app) updateAchievements() error {
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if uiKeyJustPressed(ebiten.KeyEscape) {
 		return a.closeAchievements()
 	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -81,10 +91,10 @@ func (a *app) updateAchievements() error {
 		return nil
 	}
 	delta := 0
-	if inpututil.IsKeyJustPressed(ebiten.KeyDown) {
+	if uiKeyJustPressed(ebiten.KeyDown) {
 		delta++
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
+	if uiKeyJustPressed(ebiten.KeyUp) {
 		delta--
 	}
 	_, wheel := ebiten.Wheel()
@@ -118,6 +128,9 @@ func (a *app) drawAchievements(screen *ebiten.Image) {
 		}
 		a.text(screen, a.wrapDialogue(description, 300, .3), 58, y+16, .3)
 		a.text(screen, status, 365, y+19, .35)
+		if label := a.achievementProgressLabel(entry); label != "" {
+			a.text(screen, label, 365, y+4, .35)
+		}
 	}
 	a.drawAchievementScrollbar(screen)
 	a.text(screen, fmt.Sprintf("%d-%d / %d", min(a.achievementOffset+1, len(a.achievements)), min(a.achievementOffset+5, len(a.achievements)), len(a.achievements)), 12, 294, .4)

@@ -421,23 +421,23 @@ func (a *app) updateCredits() error {
 	if controller != nil && controller.back != "" {
 		back = controller.back
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
+	if uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyBackspace) {
 		c.focus = back
 		a.creditsPress(c, back)
 		return nil
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyNumpadEnter) {
+	if uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyNumpadEnter) {
 		a.creditsPress(c, c.focus)
 		return nil
 	}
 	switch {
-	case inpututil.IsKeyJustPressed(ebiten.KeyLeft):
+	case uiKeyJustPressed(ebiten.KeyLeft):
 		c.focus = creditsNavigate(controller, c.focus, "Left")
-	case inpututil.IsKeyJustPressed(ebiten.KeyRight):
+	case uiKeyJustPressed(ebiten.KeyRight):
 		c.focus = creditsNavigate(controller, c.focus, "Right")
-	case inpututil.IsKeyJustPressed(ebiten.KeyDown):
+	case uiKeyJustPressed(ebiten.KeyDown):
 		c.scroll = wrapCreditsScroll(c.scroll + creditsPageHeight)
-	case inpututil.IsKeyJustPressed(ebiten.KeyUp):
+	case uiKeyJustPressed(ebiten.KeyUp):
 		c.scroll = wrapCreditsScroll(c.scroll - creditsPageHeight)
 	}
 	if _, wheel := ebiten.Wheel(); wheel != 0 {

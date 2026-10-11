@@ -2,7 +2,6 @@ package game
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"strings"
 	"sync"
 )
@@ -156,13 +155,13 @@ func (a *app) mainMenuBackIndex() int {
 // linear Up/Down stepping (a convenience; the native graph has no such move).
 func mainMenuNavKey() string {
 	switch {
-	case inpututil.IsKeyJustPressed(ebiten.KeyLeft):
+	case uiKeyJustPressed(ebiten.KeyLeft):
 		return "Left"
-	case inpututil.IsKeyJustPressed(ebiten.KeyRight):
+	case uiKeyJustPressed(ebiten.KeyRight):
 		return "Right"
-	case inpututil.IsKeyJustPressed(ebiten.KeyUp):
+	case uiKeyJustPressed(ebiten.KeyUp):
 		return "Up"
-	case inpututil.IsKeyJustPressed(ebiten.KeyDown):
+	case uiKeyJustPressed(ebiten.KeyDown):
 		return "Down"
 	}
 	return ""
