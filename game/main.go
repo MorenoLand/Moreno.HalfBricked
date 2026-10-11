@@ -515,6 +515,7 @@ func (a *app) Update() error {
 	}
 	a.netHostResults()
 	if a.net != nil && a.net.lobby {
+		a.menuTime += 1.0 / 60.0 // the swirl behind the host / join page keeps turning
 		return a.updateNetLobby()
 	}
 	a.menuTime += 1.0 / 60.0
@@ -4638,6 +4639,11 @@ func (p *playState) updateZombies() {
 			} else {
 				zombie.angle, zombie.flipX = barryDirection(dx, dy)
 			}
+		}
+		if zombie.native.car.active {
+			// FUN_000b696c sets the sprite's flip from the drive direction (+0x32c > 0), not from the aim: the car art
+			// faces left and is mirrored while it drives right.
+			zombie.angle, zombie.flipX = 0, zombie.native.car.dir > 0
 		}
 		fps := zombie.fps
 		if fps <= 0 {

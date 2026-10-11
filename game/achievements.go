@@ -134,7 +134,10 @@ func (a *app) drawAchievements(screen *ebiten.Image) {
 	}
 	a.drawAchievementScrollbar(screen)
 	a.text(screen, fmt.Sprintf("%d-%d / %d", min(a.achievementOffset+1, len(a.achievements)), min(a.achievementOffset+5, len(a.achievements)), len(a.achievements)), 12, 294, .4)
-	a.text(screen, "BACK", 400, 294, .5)
+	// The same hover as the pause menu rows: a lift and a warmer colour, over the area the click test uses.
+	px, py := a.pointer()
+	amount := a.hoverAmount("achievementsBACK", px >= 380 && py >= 286)
+	a.drawHoverText(screen, "BACK", 400+a.fontTextWidth("BACK", .5)/2, 294, .5, amount)
 }
 
 const (

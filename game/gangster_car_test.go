@@ -65,3 +65,22 @@ func TestGangsterCarContactHurtsAndEmptiesTheGun(t *testing.T) {
 		t.Fatalf("gun not emptied: %d rounds", z.native.ai.gun.rounds)
 	}
 }
+
+// The car sprite is mirrored from its drive direction, never from where the player stands.
+func TestGangsterCarFlipFollowsTheDriveDirection(t *testing.T) {
+	p, z := carRig()
+	z.native.ai.state = 1
+	z.x = 300
+	for _, playerX := range []float64{50, 900} {
+		p.x, p.y = playerX, 100
+		p.updateZombies()
+		if !z.flipX {
+			t.Fatalf("driving right with the player at %.0f: the car must be mirrored", playerX)
+		}
+	}
+	z.native.car.dir = -1
+	p.updateZombies()
+	if z.flipX {
+		t.Fatal("driving left: the car art already faces left")
+	}
+}
