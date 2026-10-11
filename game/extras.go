@@ -214,7 +214,7 @@ func (a *app) updateDiscordPresence() {
 		return
 	}
 	if a.play == nil {
-		a.discord.Set("In the menus", "Age of Zombies")
+		a.discord.Set("In the menus", "")
 		return
 	}
 	name := a.play.levelInfo.DisplayName

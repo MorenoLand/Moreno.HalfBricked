@@ -67,7 +67,7 @@ func TestDiscordFramesUseTheIPCLayout(t *testing.T) {
 	if err := discordSetActivity(&rwc{r: bytes.NewReader(raw), w: &out}, "Level", "Score 5", time.Unix(1700000000, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte(`"details":"Level"`)) || !bytes.Contains(out.Bytes(), []byte(`"start":1700000000`)) {
+	if !bytes.Contains(out.Bytes(), []byte(`"details":"Level"`)) || !bytes.Contains(out.Bytes(), []byte(`"name":"Age of Zombies"`)) || !bytes.Contains(out.Bytes(), []byte(`"start":1700000000000`)) {
 		t.Fatalf("activity frame %s", out.Bytes())
 	}
 }

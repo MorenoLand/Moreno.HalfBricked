@@ -189,7 +189,8 @@ func discordConnect(appID string) (io.ReadWriteCloser, error) {
 }
 
 func discordSetActivity(conn io.ReadWriteCloser, details, state string, started time.Time) error {
-	activity := map[string]any{"details": details, "timestamps": map[string]any{"start": started.Unix()}}
+	// Discord reads timestamps in milliseconds; seconds put the start in January 1970 and the timer at 56 years.
+	activity := map[string]any{"name": "Age of Zombies", "type": 0, "details": details, "timestamps": map[string]any{"start": started.UnixMilli()}}
 	if state != "" {
 		activity["state"] = state
 	}
