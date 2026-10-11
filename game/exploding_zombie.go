@@ -247,11 +247,14 @@ func (a *app) drawExplodingGlow(screen *ebiten.Image, zombie zombieState) {
 	y := (zombie.y-world.CameraY)*zoom + world.ViewportY - height*zombieRenderAnchor*zoom*frontendX/frontendY
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 	options.GeoM.Translate(-float64(texture.Bounds().Dx())/2, -float64(texture.Bounds().Dy())/2)
-	options.GeoM.Scale(width*explodingGlowScale*zoom*frontendX/float64(texture.Bounds().Dx()), height*explodingGlowScale*zoom*frontendX/float64(texture.Bounds().Dy()))
+	options.GeoM.Scale(width*explodingGlowScale*zoom/float64(texture.Bounds().Dx()), height*explodingGlowScale*zoom*frontendX/frontendY/float64(texture.Bounds().Dy()))
 	options.GeoM.Translate(x, y)
 	alpha := float32(explodingGlowAlpha(a.play.time))
 	options.ColorScale.Scale(alpha, alpha, alpha, alpha)
-	a.drawImage(screen, texture, options)
+	// The engine's texture loader sets GL_LINEAR for both filters (v7 FUN_001cd8cc), and this is a soft 64 px
+	// aura, so it is drawn bilinear instead of through drawImage's nearest filter.
+	options.GeoM.Scale(frontendX, frontendY)
+	screen.DrawImage(texture, options)
 }
 
 // captureExplodingScene stages an exploding zombie among ordinary zombies next
