@@ -3,7 +3,9 @@ package engine
 import (
 	"bytes"
 	"io"
+	"time"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/perfmark"
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/vorbis"
 )
@@ -51,7 +53,9 @@ func (s *SoundSystem) SetMusic(path string, loopPointSamples int64) error {
 	if err != nil {
 		return err
 	}
+	decodeStart := time.Now()
 	stream, err := vorbis.DecodeF32(bytes.NewReader(data))
+	perfmark.Since("sound decode "+path, decodeStart)
 	if err != nil {
 		return err
 	}
@@ -93,10 +97,12 @@ func (s *SoundSystem) PlayTracked(path string, volume float64, loopPointSamples 
 		if err != nil {
 			return nil, err
 		}
+		decodeStart := time.Now()
 		decoded, err := vorbis.DecodeF32(bytes.NewReader(data))
 		if err != nil {
 			return nil, err
 		}
+		defer perfmark.Since("sound decode "+path, decodeStart)
 		streamLength = decoded.Length()
 		stream = decoded
 		if streamLength > 0 && streamLength <= maxCachedPCMBytes && s.pcmBytes+streamLength <= maxCachedPCMTotal {
@@ -141,6 +147,8 @@ func (s *SoundSystem) Warm(path string) {
 	if err != nil {
 		return
 	}
+	warmStart := time.Now()
+	defer perfmark.Since("sound warm "+path, warmStart)
 	decoded, err := vorbis.DecodeF32(bytes.NewReader(data))
 	if err != nil {
 		return

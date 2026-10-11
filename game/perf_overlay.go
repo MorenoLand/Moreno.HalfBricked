@@ -43,7 +43,7 @@ func (a *app) perfTrackDraw(start time.Time) {
 }
 
 func (a *app) drawPerfOverlay(screen *ebiten.Image) {
-	if !perfOverlay {
+	if !perfOverlay || runtime.GOOS == "js" { // the page panel (index.html) replaces it in the browser
 		return
 	}
 	now := time.Now()

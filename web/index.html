@@ -18,6 +18,83 @@ canvas{position:fixed;inset:0;display:block;width:100vw!important;height:100vh!i
 <body>
 <main>
 <p id="status">Loading HalfBricked...</p>
+<script>
+// ?perf: a log of everything that stalls the page, independent of the game's own drawing (a frozen game cannot
+// draw its own readout). Three sources are merged on one timeline:
+//   long task  - the browser reports main-thread work longer than 50 ms (after it ends)
+//   frame gap  - requestAnimationFrame callbacks more than 100 ms apart
+//   go         - operations the game itself timed (blocking downloads, PNG/Ogg decodes, level start steps, GC)
+(function () {
+  if (!/[?&]perf/.test(location.search)) return;
+  const events = [];
+  const t0 = performance.now();
+  function push(kind, ms, label, end) {
+    events.push({ at: end === undefined ? performance.now() : end, kind, ms, label });
+    if (events.length > 400) events.shift();
+  }
+  window.aozMark = (label, ms) => push("go", ms, label);
+  try {
+    new PerformanceObserver(list => {
+      for (const e of list.getEntries()) push("longtask", e.duration, "main thread busy", e.startTime + e.duration);
+    }).observe({ entryTypes: ["longtask"] });
+  } catch (e) {}
+  let last = performance.now(), frames = [], worst = 0;
+  function tick(now) {
+    const gap = now - last;
+    last = now;
+    if (!document.hidden) {
+      frames.push(now);
+      while (frames.length && now - frames[0] > 1000) frames.shift();
+      if (gap > 100 && gap < 30000) push("frame gap", gap, "no frame for " + Math.round(gap) + " ms", now);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  const panel = document.createElement("div");
+  panel.style.cssText = "position:fixed;left:8px;top:8px;z-index:99999;width:min(760px,calc(100vw - 16px));max-height:60vh;overflow:auto;" +
+    "background:rgba(8,10,16,.88);color:#e8ebf4;font:13px/1.45 ui-monospace,Consolas,monospace;padding:8px 10px;border-radius:6px;white-space:pre;";
+  const head = document.createElement("div");
+  const body = document.createElement("div");
+  const bar = document.createElement("div");
+  bar.style.cssText = "margin-bottom:6px";
+  function button(text, fn) {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.style.cssText = "margin-right:6px;font:12px system-ui;padding:2px 8px";
+    b.onclick = fn;
+    bar.appendChild(b);
+  }
+  button("copy log", () => {
+    const text = events.map(e => (((e.at - t0) / 1000).toFixed(2) + "s  " + e.kind + "  " + e.ms.toFixed(0) + " ms  " + e.label)).join("\n");
+    navigator.clipboard && navigator.clipboard.writeText(text);
+  });
+  button("clear", () => { events.length = 0; });
+  button("hide", () => { panel.style.display = "none"; });
+  panel.append(bar, head, body);
+  document.body.appendChild(panel);
+
+  function render() {
+    const now = performance.now();
+    const recent = events.filter(e => now - e.at < 60000);
+    const stalls = recent.filter(e => e.kind !== "go" && e.ms >= 100);
+    const worstGap = stalls.reduce((m, e) => Math.max(m, e.ms), 0);
+    head.textContent = "browser frames/s: " + frames.length + "   stalls >100 ms in the last 60 s: " + stalls.length +
+      "   longest: " + Math.round(worstGap) + " ms\n" +
+      "go = timed by the game (a blocking download or decode); longtask/frame gap = measured by the browser\n";
+    const rows = events.slice(-30).reverse().map(e => {
+      const age = ((now - e.at) / 1000).toFixed(1).padStart(5) + "s ago";
+      const ms = (Math.round(e.ms) + " ms").padStart(9);
+      const tag = e.kind.padEnd(9);
+      const hot = e.ms >= 250 ? " <<<" : "";
+      return age + "  " + tag + ms + "  " + e.label + hot;
+    });
+    body.textContent = rows.length ? rows.join("\n") : "(no stalls recorded yet)";
+  }
+  setInterval(render, 400);
+  render();
+})();
+</script>
 <script src="./wasm_exec.js"></script>
 <script>
 const status = document.getElementById("status");

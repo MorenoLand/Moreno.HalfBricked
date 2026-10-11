@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall/js"
 	"time"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/perfmark"
 )
 
 type webSource struct {
@@ -84,6 +86,14 @@ func (s webSource) Prefetch(paths []string) {
 	pf.mu.Unlock()
 }
 
+// Ready reports whether a prefetched file has arrived and not been taken yet.
+func (s webSource) Ready(path string) bool {
+	s.pf.mu.Lock()
+	defer s.pf.mu.Unlock()
+	_, ok := s.pf.data[path]
+	return ok
+}
+
 func (s webSource) prefetchWorker() {
 	pf := s.pf
 	for {
@@ -120,6 +130,9 @@ func (s webSource) Open(path string) (io.ReadCloser, error) {
 	}
 	done, inflight := pf.pending[path]
 	pf.mu.Unlock()
+	// From here the caller (usually the game loop) is blocked on the network; report how long.
+	waitStart := time.Now()
+	defer perfmark.Since("fetch "+path, waitStart)
 	if inflight {
 		<-done
 		pf.mu.Lock()

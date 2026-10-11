@@ -7,6 +7,7 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/achievements"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/carousel"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/menumotion"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/perfmark"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 	"image"
@@ -44,6 +45,7 @@ type app struct {
 	extras                                       extraSettings // extras.go
 	lastPlayed                                   map[string]string // last_played.go
 	completed                                    map[string]bool   // story levels finished (survival_gate.go)
+	levelPrefetch                                levelPrefetchState // level_prefetch.go
 	depthBand                                    viewer.EntityBand
 	depthBandActive                              bool
 	perf                                         perfCounters // perf_overlay.go
@@ -896,6 +898,7 @@ func (a *app) leaveLevelSelect() {
 	a.page, a.level, a.carouselReady, a.selectorPointerDown, a.selectorDragging = 0, 0, false, false, false
 }
 func (a *app) syncLevelCarousel() carousel.LevelCarousel {
+	defer a.prefetchSelectedLevel()
 	levels := carousel.CatalogLevelCarousel(a.levels, a.mode)
 	index := levels.Index(a.world, a.level)
 	if !a.carouselReady || a.carouselMode != a.mode || a.carouselCore.Count != len(levels) {
@@ -3728,12 +3731,15 @@ func (a *app) openViewer() error {
 	return nil
 }
 func (a *app) openPlay() error {
+	defer perfmark.Since("openPlay (whole level start)", time.Now())
 	level, tileset, atlas, err := a.selectedLevel()
 	if err != nil {
 		return err
 	}
 	a.noteLastPlayed(level.Info.ID)
+	viewerStart := time.Now()
 	world := viewer.New(level, tileset, atlas, a)
+	perfmark.Since("viewer.New (tile layers)", viewerStart)
 	world.ZoomScale = a.extras.fovZoomScale()
 	world.Zoom = 1.0 * world.ZoomScale
 	world.ViewportX = 0
@@ -3796,7 +3802,9 @@ func (a *app) openPlay() error {
 	a.warmTextures(level.Info)
 	a.noteAchievementLevelEntry(a.play, level.Info)
 	a.play = play
+	musicStart := time.Now()
 	a.setLevelMusic(level.Info)
+	perfmark.Since("level music", musicStart)
 	a.play.centerCamera()
 	if a.newDismissed == nil {
 		a.newDismissed = map[string]bool{}
@@ -3832,7 +3840,9 @@ func (a *app) selectedLevel() (formats.Level, formats.TileSet, *ebiten.Image, er
 	if a.level >= len(levels) {
 		return formats.Level{}, formats.TileSet{}, nil, fmt.Errorf("selected level is unavailable")
 	}
+	loadStart := time.Now()
 	level, err := a.pack.Load(levels[a.level].ID)
+	perfmark.Since("level json "+levels[a.level].ID, loadStart)
 	if err != nil {
 		return formats.Level{}, formats.TileSet{}, nil, err
 	}
@@ -3840,7 +3850,9 @@ func (a *app) selectedLevel() (formats.Level, formats.TileSet, *ebiten.Image, er
 	if !ok {
 		return formats.Level{}, formats.TileSet{}, nil, fmt.Errorf("tileset %q not found", level.Tileset)
 	}
+	atlasStart := time.Now()
 	atlas, err := a.Texture(tileset.Texture)
+	perfmark.Since("tileset atlas "+tileset.Texture, atlasStart)
 	if err != nil {
 		return formats.Level{}, formats.TileSet{}, nil, err
 	}
@@ -5357,11 +5369,15 @@ func (a *app) Texture(name string) (*ebiten.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+	decodeStart := time.Now()
 	source, err := png.Decode(bytes.NewReader(data))
+	perfmark.Since("png decode "+name, decodeStart)
 	if err != nil {
 		return nil, err
 	}
+	uploadStart := time.Now()
 	image := ebiten.NewImageFromImage(source)
+	perfmark.Since("texture upload "+name, uploadStart)
 	a.sources[key] = source
 	a.images[key] = image
 	a.ensureTextureMaps()

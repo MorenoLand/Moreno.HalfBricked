@@ -71,6 +71,24 @@ func (p *Pack) Prefetch(paths []string) {
 	}
 }
 
+// PrefetchReady reports whether a prefetched file has arrived (true for sources that cannot prefetch, where
+// nothing is ever pending).
+func (p *Pack) PrefetchReady(path string) bool {
+	if ready, ok := p.source.(interface{ Ready(path string) bool }); ok {
+		return ready.Ready(path)
+	}
+	return true
+}
+
+// LevelPath is the path Load opens for a level id.
+func LevelPath(id string) string { return filepath.ToSlash(filepath.Join("levels", id+".json")) }
+
+// LevelLoaded reports whether Load(id) is already answered from memory.
+func (p *Pack) LevelLoaded(id string) bool { _, ok := p.levels[id]; return ok }
+
+// ScriptPath resolves a script's manifest path (the path ScriptSource opens).
+func (p *Pack) ScriptPath(path string) (string, bool) { return manifestPath(p.manifest.Files, path) }
+
 type LevelRepository interface {
 	List() []formats.LevelInfo
 	Load(id string) (formats.Level, error)
@@ -139,7 +157,7 @@ func (p *Pack) Load(id string) (formats.Level, error) {
 	if level, ok := p.levels[id]; ok {
 		return level, nil
 	}
-	r, err := p.source.Open(filepath.ToSlash(filepath.Join("levels", id+".json")))
+	r, err := p.source.Open(LevelPath(id))
 	if err != nil {
 		return formats.Level{}, err
 	}
