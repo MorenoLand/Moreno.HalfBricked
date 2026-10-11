@@ -3242,7 +3242,7 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		renderHeight = 48
 	}
 	frontendX, frontendY := a.renderScale()
-	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY - renderHeight*zombieAnchor(zombie)*scale*frontendX/frontendY - a.play.rexLift(zombie)*scale*frontendX/frontendY
+	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY - zombieSpriteLift(zombie, renderHeight)*scale*frontendX/frontendY - a.play.rexLift(zombie)*scale*frontendX/frontendY
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)

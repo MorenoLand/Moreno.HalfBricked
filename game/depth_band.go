@@ -19,14 +19,15 @@ func zombieFeetY(z *zombieState) float64 {
 	if height <= 0 {
 		height = nativeZombieDefaultRenderSize
 	}
-	return z.y + (.5-zombieAnchor(*z))*height
+	return z.y - zombieSpriteLift(*z, height) + height/2
 }
 
-// zombieAnchor is the fraction of its height the sprite is lifted above the position (+0x2d4): 0.35 for the plain
-// zombies, 0.2 for the Don Zombie's car (FUN_000b732c stores 0.2 into +0x2d4).
-func zombieAnchor(z zombieState) float64 {
+// zombieSpriteLift is how far the sprite's centre is lifted above the zombie's position (native: +0x2d4 * +0x30).
+// For the plain zombies +0x30 is the drawn height; the Don Zombie's car keeps its 2 * half size there while its
+// drawn height is 0.6 of its width, so its sprite sits higher than a height-based lift would put it.
+func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 	if z.native.car.active {
-		return carRenderAnchor
+		return carRenderAnchor * z.native.sizeZ
 	}
-	return zombieRenderAnchor
+	return renderHeight * zombieRenderAnchor
 }
