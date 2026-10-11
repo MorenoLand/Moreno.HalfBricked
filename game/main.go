@@ -337,6 +337,11 @@ type playState struct {
 	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
 	slowMoLeft, slowMoTotal, slowMoAccum float64 // slowmo.go: slow motion on the kill that ends a wave
 	slowInterp                           bool
+	lifePopups                           []lifePopup
+	// scriptMoveFlag / scriptShootFlag are the native +0x509ed / +0x509ec override bytes: the last value a script
+	// stored (zero from the start). They gate move and aim input while a script runs, and an exit script starts
+	// with whatever the entry script left in them.
+	scriptMoveFlag, scriptShootFlag bool
 	waveLastAlive                        int
 	slowPrev                             slowSnap
 	waveEndStamp                                           float64
@@ -2679,6 +2684,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	// counter reads "x0" rather than disappearing.
 	livesText := fmt.Sprintf("x%d", max(a.play.lives, 0))
 	a.text(screen, livesText, 410, 20, 22.0/32.0)
+	a.drawLifePopups(screen)
 	if a.play.coopActive() {
 		a.drawCoopHUD(screen)
 	} else {
@@ -5213,11 +5219,13 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	waveEnd := flag.String("wave-end", "native", "wave end rule: native (FUN_000bf120 timer and alive limit, the original) or all-dead (port option: every spawner done and no zombie alive)")
 	flag.Parse()
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
+	portMysteryMark = *mysteryMark
 	switch *waveEnd {
 	case "all-dead":
 		waveEndRule = waveEndAllDead

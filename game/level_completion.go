@@ -61,6 +61,9 @@ func (a *app) updateLevelCompletion() error {
 		return fmt.Errorf("level exit %s: %w", path, err)
 	}
 	a.play.scriptRuntime, a.play.exitScriptStarted = runtime, true
+	// The exit script runs under the override bytes the entry script left (+0x509ed / +0x509ec): a level whose
+	// script ended with SetPlayerMoveControl(false) keeps Barry from walking through the level-complete scene.
+	a.play.moveControl, a.play.shootControl = a.play.scriptMoveFlag, a.play.scriptShootFlag
 	return nil
 }
 func (a *app) storyLevelSelection(id string) (int, int, error) {

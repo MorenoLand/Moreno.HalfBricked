@@ -331,7 +331,10 @@ func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
 		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, xFrames: prop.XFrames, yFrames: prop.YFrames, frameTime: prop.FrameTime, animated: true})
 	}
 	sort.SliceStable(props, func(i, j int) bool {
-		return props[i].y+props[i].height*float64(v.tileSize()) < props[j].y+props[j].height*float64(v.tileSize())
+		// Ground position only: the height is a visual lift (the draw subtracts it), so a car parked in front of a
+		// tall building (World1Level2: height 1 at y 152 against height 2 at y 128) is drawn over its base.
+		// The native scene-list order is UNRESOLVED (rendering pass 2026-09-07).
+		return props[i].y < props[j].y
 	})
 	for _, prop := range props {
 		if v.Textures == nil || (prop.height >= tallPropHeight) != overHigh {

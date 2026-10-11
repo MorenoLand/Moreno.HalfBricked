@@ -54,6 +54,9 @@ type scriptEntity struct {
 	// markerAlpha is the off-screen "markerweapon" arrow alpha (v7 +0x244, 1.2.5 +0x240), see
 	// offscreen_markers.go.
 	markerAlpha float64
+	// mystery marks a p_rand_* crate that was rolled into a weapon at spawn. PORT ADDITION: it is drawn as a plain
+	// crate with a "?" instead of showing the weapon it will give (random_box_mark.go).
+	mystery bool
 }
 
 type scriptTexture struct {
@@ -362,10 +365,10 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		h.play.moveControl = value
+		h.play.moveControl, h.play.scriptMoveFlag = value, value
 		return scripting.CallResult{}, nil
 	case "GivePlayerShootControl":
-		h.play.shootControl = true
+		h.play.shootControl, h.play.scriptShootFlag = true, true
 		return scripting.CallResult{}, nil
 	case "WalkPlayerTo":
 		x, err := scriptNumber(args, 0)
@@ -878,7 +881,7 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptPlayerPosSet = false
 		return scripting.CallResult{}, nil
 	case "StopPlayerShootControl":
-		h.play.shootControl = false
+		h.play.shootControl, h.play.scriptShootFlag = false, false
 		return scripting.CallResult{}, nil
 	case "ForceDrawReticule":
 		show, err := scriptBool(args, 0)
@@ -1556,6 +1559,7 @@ func (p *playState) updateScriptWalk() {
 
 // updatePickups gives each pickup to the nearest living player within reach.
 func (p *playState) updatePickups() {
+	p.updateLifePopups(1.0 / 60.0)
 	targets := p.livingPlayers()
 	if len(targets) == 0 {
 		targets = []playerTarget{{index: 0, x: p.x, y: p.y}}
@@ -1589,6 +1593,9 @@ func (p *playState) updatePickups() {
 			continue
 		}
 		name := entity.texture
+		if strings.EqualFold(name, "p_health") {
+			p.addLifePopup(entity.x, entity.y-entity.lift)
+		}
 		if targets[best].index == 0 {
 			p.collectPickup(name)
 		} else {
@@ -1648,10 +1655,11 @@ func (p *playState) spawnPickup(name string, point formats.Vec2) {
 	p.scriptNextEntity++
 	// The native pickup initialiser (0x00092da0) rolls a p_rand_* type right here,
 	// so the crate on the floor is already the weapon it will give.
+	mystery := false
 	if resolved, ok := p.resolveRandomPickup(name); ok {
-		name = strings.ToLower(resolved)
+		name, mystery = strings.ToLower(resolved), true
 	}
-	p.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: name, drop: true, lift: pickupDropHeight}
+	p.scriptEntities[id] = &scriptEntity{id: id, kind: "pickup", entityType: name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: name, drop: true, lift: pickupDropHeight, mystery: mystery}
 }
 
 func (p *playState) collectPickup(name string) {
@@ -1934,7 +1942,14 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	if entity.kind == "pickup" {
 		a.drawPickupShadow(screen, entity, screenX, screenY, zoom) // v7 FUN_000930c8 else branch
 		screenY -= entity.lift * zoom // FUN_000930c8: y - size * 0.375 - height (+0x1c)
-		a.drawPickupBox(screen, screenX, screenY, zoom, entity.texture)
+		boxName := entity.texture
+		if entity.mystery && portMysteryMark {
+			boxName = "p_shotgun" // a plain crate: the "?" is drawn on it
+		}
+		a.drawPickupBox(screen, screenX, screenY, zoom, boxName)
+		if a.drawMysteryMark(screen, entity, screenX, screenY, zoom) {
+			return
+		}
 		if pickupCrateTexture(entity.texture) == "Common0/Textures/Special_Crate" {
 			// Mystery crates show their own "?" and no weapon icon.
 			return
