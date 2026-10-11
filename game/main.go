@@ -336,6 +336,8 @@ type playState struct {
 	waveEndTimer                                           int // wave_timing.go: native end_wave_time countdown (ms)
 	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
 	slowMoLeft, slowMoTotal, slowMoAccum float64 // slowmo.go: slow motion on the kill that ends a wave
+	slowInterp                           bool
+	slowPrev                             slowSnap
 	waveEndStamp                                           float64
 	waveEndInit                                            bool
 	waveSpawned                                            []int
@@ -1021,7 +1023,9 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.drawMenu(screen)
 	} else if a.play != nil {
 		a.play.world.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
+		restore := a.play.applySlowInterp()
 		a.drawPlay(screen)
+		restore()
 	} else {
 		a.drawMenu(screen)
 	}
@@ -2532,7 +2536,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		a.play.world.CameraY -= a.play.shakeOffY
 	}()
 	if !a.play.paused {
-		a.play.world.AnimationTime += 1.0 / 60.0
+		a.play.world.AnimationTime += 1.0 / 60.0 * a.play.slowMoScale()
 	}
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (a.play.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY

@@ -108,7 +108,7 @@ func TestZombieMarkerBossRuleUsesLevelBounds(t *testing.T) {
 
 func TestZombieMarkerPlacementClampsSizesAndRotates(t *testing.T) {
 	x, y, side, angle := zombieMarkerPlacement(900, -40, 48, 1200, 100, 240, 160)
-	if x != logicalWidth || y != 0 {
+	if x != markerRectRight || y != markerRectTop {
 		t.Fatalf("marker at %v,%v is not clamped to the 480x320 screen", x, y)
 	}
 	if math.Abs(side-16.8) > 1e-4 {
@@ -182,10 +182,10 @@ func TestPickupMarkerPlacementFollowsNativeFormula(t *testing.T) {
 		t.Fatalf("side %v", g.side)
 	}
 	// Direction 0x8000 (player to the left): arrow and icon move left of the clamped edge point.
-	if !near(g.arrowX, logicalWidth-28.75*.5) || !near(g.arrowY, 100) {
+	if !near(g.arrowX, markerRectRight-28.75*.5) || !near(g.arrowY, 100) {
 		t.Fatalf("arrow at %v,%v", g.arrowX, g.arrowY)
 	}
-	if !near(g.iconX, logicalWidth-28.75*.6) || !near(g.iconSide, 28.75*.8) {
+	if !near(g.iconX, markerRectRight-28.75*.6) || !near(g.iconSide, 28.75*.8) {
 		t.Fatalf("icon at %v side %v", g.iconX, g.iconSide)
 	}
 	if !near(g.rotation, math.Pi) {

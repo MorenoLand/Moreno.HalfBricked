@@ -88,6 +88,12 @@ func markerAlphaRises(alpha int, dt float64) int {
 	return value
 }
 
+// The viewport rectangle the marker centres are clamped to: 10 px inside the 480x320 screen.
+const (
+	markerRectLeft, markerRectTop     = 10, 10
+	markerRectRight, markerRectBottom = 470, 310
+)
+
 // markerScreen converts a world point to logical screen coordinates (FUN_000a1968 / FUN_00095ad4).
 func (p *playState) markerScreen(x, y float64) (float64, float64) {
 	w := p.world
@@ -107,11 +113,14 @@ func (p *playState) markerZoom() float64 {
 
 // markerBoxVisible is the visibility test of FUN_000a1968 / FUN_000fea68: the box of half
 // extents (w, h)/2 around the screen point against the 480x320 screen and the viewport
-// rectangle. The rectangle at scene +0x28..+0x34 was not recovered, so it is taken as the
-// whole logical screen (UNRESOLVED), which makes both tests the same.
+// rectangle (the HUD pass FUN_000cfa44 stores 10, 10, 470, 310 into scene +0x28..+0x34 when
+// the game is not split screen; 1.2.5 has the same literals at 0x00132d90).
 func markerBoxVisible(screenX, screenY, width, height float64) bool {
 	halfW, halfH := width/2, height/2
-	return screenX+halfW > 0 && screenX-halfW < logicalWidth && screenY+halfH > 0 && screenY-halfH < logicalHeight
+	if !(screenX+halfW > 0 && screenX-halfW < logicalWidth && screenY+halfH > 0 && screenY-halfH < logicalHeight) {
+		return false
+	}
+	return screenX+halfW > markerRectLeft && screenX-halfW < markerRectRight && screenY+halfH > markerRectTop && screenY-halfH < markerRectBottom
 }
 
 // zombieMarkerSize is the +0x30 half-size pair the marker is scaled from: sizeZ for wave
@@ -165,8 +174,8 @@ func (p *playState) stepZombieMarkers(dt float64) {
 // zombieMarkerPlacement is the draw half of FUN_000a06e8: the clamped screen position, the side
 // and the rotation. cam is the camera centre in world space.
 func zombieMarkerPlacement(screenX, screenY, sizeZ, zombieX, zombieY, camX, camY float64) (x, y, side, angle float64) {
-	x = math.Max(0, math.Min(logicalWidth, screenX))
-	y = math.Max(0, math.Min(logicalHeight, screenY))
+	x = math.Max(markerRectLeft, math.Min(markerRectRight, screenX))
+	y = math.Max(markerRectTop, math.Min(markerRectBottom, screenY))
 	side = float64(float32(sizeZ) * float32(zombieMarkerScale))
 	angle = math.Atan2(camY-zombieY, camX-zombieX)
 	return x, y, side, angle
@@ -283,8 +292,8 @@ type pickupMarkerGeometry struct {
 func pickupMarkerPlacement(height, boxSize, screenX, screenY float64, angle16 uint16, pulseCos float64) pickupMarkerGeometry {
 	side := (1 + pulseCos*pickupMarkerPulse*(1-height/pickupMarkerHeightDiv)) *
 		(height*pickupMarkerHeightMul/pickupMarkerHeightDiv + pickupMarkerBase) * boxSize
-	x := math.Max(0, math.Min(logicalWidth, screenX))
-	y := math.Max(0, math.Min(logicalHeight, screenY))
+	x := math.Max(markerRectLeft, math.Min(markerRectRight, screenX))
+	y := math.Max(markerRectTop, math.Min(markerRectBottom, screenY))
 	dx, dy := shakeCos(angle16)*side, shakeSin(angle16)*side
 	return pickupMarkerGeometry{
 		side:     side,
