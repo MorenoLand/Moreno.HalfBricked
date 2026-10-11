@@ -5268,6 +5268,7 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	discordID := flag.String("discord-app-id", discordDefaultAppID, "Discord application id for Rich Presence (port addition)")
@@ -5276,6 +5277,7 @@ func Run() {
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
+	portSceneCarFix = *sceneCarFix
 	discordAppID = *discordID
 	switch *waveEnd {
 	case "all-dead":

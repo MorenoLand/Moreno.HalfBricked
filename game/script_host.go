@@ -1211,6 +1211,7 @@ func (h *playScriptHost) createEntity(args []scripting.Value) (scripting.CallRes
 	if err != nil {
 		return scripting.CallResult{}, err
 	}
+	y = h.play.sceneCarY(texture, y)
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
 	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: true, angle: scriptEntityDefaultAngle}
