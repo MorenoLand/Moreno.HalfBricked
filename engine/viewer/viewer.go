@@ -29,6 +29,9 @@ type Viewer struct {
 	Atlas                      *ebiten.Image
 	Textures                   TextureProvider
 	CameraX, CameraY, Zoom     float64
+	// ZoomScale is the port's field-of-view multiplier (0 means 1): Zoom is the base zoom the game asks for times
+	// ZoomScale, so SetZoom and BaseZoom keep the game's own zoom values separate from the player's FOV setting.
+	ZoomScale float64
 	ViewportX, ViewportY       float64
 	RenderScaleX, RenderScaleY float64
 	AnimationTime              float64
@@ -70,8 +73,28 @@ func (v *Viewer) SetZoom(zoom float64) {
 	if zoom <= 0 {
 		return
 	}
-	v.Zoom = zoom
+	v.Zoom = zoom * v.zoomScale()
 	v.clampCamera()
+}
+
+func (v *Viewer) zoomScale() float64 {
+	if v.ZoomScale <= 0 {
+		return 1
+	}
+	return v.ZoomScale
+}
+
+// BaseZoom is the zoom without the FOV scale.
+func (v *Viewer) BaseZoom() float64 { return v.Zoom / v.zoomScale() }
+
+// SetZoomScale changes the FOV multiplier and rescales the current zoom with it.
+func (v *Viewer) SetZoomScale(scale float64) {
+	if scale <= 0 {
+		return
+	}
+	base := v.BaseZoom()
+	v.ZoomScale = scale
+	v.Zoom = base * scale
 }
 func (v *Viewer) renderScale() (float64, float64) {
 	scaleX, scaleY := v.RenderScaleX, v.RenderScaleY

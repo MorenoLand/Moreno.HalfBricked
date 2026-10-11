@@ -255,7 +255,7 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		h.play.world.SetZoom(portZoomFromNative(zoom))
 		return scripting.CallResult{}, nil
 	case "GetZoom":
-		return scriptValues(nativeZoomFromPort(h.play.world.Zoom)), nil
+		return scriptValues(nativeZoomFromPort(h.play.world.BaseZoom())), nil
 	case "SetCameraPan":
 		zoom, err := scriptNumber(args, 0)
 		if err != nil {
@@ -1045,7 +1045,7 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		h.play.world.Zoom = zoom
+		h.play.world.SetZoom(zoom)
 		h.play.setScriptCamera(x, y)
 		return scripting.CallResult{}, nil
 	case "AddRobotBossZombie":
@@ -1257,9 +1257,9 @@ func (h *playScriptHost) loadScriptLevel(name string) error {
 	if err != nil {
 		return err
 	}
-	zoom := h.play.world.Zoom
+	zoom, zoomScale := h.play.world.Zoom, h.play.world.ZoomScale
 	world := viewer.New(level, tileset, atlas, h.app)
-	world.Zoom = zoom
+	world.Zoom, world.ZoomScale = zoom, zoomScale
 	world.ViewportX, world.ViewportY = 0, 0
 	world.Layers[formats.LayerH] = true
 	h.play.world = world
@@ -1752,7 +1752,7 @@ func (p *playState) setScriptCameraPan(zoom, x, y, duration float64) {
 	}
 	p.scriptCameraPanStartX, p.scriptCameraPanStartY = p.scriptCameraCenterX(), p.scriptCameraCenterY()
 	// the pan interpolates the native zoom value (scriptCameraPan*Zoom are native units, see portZoomFromNative)
-	p.scriptCameraPanStartZoom, p.scriptCameraPanTargetZoom = nativeZoomFromPort(p.world.Zoom), zoom
+	p.scriptCameraPanStartZoom, p.scriptCameraPanTargetZoom = nativeZoomFromPort(p.world.BaseZoom()), zoom
 	p.scriptCameraPanTargetX, p.scriptCameraPanTargetY = x, y
 	p.scriptCameraPanElapsed, p.scriptCameraPanDuration = 0, duration
 	p.scriptCameraPanActive = true

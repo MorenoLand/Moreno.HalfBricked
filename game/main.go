@@ -39,6 +39,11 @@ type app struct {
 	page                                         int
 	menuSelection                                int
 	options                                      optionsMenu
+	extras                                       extraSettings // extras.go
+	extraRow                                     int
+	extraDrag                                    bool
+	discord                                      discordRPC
+	discordClock                                 int
 	statistics                                   stats.StatsData
 	statsScreen                                  *statsMenu
 	resultsScreen                                *resultsMenu
@@ -452,9 +457,11 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 		return nil, err
 	}
 	game.profileWritable = true
+	game.extras = defaultExtras()
 	if err := game.loadPlayerProfile(); err != nil {
 		return nil, err
 	}
+	game.applyExtras()
 	game.sound.MusicEnabled(!silent && game.options.music)
 	return game, nil
 }
@@ -509,6 +516,7 @@ func (a *app) Update() error {
 		return a.updateNetLobby()
 	}
 	a.menuTime += 1.0 / 60.0
+	a.updateDiscordPresence()
 	a.updateAchievementToasts(1.0 / 60.0)
 	a.updateControllerNotice(1.0 / 60.0)
 	if handled, err := a.updateConfirm(); handled || err != nil {
@@ -576,6 +584,9 @@ func (a *app) Update() error {
 		}
 		return a.updateResultsMenu()
 	}
+	if a.page == extraPage && !a.titleScreen && a.view == nil {
+		return a.updateExtras()
+	}
 	if a.page == 3 && !a.titleScreen && a.view == nil {
 		action := optionsNone
 		if uiKeyJustPressed(ebiten.KeyEscape) {
@@ -583,6 +594,10 @@ func (a *app) Update() error {
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := a.pointer()
+			if x0, y0, x1, y1 := extraButtonRect(); float64(x) >= x0 && float64(x) <= x1 && float64(y) >= y0 && float64(y) <= y1 {
+				a.page, a.extraRow = extraPage, 0
+				return nil
+			}
 			action = optionsHit(a.variables, float64(x), float64(y))
 		}
 		var musicEnabled func(bool)
@@ -1027,7 +1042,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.drawCredits(screen)
 	} else if a.page == 6 {
 		a.drawAchievements(screen)
-	} else if a.page == 3 || a.page == 4 {
+	} else if a.page == 3 || a.page == 4 || a.page == extraPage {
 		a.drawMenu(screen)
 	} else if a.play != nil {
 		a.play.world.SetRenderScale(a.frontendScaleX, a.frontendScaleY)
@@ -1085,6 +1100,9 @@ func (a *app) captureState() string {
 	}
 	if a.page == 3 {
 		return "options"
+	}
+	if a.page == extraPage {
+		return "extras"
 	}
 	if a.page == 4 {
 		return "stats"
@@ -1545,7 +1563,8 @@ func (a *app) setCaptureState(state string) error {
 		}
 		a.play.closeScript()
 		a.play.x, a.play.y = 912, 176
-		a.play.world.CameraX, a.play.world.CameraY, a.play.world.Zoom = 672, 16, 1
+		a.play.world.SetZoom(1)
+		a.play.world.CameraX, a.play.world.CameraY = 672, 16
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.hudVisible = true
 		return nil
@@ -1713,6 +1732,10 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	} else if a.page == 3 {
 		a.drawBackdrop(screen)
 		a.drawOptionsMenu(screen, &a.options)
+		a.drawExtraButton(screen)
+	} else if a.page == extraPage {
+		a.drawBackdrop(screen)
+		a.drawExtras(screen)
 	} else if a.page == 4 && a.statsScreen != nil {
 		a.drawStatsMenu(screen, a.statsScreen, a.menuTime)
 	} else {
@@ -3617,7 +3640,8 @@ func (a *app) openPlay() error {
 		return err
 	}
 	world := viewer.New(level, tileset, atlas, a)
-	world.Zoom = 1.0
+	world.ZoomScale = a.extras.fovZoomScale()
+	world.Zoom = 1.0 * world.ZoomScale
 	world.ViewportX = 0
 	world.ViewportY = 0
 	world.Layers[formats.LayerH] = true
@@ -5246,11 +5270,13 @@ func Run() {
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
+	discordID := flag.String("discord-app-id", discordDefaultAppID, "Discord application id for Rich Presence (port addition)")
 	waveEnd := flag.String("wave-end", "native", "wave end rule: native (FUN_000bf120 timer and alive limit, the original) or all-dead (port option: every spawner done and no zombie alive)")
 	flag.Parse()
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
+	discordAppID = *discordID
 	switch *waveEnd {
 	case "all-dead":
 		waveEndRule = waveEndAllDead

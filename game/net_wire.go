@@ -222,7 +222,7 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 		s.Train = &wireTrain{X: round(t.x), Y: round(t.y), Active: t.active, Frame: t.frame}
 	}
 	if p.world != nil {
-		s.Zoom = p.world.Zoom
+		s.Zoom = p.world.BaseZoom()
 	}
 	if p.levelZombieTotal <= 0 && !p.progressMirror {
 		s.Progress, s.HasProg = p.waveRemaining()
