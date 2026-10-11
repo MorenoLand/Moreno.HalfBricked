@@ -339,8 +339,9 @@ func collisionColor(value uint32) color.RGBA {
 const tallPropHeight = 3.0
 
 // isCanopyProp reports whether a prop is drawn over the entities. A prop tall enough to be one (height from 3 tiles)
-// is a canopy: trees, cacti, blossom, hanging bones, a mine shaft's top piece. The exception is a tall building,
-// pyramid, tower or blacksmith: it stands on the ground line, so the people in front of it must be drawn over it
+// is a canopy: trees, cacti, blossom, hanging bones, a mine shaft's top piece, pyramids and their shadows (a shadow
+// has to stay in the same pass as the pyramid it belongs to, or it is drawn as a black block). The exception is a
+// tall building, tower or blacksmith: it stands on the ground line, so the people in front of it must be drawn over it
 // (World1Level2's buildings covered Barry and the zombies when they were drawn in the canopy pass). The native prop
 // order is UNRESOLVED (rendering pass 2026-09-07).
 func isCanopyProp(texture string, height float64) bool {
@@ -348,7 +349,7 @@ func isCanopyProp(texture string, height float64) bool {
 		return false
 	}
 	name := strings.ToLower(texture)
-	for _, ground := range []string{"building", "pyramid", "tower", "blacksmith"} {
+	for _, ground := range []string{"building", "tower", "blacksmith"} {
 		if strings.Contains(name, ground) {
 			return false
 		}

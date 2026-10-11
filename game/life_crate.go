@@ -1,6 +1,7 @@
 package game
 
 import (
+	"image"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -14,9 +15,35 @@ const lifeCrateIconSize = 24.0
 
 func isLifeCrate(name string) bool { return strings.EqualFold(strings.TrimSpace(name), "p_health") }
 
+func isShieldCrate(name string) bool { return strings.EqualFold(strings.TrimSpace(name), "p_shield") }
+
+// shieldCrateIcon is the first frame of the shield bubble sheet, the picture the crate shows.
+func (a *app) shieldCrateIcon() (*ebiten.Image, bool) {
+	texture, err := a.Texture(shieldTexture)
+	if err != nil || texture.Bounds().Dx() < shieldFrames {
+		return nil, false
+	}
+	cell := texture.Bounds().Dx() / shieldFrames
+	return texture.SubImage(image.Rect(0, 0, cell, texture.Bounds().Dy())).(*ebiten.Image), true
+}
+
 // drawLifeCrateIcon draws the icon on the crate whose centre is (x, y - size * 0.375) and reports whether the pickup
 // is the extra-life crate.
 func (a *app) drawLifeCrateIcon(screen *ebiten.Image, entity *scriptEntity, x, y, zoom float64) bool {
+	if portMysteryMark && isShieldCrate(entity.texture) {
+		icon, ok := a.shieldCrateIcon()
+		if !ok {
+			return false
+		}
+		w, h := float64(icon.Bounds().Dx()), float64(icon.Bounds().Dy())
+		scale := (lifeCrateIconSize + 8) * zoom / h
+		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+		options.GeoM.Translate(-w/2, -h/2)
+		options.GeoM.Scale(scale, scale)
+		options.GeoM.Translate(x, y-50*0.375*zoom)
+		a.drawImage(screen, icon, options)
+		return true
+	}
 	if !portMysteryMark || !isLifeCrate(entity.texture) {
 		return false
 	}

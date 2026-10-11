@@ -4366,6 +4366,13 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 	if texture == "" {
 		texture = "cavezombie"
 	}
+	if entry.Name == "boss_egyptian" {
+		// It sits in its coffin and does not walk (egypt_boss.go).
+		if at, ok := p.egyptBossCoffin(point); ok {
+			point = at
+		}
+		speed = 0
+	}
 	p.addPortal(point.X, point.Y)
 	if p.scriptEntities == nil {
 		p.scriptEntities = map[int]*scriptEntity{}
