@@ -42,6 +42,7 @@ type app struct {
 	menuSelection                                int
 	options                                      optionsMenu
 	extras                                       extraSettings // extras.go
+	lastPlayed                                   map[string]string // last_played.go
 	depthBand                                    viewer.EntityBand
 	depthBandActive                              bool
 	perf                                         perfCounters // perf_overlay.go
@@ -947,7 +948,8 @@ func (a *app) updateLevelSelectPointer(x, y int, pressed, down bool) (bool, erro
 			return true, a.activateCoop()
 		}
 		if mode := a.levelTabAt(x, y); mode >= 0 {
-			a.mode, a.world, a.level, a.carouselReady = mode, 0, 0, false
+			a.mode = mode
+			a.restoreLastPlayed()
 			a.syncLevelCarousel()
 			a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 			return true, nil
@@ -2415,7 +2417,9 @@ func shopActionHit(variables formats.FrontendVariables, positionName, widthName,
 	height, heightOK := variables.FloatValue(heightName)
 	return positionOK && widthOK && heightOK && math.Abs(float64(x)-position.X) <= width/2 && math.Abs(float64(y)-position.Y) <= height/2
 }
-func (a *app) levelUnlocked(item formats.LevelInfo) bool { return a.unlocked[item.ID] }
+func (a *app) levelUnlocked(item formats.LevelInfo) bool {
+	return a.unlocked[item.ID] && !a.survivalGateLocked(item)
+}
 func hasLevelFlag(item formats.LevelInfo, wanted string) bool {
 	for _, flag := range item.Flags {
 		if flag == wanted {
@@ -2483,9 +2487,11 @@ func (a *app) activate() error {
 	case 0:
 		switch mainMenuButtons[a.menuSelection].action {
 		case 0:
-			a.mode, a.page, a.world, a.level = 0, 2, 0, 0
+			a.mode, a.page = 0, 2
+			a.restoreLastPlayed()
 		case 1:
-			a.mode, a.page, a.world, a.level = 1, 2, 0, 0
+			a.mode, a.page = 1, 2
+			a.restoreLastPlayed()
 		case 2:
 			a.page = 3
 		case 3:
@@ -3692,6 +3698,7 @@ func (a *app) openPlay() error {
 	if err != nil {
 		return err
 	}
+	a.noteLastPlayed(level.Info.ID)
 	world := viewer.New(level, tileset, atlas, a)
 	world.ZoomScale = a.extras.fovZoomScale()
 	world.Zoom = 1.0 * world.ZoomScale
@@ -5426,6 +5433,7 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	survivalGate := flag.Bool("survival-gate", true, "keep a world's survival maps locked until that world is reached in story mode (port addition)")
 	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
@@ -5438,6 +5446,7 @@ func Run() {
 	portMysteryMark = *mysteryMark
 	portSceneCarFix = *sceneCarFix
 	portWaveBreather = math.Max(0, *waveGap)
+	survivalStoryGate = *survivalGate
 	discordAppID = *discordID
 	switch *waveEnd {
 	case "all-dead":
