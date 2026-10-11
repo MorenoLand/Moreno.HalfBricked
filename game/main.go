@@ -1,25 +1,25 @@
 package game
 
 import (
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/menumotion"
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/carousel"
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/achievements"
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/achievements"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/carousel"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/menumotion"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 	"image"
-	"runtime"
-	"time"
 	"image/color"
 	"image/draw"
 	"image/png"
 	"log"
 	"math"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
@@ -208,7 +208,7 @@ type zombieState struct {
 	presentAge       float64 // seconds into the Disintegrate presentation
 	scriptControlled bool
 	collision        float64
-	mirrorExploding  bool // guests only: the host says this one is an exploding zombie
+	mirrorExploding  bool         // guests only: the host says this one is an exploding zombie
 	native           zombieNative // spawn-record state of wave zombies (zombie_model.go)
 	grid             entityGridRegistration
 }
@@ -352,44 +352,45 @@ type playState struct {
 	statistics                                             *stats.StatsData
 	statsPositionX, statsPositionY                         float64
 	waveElapsed                                            float64
-	waveEndTimer                                           int // wave_timing.go: native end_wave_time countdown (ms)
-	lookahead v7Lookahead // camera_lookahead.go: SD player look-ahead state
-	slowMoLeft, slowMoTotal, slowMoAccum float64 // slowmo.go: slow motion on the kill that ends a wave
-	slowInterp                           bool
-	lifePopups                           []lifePopup
+	waveEndTimer                                           int         // wave_timing.go: native end_wave_time countdown (ms)
+	waveBreather                                           float64     // wave_timing.go: seconds left of the pause before the next wave
+	lookahead                                              v7Lookahead // camera_lookahead.go: SD player look-ahead state
+	slowMoLeft, slowMoTotal, slowMoAccum                   float64     // slowmo.go: slow motion on the kill that ends a wave
+	slowInterp                                             bool
+	lifePopups                                             []lifePopup
 	// scriptMoveFlag / scriptShootFlag are the native +0x509ed / +0x509ec override bytes: the last value a script
 	// stored (zero from the start). They gate move and aim input while a script runs, and an exit script starts
 	// with whatever the entry script left in them.
 	scriptMoveFlag, scriptShootFlag bool
-	waveLastAlive                        int
-	slowPrev                             slowSnap
-	waveEndStamp                                           float64
-	waveEndInit                                            bool
-	waveSpawned                                            []int
-	survival                                               *survivalState
-	rng                                                    *weapons.NativeRNG
-	rex                                                    rexBossField
-	zombies                                                []zombieState
-	health                                                 float64
-	maxHealth                                              float64
-	levelKills, levelZombieTotal                           int
-	progressOpacity                                        float64
-	progressMirror                                         bool
-	progressValue                                          float64
-	score                                                  int
-	lives                                                  int
-	multiplier                                             int
-	combo                                                  comboSystem
-	portals                                                []portalState
-	bloodPops                                              []bloodPop
-	gibBodies                                              []zombieState // gib bodies presenting Disintegrate (zombie_gib.go)
-	gibFlameCountdown                                      int           // global gib flame countdown (flame_flight.go)
-	explosions                                             []explosionState
-	zombieBlasts                                           []zombieBlast
-	hudVisible                                             bool
-	dialogue                                               []dialogueLine
-	dialogueIndex                                          int
-	dialogueAge                                            float64
+	waveLastAlive                   int
+	slowPrev                        slowSnap
+	waveEndStamp                    float64
+	waveEndInit                     bool
+	waveSpawned                     []int
+	survival                        *survivalState
+	rng                             *weapons.NativeRNG
+	rex                             rexBossField
+	zombies                         []zombieState
+	health                          float64
+	maxHealth                       float64
+	levelKills, levelZombieTotal    int
+	progressOpacity                 float64
+	progressMirror                  bool
+	progressValue                   float64
+	score                           int
+	lives                           int
+	multiplier                      int
+	combo                           comboSystem
+	portals                         []portalState
+	bloodPops                       []bloodPop
+	gibBodies                       []zombieState // gib bodies presenting Disintegrate (zombie_gib.go)
+	gibFlameCountdown               int           // global gib flame countdown (flame_flight.go)
+	explosions                      []explosionState
+	zombieBlasts                    []zombieBlast
+	hudVisible                      bool
+	dialogue                        []dialogueLine
+	dialogueIndex                   int
+	dialogueAge                     float64
 }
 
 // Native player update FUN_00096818: velocity = input (length <= 1) * 0.81 (DAT_00096bfc,
@@ -887,6 +888,7 @@ func (a *app) levelCardX(index int) float64 {
 	offset := min(max(a.carouselCore.Position-1, 0), float64(max(0, a.carouselCore.Count-3)))
 	return 90 + (float64(index)-offset)*150
 }
+
 // levelSelectWheelStep turns mouse-wheel movement into one level step at a time;
 // scrolling down (or right) moves to the next level.
 func (a *app) levelSelectWheelStep() int {
@@ -3109,6 +3111,7 @@ func (a *app) drawBullets(screen *ebiten.Image) {
 func (a *app) drawExplosion(screen *ebiten.Image, explosion explosionState) {
 	a.drawNativeGrenadeExplosion(screen, explosion)
 }
+
 // atlasCellRect crops a cell from a sheet that packs two characters side by
 // side; atlas "left" or "right" selects the half named by the sprite catalog.
 func atlasCellRect(atlas string, col, frame, numCols, numRows, texW, texH int) image.Rectangle {
@@ -3127,6 +3130,7 @@ func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle
 	y1 := int(math.Round(float64(frame+1) * float64(texH) / float64(numRows)))
 	return image.Rect(x0, y0, x1, y1)
 }
+
 // playerSpriteName is the body sheet set: the presidential levels dress Barry as
 // Abraham Lincoln (the "AbeBarry" sprite) when the cache has it.
 func (p *playState) playerSpriteName() string {
@@ -4210,7 +4214,7 @@ func (p *playState) updateBulletsAndKills() {
 				}
 				continue
 			}
-				pop := bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3}
+			pop := bloodPop{x: zombie.x, y: zombie.y, variant: len(p.bloodPops) % 3}
 			if zombie.native.kind != 0 {
 				pop.variant, pop.x = p.zombieDeathPop(zombie)
 			}
@@ -4231,6 +4235,11 @@ func (p *playState) updateWaves() {
 		return
 	}
 	p.noteWave()
+	// PORT ADDITION: a breather between waves (wave_timing.go, -wave-gap). The next wave's spawners and timers wait.
+	if p.waveBreather > 0 {
+		p.waveBreather -= 1.0 / 60.0
+		return
+	}
 	// The wave block (FUN_000c0cec / FUN_00123180) runs only while the living enemy count is below the build's
 	// limit. The gate reads the count before this frame's spawns, and the spawners, the timer and the advance
 	// all sit behind it, so they pause together (waveZombieLimit).
@@ -4301,6 +4310,9 @@ func (p *playState) updateWaves() {
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
+			if waveEndRule == waveEndAllDead {
+				p.waveBreather = portWaveBreather
+			}
 		} else {
 			p.waveIndex, p.wavesFinished = next, true
 		}
@@ -5214,6 +5226,7 @@ func (p *playState) collisionValue(tileX, tileY int) uint32 {
 	}
 	return (raw + 1) & 0xffff
 }
+
 // TextureSourceScale lets the map viewer convert SD-authored prop UVs for HD art.
 func (a *app) TextureSourceScale(name string) float64 { return a.pack.TextureSourceScale(name) }
 
@@ -5390,6 +5403,7 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	waveGap := flag.Float64("wave-gap", 3, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
@@ -5400,6 +5414,7 @@ func Run() {
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
 	portSceneCarFix = *sceneCarFix
+	portWaveBreather = math.Max(0, *waveGap)
 	discordAppID = *discordID
 	switch *waveEnd {
 	case "all-dead":

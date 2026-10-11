@@ -181,3 +181,10 @@ func (p *playState) nativeSpawnPoint(points []formats.Vec2) formats.Vec2 {
 	y := (float32(tileY) + waveSpawnInset + zombieRandom(p.rng, waveSpawnSpan)) * waveSpawnTile
 	return formats.Vec2{X: float64(x), Y: float64(y)}
 }
+
+// PORT ADDITION (not in the original binary): the original has no pause of its own between waves. Its gaps are the
+// previous wave's end_wave_time and the next wave's spawner delay_time, and a wave of end_wave_time 1 simply
+// begins when the last zombie is gone. Under the all-dead rule the port holds the next wave back for this many
+// seconds after the previous one is cleared (the "WAVE N COMPLETE" banner shows meanwhile). -wave-gap changes it;
+// 0 starts the next wave at once.
+var portWaveBreather = 3.0
