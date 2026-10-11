@@ -9,5 +9,7 @@ import (
 
 func init() {
 	defer func() { _ = recover() }()
-	perfOverlay = strings.Contains(js.Global().Get("location").Get("search").String(), "perf")
+	search := js.Global().Get("location").Get("search").String()
+	perfOverlay = strings.Contains(search, "perf")
+	audioDisabled = strings.Contains(search, "noaudio")
 }

@@ -455,7 +455,9 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
 	var sound *engine.SoundSystem
-	if silent {
+	if audioDisabled {
+		sound = nil
+	} else if silent {
 		sound = engine.NewSilentSoundSystem(pack)
 	} else {
 		sound = engine.NewSoundSystem(pack)

@@ -12,6 +12,10 @@ import (
 // where a slow machine loses its time; it is off otherwise and costs nothing.
 var perfOverlay bool
 
+// audioDisabled (?noaudio in the browser) starts the game with no sound system at all, to tell whether audio
+// decoding is what holds the frame rate down.
+var audioDisabled bool
+
 type perfCounters struct {
 	update, draw float64 // smoothed milliseconds
 }
@@ -35,6 +39,6 @@ func (a *app) drawPerfOverlay(screen *ebiten.Image) {
 		return
 	}
 	line := fmt.Sprintf("fps %.0f tps %.0f  update %.2f ms  draw %.2f ms  %dx%d", ebiten.ActualFPS(), ebiten.ActualTPS(), a.perf.update, a.perf.draw, screen.Bounds().Dx(), screen.Bounds().Dy())
-	a.drawRect(screen, 0, 0, 300, 10, colorDark)
-	a.text(screen, line, 2, 0, .22)
+	a.drawRect(screen, 0, 0, 330, 14, colorDark)
+	a.text(screen, line, 3, 0, .32)
 }
