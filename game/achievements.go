@@ -112,7 +112,7 @@ func (a *app) drawAchievements(screen *ebiten.Image) {
 	a.textCentered(screen, a.achievementProgressLine(), 37, .3)
 	for row := 0; row < 5 && a.achievementOffset+row < len(a.achievements); row++ {
 		entry := a.achievements[a.achievementOffset+row]
-		y := float64(48 + row*45)
+		y := float64(58 + row*45)
 		a.drawRect(screen, 12, y-4, 440, 40, color.RGBA{0, 0, 0, 160})
 		status := "UNTRACKED"
 		if a.achievementUnlocks[entry.ID] {
@@ -141,8 +141,8 @@ const (
 	achievementRowsVisible = 5
 	scrollbarX             = 460.0
 	scrollbarWidth         = 8.0
-	scrollbarTop           = 44.0
-	scrollbarBottom        = 270.0
+	scrollbarTop           = 54.0
+	scrollbarBottom        = 280.0
 )
 
 // achievementScrollbarThumb returns the thumb's top and height in logical pixels.

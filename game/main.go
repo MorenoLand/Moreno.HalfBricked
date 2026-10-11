@@ -653,6 +653,8 @@ func (a *app) Update() error {
 			return nil
 		}
 		if a.play.paused {
+			// A held trigger loops its clip: silence it for as long as the game is paused.
+			a.stopWeaponPlayback()
 			return a.updatePauseMenu()
 		}
 		if a.play.storyGameOver(a.mode) {
@@ -3159,6 +3161,10 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		atlas = animation.Atlas
 	}
 	rect := atlasCellRect(atlas, angle, frame, columns, rows, texture.Bounds().Dx(), texture.Bounds().Dy())
+	if !isGibClip && hasAnimation && columns == 1 && rows > 1 && texture.Bounds().Dx() > texture.Bounds().Dy() {
+		// A one-angle clip on a landscape sheet runs its frames across it (the Don Zombie car: 8 frames on 1024x128).
+		rect = zombieGibStripCell(frame, rows, texture.Bounds())
+	}
 	if isGibClip && gibClip.Angles <= 1 {
 		// Disintegrate is a one-angle strip with its frames across (zombie_gib.go).
 		rect = zombieGibStripCell(frame, gibClip.Frames, texture.Bounds())
