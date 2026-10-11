@@ -172,6 +172,9 @@ func TestImmunityIdolCountsLoopedWavesOnShippedLevels(t *testing.T) {
 			t.Fatal("no wave achievement in catalog")
 		}
 		maxIndex := 0
+		oldRest := portWaveBreather
+		portWaveBreather = 0 // the counter is under test, not the rest between waves
+		defer func() { portWaveBreather = oldRest }()
 		for frame := 0; frame < 60*60*60 && !a.achievementUnlocks[idol.ID]; frame++ {
 			p.zombies = nil
 			p.updateWaves()

@@ -254,6 +254,9 @@ func driveCompletionAchievement(t *testing.T, r *achievementRig, entry formats.A
 	case "SPECIFIC/wave":
 		// A two-wave looping survival table: the wave index never passes 1, the native wave counter keeps counting.
 		a.mode, p.levelInfo.Flags = 1, []string{"SURVIVAL"}
+		oldRest := portWaveBreather
+		portWaveBreather = 0 // the counter is under test, not the rest between waves
+		defer func() { portWaveBreather = oldRest }()
 		p.world.Level.Waves = []formats.Wave{{EndWaveTime: 100}, {EndWaveTime: 100, NextWave: 1}}
 		for frame := 0; frame < 60*60 && !a.achievementUnlocks[entry.ID]; frame++ {
 			if int(p.achieve.waveAdvances) == entry.Total-1 {
