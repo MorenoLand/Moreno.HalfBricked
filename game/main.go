@@ -5272,7 +5272,7 @@ func Run() {
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	discordID := flag.String("discord-app-id", discordDefaultAppID, "Discord application id for Rich Presence (port addition)")
-	waveEnd := flag.String("wave-end", "native", "wave end rule: native (FUN_000bf120 timer and alive limit, the original) or all-dead (port option: every spawner done and no zombie alive)")
+	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (default: every spawner done and no zombie alive) or native (FUN_000bf120 as recovered: timer, and fewer than end_wave_zombies alive, so the next wave can start with some left)")
 	flag.Parse()
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound

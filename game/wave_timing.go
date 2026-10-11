@@ -44,15 +44,17 @@ const (
 type waveEndRuleKind int
 
 const (
-	// waveEndAllDead is a port option (-wave-end=all-dead): a wave ends once every spawner has delivered and no
-	// living zombie is left. It replaces the timer and the alive limit. It is not the recovered native rule.
+	// waveEndAllDead is the default: a wave ends once every spawner has delivered and no living zombie is left, so
+	// the next wave never spawns while the current one is still being fought. It replaces the timer and the alive
+	// limit, which is NOT the recovered native rule (see waveEndNative).
 	waveEndAllDead waveEndRuleKind = iota
-	// waveEndNative is FUN_000bf120 as recovered (the timer, then the alive limit of untimed waves). Default.
+	// waveEndNative is FUN_000bf120 as recovered (-wave-end=native): the timer, then for untimed waves "spawners
+	// done and fewer than end_wave_zombies alive", which lets the next wave start with up to 9 left.
 	waveEndNative
 )
 
 // waveEndRule is the active end test. The -wave-end flag selects it ("all-dead" or "native").
-var waveEndRule = waveEndNative
+var waveEndRule = waveEndAllDead
 
 // waveEndStep is FUN_000bf120's end test for one frame (after the spawners ran).
 // spawnersLeft is "the spawner list is not empty".
