@@ -1728,16 +1728,6 @@ func (a *app) Layout(outsideWidth, outsideHeight int) (int, int) {
 	if outsideHeight < 1 {
 		outsideHeight = logicalHeight
 	}
-	// In the browser the screen is laid out at the canvas size and then scaled by the page. A big window means a big
-	// screen to fill every frame in a single-threaded WebAssembly build, so the internal resolution is capped
-	// (the picture is scaled up by the browser, as with any other canvas).
-	if runtime.GOOS == "js" {
-		const maxWidth, maxHeight = 960, 640
-		if outsideWidth > maxWidth || outsideHeight > maxHeight {
-			scale := math.Min(float64(maxWidth)/float64(outsideWidth), float64(maxHeight)/float64(outsideHeight))
-			outsideWidth, outsideHeight = max(1, int(float64(outsideWidth)*scale)), max(1, int(float64(outsideHeight)*scale))
-		}
-	}
 	a.outputWidth, a.outputHeight = outsideWidth, outsideHeight
 	return outsideWidth, outsideHeight
 }
