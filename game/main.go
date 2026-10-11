@@ -486,7 +486,24 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	}
 	game.applyExtras()
 	game.sound.MusicEnabled(!silent && game.options.music)
+	if runtime.GOOS == "js" && !silent {
+		game.prefetchMenus()
+	}
 	return game, nil
+}
+
+// prefetchMenus starts the background download of the menu art (title, main menu, level select, shop) so the
+// menus do not stall on one HTTP request per first-drawn texture in the browser.
+func (a *app) prefetchMenus() {
+	var paths []string
+	for _, path := range a.pack.TexturePaths() {
+		lower := strings.ToLower(filepath.ToSlash(path))
+		if strings.Contains(lower, "/frontend0/") || strings.Contains(lower, "/shopfront0/") {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	a.pack.Prefetch(paths)
 }
 func (a *app) playSound(path string, volume float64) {
 	if a == nil || a.silent || !a.options.sound || a.sound == nil {
@@ -5368,14 +5385,28 @@ func (a *app) rememberTextureName(name string, image *ebiten.Image) {
 // warmTextures decodes the textures a level can show before it starts (every Common0 texture and the level's own
 // world directory), so no first sighting of an enemy, a weapon or an effect decodes a PNG in the middle of a frame.
 func (a *app) warmTextures(info formats.LevelInfo) {
-	if a.silent || runtime.GOOS == "js" {
-		// Captures and the headless tests do not draw. In the browser every texture and sound is its own HTTP
-		// request: warming the whole pack at level start flooded the server (503) and stalled the load.
-		return
+	if a.silent {
+		return // captures and the headless tests do not draw
 	}
 	world := ""
 	if parts := strings.Split(filepath.ToSlash(info.SourceXML), "/"); len(parts) > 0 {
 		world = strings.ToLower(parts[0])
+	}
+	if runtime.GOOS == "js" {
+		// In the browser every texture and sound is its own HTTP request, and a request made on the game loop
+		// freezes the frame. Download the level's files in the background, four at a time (all at once flooded
+		// the server with 503s), world and common textures first, then the sound effects; Open picks them up.
+		var textures, sounds []string
+		for _, path := range a.pack.TexturePaths() {
+			lower := strings.ToLower(filepath.ToSlash(path))
+			if strings.Contains(lower, "/common0/") || (world != "" && strings.Contains(lower, "/"+world+"/")) {
+				textures = append(textures, path)
+			}
+		}
+		sort.Strings(textures)
+		sounds = a.pack.SFXPaths()
+		a.pack.Prefetch(append(textures, sounds...))
+		return
 	}
 	if a.sound != nil {
 		for _, path := range a.pack.SFXPaths() {

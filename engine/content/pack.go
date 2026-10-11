@@ -61,6 +61,16 @@ type AssetSource interface {
 	Open(path string) (io.ReadCloser, error)
 	Manifest() (PackManifest, error)
 }
+// Prefetcher is implemented by sources that can download files ahead of use (the browser source does).
+type Prefetcher interface{ Prefetch(paths []string) }
+
+// Prefetch asks the source to fetch the given pack paths in the background; sources without it ignore the call.
+func (p *Pack) Prefetch(paths []string) {
+	if prefetcher, ok := p.source.(Prefetcher); ok {
+		prefetcher.Prefetch(paths)
+	}
+}
+
 type LevelRepository interface {
 	List() []formats.LevelInfo
 	Load(id string) (formats.Level, error)
