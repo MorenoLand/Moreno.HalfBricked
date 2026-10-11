@@ -1,6 +1,7 @@
 package viewer
 
 import (
+	"strings"
 	"encoding/json"
 	"fmt"
 	"image/color"
@@ -314,6 +315,23 @@ func collisionColor(value uint32) color.RGBA {
 // that stands over the high-layer tiles instead of under them.
 const tallPropHeight = 3.0
 
+// isCanopyProp reports whether a prop is drawn over the entities. Only tall organic props (trees, cacti, blossom)
+// are canopies Barry and the zombies walk under; a tall building, pyramid or tower stands on the ground line, so
+// the people in front of it must be drawn over it (World1Level2's buildings covered Barry and the zombies when
+// they were drawn in the canopy pass). The native prop order is UNRESOLVED (rendering pass 2026-09-07).
+func isCanopyProp(texture string, height float64) bool {
+	if height < tallPropHeight {
+		return false
+	}
+	name := strings.ToLower(texture)
+	for _, prefix := range []string{"tree", "cactus", "blossom"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
 	type propDraw struct {
 		texture                      string
@@ -337,7 +355,7 @@ func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
 		return props[i].y < props[j].y
 	})
 	for _, prop := range props {
-		if v.Textures == nil || (prop.height >= tallPropHeight) != overHigh {
+		if v.Textures == nil || isCanopyProp(prop.texture, prop.height) != overHigh {
 			continue
 		}
 		textureName := prop.texture
