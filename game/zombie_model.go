@@ -163,6 +163,8 @@ type zombieNative struct {
 
 	// markerAlpha is the off-screen arrow alpha (v7 +0x2c4, 1.2.5 +0x2c8), see offscreen_markers.go.
 	markerAlpha int
+	// car is the Don Zombie's lane-driving state (gangster_car.go).
+	car gangsterCar
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.

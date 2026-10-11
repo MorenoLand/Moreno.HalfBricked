@@ -4287,6 +4287,12 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 	if name := bossIntroScript(entry.Name, texture); name != "" {
 		p.bossScripts = append(p.bossScripts, name)
 	}
+	if isGangsterCarName(entry.Name) {
+		z := p.newGangsterCar(entry, point, speed, texture, id)
+		z.fps = p.spriteFPS(texture, "")
+		p.zombies = append(p.zombies, z)
+		return
+	}
 	if waveZombie {
 		z := newWaveZombie(record, p.rng, p.zombieWeapons, point, speed, texture, id)
 		z.fps = p.spriteFPS(texture, "")
@@ -4516,6 +4522,9 @@ func (p *playState) updateZombies() {
 			if entity.stopOnArrival {
 				zombie.speed, entity.speed = 0, 0
 			}
+		case zombie.native.car.active && !scriptWalk:
+			// The Don Zombie's car drives its lane instead of chasing (gangster_car.go).
+			p.stepGangsterCar(zombie, dx, dy, dt, scriptIdle && speed > 0)
 		case zombie.native.kind != 0 && !scriptWalk:
 			// Spawn-record zombies run the native update (zombie_ai.go).
 			aimX, aimY := dx, dy
@@ -4569,7 +4578,9 @@ func (p *playState) updateZombies() {
 		if zombie.native.kind == zombieKindSpeedy {
 			stepZombieTrail(zombie)
 		}
-		if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) {
+		if !scriptWalk && zombie.native.car.active {
+			p.carContact(zombie, prey, dt)
+		} else if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) {
 			p.zombieContact(zombie, prey, dt)
 		}
 		if entity != nil {

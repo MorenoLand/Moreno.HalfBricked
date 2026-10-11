@@ -118,6 +118,9 @@ func newZombieGun(kind, gunID int, catalog formats.ZombieWeaponCatalog) zombieGu
 
 // zombieMayShoot is FUN_0009f54c: the unconditional true in states 2 and 4.
 func (p *playState) zombieMayShoot(z *zombieState, distSq float64, targetX, targetY float64) bool {
+	if z.native.car.active {
+		return p.carMayShoot(z, distSq, targetX, targetY)
+	}
 	ai := &z.native.ai
 	if distSq <= zombieAimMinDistSq || ai.state == 2 || ai.state == 4 {
 		return true
