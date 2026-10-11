@@ -2671,7 +2671,15 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	if !waveXOK {
 		waveX = 440
 	}
-	waveText := fmt.Sprintf("wave %d", a.play.waveIndex+1)
+	// The native counter only goes up on a valid advance, so after the last wave ends the HUD keeps the last wave
+	// (the port's index runs one past the table then).
+	shownWave := a.play.waveIndex + 1
+	if a.play.world != nil {
+		if waves := len(a.play.world.Level.Waves); waves > 0 && shownWave > waves {
+			shownWave = waves
+		}
+	}
+	waveText := fmt.Sprintf("wave %d", shownWave)
 	a.text(screen, waveText, waveX-a.fontTextWidth(waveText, .4), 5, .4)
 	if icon, err := a.Texture("Common0/Textures/LifeIcon"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
