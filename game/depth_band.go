@@ -1,5 +1,7 @@
 package game
 
+import "math"
+
 // inDepthBand reports whether an entity at ground y belongs to the band being drawn (always true outside a banded draw).
 func (a *app) inDepthBand(y float64) bool {
 	if !a.depthBandActive {
@@ -30,4 +32,49 @@ func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 		return carRenderAnchor * z.native.sizeZ
 	}
 	return renderHeight * zombieRenderAnchor
+}
+
+// scriptEntityFeetY is the bottom edge of a script-created sprite (CreateEntity / SpawnEntity). Those sprites are
+// drawn centred on their position, so sorting them against props by the position alone puts a figure that stands in
+// front of a prop (feet below its edge) behind it, with its head under the prop.
+func (a *app) scriptEntityFeetY(e *scriptEntity) float64 {
+	if e == nil || e.kind == "pickup" {
+		if e == nil {
+			return 0
+		}
+		return e.y
+	}
+	return e.y + a.scriptEntityDrawHeight(e)/2
+}
+
+// scriptEntityDrawHeight is the drawn height in world pixels, the same arithmetic as drawScriptEntity.
+func (a *app) scriptEntityDrawHeight(e *scriptEntity) float64 {
+	if e.sized {
+		return math.Max(0, e.scaleY)
+	}
+	animation, has := a.spriteAnimationByIndex(e.texture, e.animation)
+	path := commonSDTexture(e.texture)
+	columns, rows := 5, 4
+	if has {
+		path = animation.Texture
+		if animation.Angles > 0 {
+			columns = animation.Angles
+		}
+		if animation.Frames > 0 {
+			rows = animation.Frames
+		}
+	}
+	texture, err := a.Texture(path)
+	if err != nil || rows <= 0 {
+		return 0
+	}
+	cell := float64(texture.Bounds().Dy()) / float64(rows)
+	if has && columns == 1 && rows > 1 && texture.Bounds().Dx() > texture.Bounds().Dy() {
+		cell = float64(texture.Bounds().Dy())
+	}
+	scale := e.scaleY
+	if scale == 0 {
+		scale = 1
+	}
+	return cell * scale / a.pack.TextureSourceScale(path)
 }

@@ -33,7 +33,7 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, behin
 		}
 	}
 	for _, entity := range p.scriptEntities {
-		if entity != nil && entity.kind != "zombie" && (entity.y <= p.y) == behind && a.inDepthBand(entity.y) {
+		if entity != nil && entity.kind != "zombie" && (entity.y <= p.y) == behind && a.inDepthBand(a.scriptEntityFeetY(entity)) {
 			items = append(items, item{y: entity.y, order: 0, entity: entity})
 		}
 	}
