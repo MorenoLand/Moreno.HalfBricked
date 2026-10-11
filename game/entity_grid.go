@@ -134,7 +134,7 @@ func (r *entityGridRegistration) sharesCell(box entityGridRange) bool {
 // neither pushes nor hurts anyone until the rise ends. Port: script and boss
 // zombies keep kind 0 or a boss kind and are not affected.
 func zombieIsRising(z *zombieState) bool {
-	return z.native.kind >= zombieKindPlain && z.native.kind <= zombieKindProspect && z.native.ai.state == 0
+	return ((z.native.kind >= zombieKindPlain && z.native.kind <= zombieKindProspect) || z.native.samurai.active) && z.native.ai.state == 0
 }
 
 // refreshEntityGrid registers every zombie at its current position. The native

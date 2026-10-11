@@ -16,7 +16,7 @@ func exitScriptPath(info formats.LevelInfo) string {
 	return parts[0] + "/Scripts/" + info.BaseFile + "_exit.script"
 }
 func (p *playState) readyForExitScript() bool {
-	return p != nil && p.health > 0 && p.wavesFinished && !p.exitScriptStarted && len(p.zombies) == 0 && (p.scriptRuntime == nil || p.scriptRuntime.Done())
+	return p != nil && p.health > 0 && p.wavesFinished && !p.exitScriptStarted && !p.zombiesBlockExit() && (p.scriptRuntime == nil || p.scriptRuntime.Done())
 }
 func (a *app) updateLevelCompletion() error {
 	if a.mode != 0 || a.play == nil {

@@ -165,6 +165,8 @@ type zombieNative struct {
 	markerAlpha int
 	// car is the Don Zombie's lane-driving state (gangster_car.go).
 	car gangsterCar
+	// samurai is the Japan boss's state (samurai.go).
+	samurai samuraiBoss
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.

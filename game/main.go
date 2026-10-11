@@ -279,6 +279,7 @@ type playState struct {
 	alertNoise                                             float64 // player +0x3e0 (zombie_ai.go)
 	zombieWeapons                                          formats.ZombieWeaponCatalog
 	zombieShots                                            []zombieShot
+	spinners                                               []spinnerBlade // SPINNER blades (samurai_blade.go)
 	sentryLoopHold                                         float64
 	navs                                                   [maxCoopPlayers]navField
 	secondaryWeapon                                        string
@@ -368,6 +369,9 @@ type playState struct {
 	slowPrev                        slowSnap
 	waveEndStamp                    float64
 	waveEndInit                     bool
+	samuraiWaveEndMS                int  // samurai.go: the replacement wave's end timer (ms)
+	samuraiWaveEnding               bool // samurai.go: the boss died and the replacement wave is running
+	samuraiShurikenUntil            float64 // samurai.go: SFX_SHURIKEN channel held until this p.time
 	waveSpawned                     []int
 	survival                        *survivalState
 	rng                             *weapons.NativeRNG
@@ -3080,12 +3084,13 @@ func collisionLabel(value uint32) string {
 }
 
 func (a *app) drawBullets(screen *ebiten.Image) {
-	if a.play == nil || (len(a.play.bullets) == 0 && len(a.play.zombieShots) == 0) {
+	if a.play == nil || (len(a.play.bullets) == 0 && len(a.play.zombieShots) == 0 && len(a.play.spinners) == 0) {
 		return
 	}
 	for _, shot := range a.play.zombieShots {
 		a.drawWeaponProjectile(screen, shot.projectile)
 	}
+	a.drawSpinners(screen)
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.bullets {
 		if b.projectile != nil {
@@ -3295,8 +3300,12 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if tint := zombieTint(zombie); tint != 1 {
 		options.ColorScale.Scale(tint, tint, tint, 1)
 	}
-	if zombie.alpha < 1 {
-		options.ColorScale.ScaleAlpha(float32(math.Max(0, zombie.alpha)))
+	alpha := zombie.alpha
+	if forced, ok := a.play.samuraiDrawAlpha(zombie); ok {
+		alpha = forced
+	}
+	if alpha < 1 {
+		options.ColorScale.ScaleAlpha(float32(math.Max(0, alpha)))
 	}
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
@@ -4210,6 +4219,9 @@ func (p *playState) updateBulletsAndKills() {
 			alive = append(alive, zombie)
 			continue
 		}
+		if zombie.native.samurai.active {
+			p.samuraiDeath(&zombie)
+		}
 		if entity := p.scriptEntities[zombie.scriptID]; entity != nil && isBossType(entity.entityType) && zombie.dying {
 			p.onBossDefeated(entity.entityType, zombie.texture)
 		}
@@ -4220,7 +4232,8 @@ func (p *playState) updateBulletsAndKills() {
 			award := (points / 20) * int32(p.multiplier)
 			p.score = int(int32(p.score) + award)
 		}
-		if !zombie.spawnAway {
+		if !zombie.spawnAway && !zombie.native.samurai.active {
+			// (the samurai's death slot FUN_000bcaec replaces the pop and the death sound of the plain class)
 			if zombie.dying && zombie.deathState == zombieDeathGib {
 				// A gib makes no blood pop: the body plays Disintegrate (zombie_gib.go).
 				p.addZombieGibBody(zombie)
@@ -4365,7 +4378,7 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 // spawnZombieAtTurn is spawnZombieAt. A non-nil turn is the native turnSpeed range of a survival type (survival.go).
 func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec2, turn *turnRange) {
 	native := nativeZombieTypes[entry.Name]
-	waveZombie := native >= zombieKindPlain && native <= zombieKindProspect
+	waveZombie := (native >= zombieKindPlain && native <= zombieKindProspect) || native == zombieKindSamurai
 	var record zombieSpawnRecord
 	speed := entry.Speed.X
 	if entry.Speed.Y > 0 {
@@ -4425,6 +4438,9 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 	}
 	if waveZombie {
 		z := newWaveZombie(record, p.rng, p.zombieWeapons, point, speed, texture, id)
+		if native == zombieKindSamurai {
+			p.initSamurai(&z)
+		}
 		z.fps = p.spriteFPS(texture, "")
 		p.zombies = append(p.zombies, z)
 		return
@@ -4598,6 +4614,8 @@ func (p *playState) updateZombies() {
 	p.updateZombieGibBodies(dt)
 	p.stepPickupDrops(dt)
 	p.updateZombieShots(dt)
+	p.updateSpinners(dt)
+	p.updateSamuraiWaveEnd()
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
@@ -4611,6 +4629,10 @@ func (p *playState) updateZombies() {
 			}
 			p.stepGibFlames(zombie)
 			zombie.deathAge += dt
+			if zombie.native.samurai.active {
+				p.samuraiDeath(zombie)
+				p.samuraiDeathPose(zombie)
+			}
 			continue
 		}
 		if zombie.spawnAway || zombie.health <= 0 || p.cheats.freezeZombies {
@@ -4661,6 +4683,14 @@ func (p *playState) updateZombies() {
 		case zombie.native.car.active && !scriptWalk:
 			// The Don Zombie's car drives its lane instead of chasing (gangster_car.go).
 			p.stepGangsterCar(zombie, dx, dy, dt, scriptIdle && speed > 0)
+		case zombie.native.samurai.active && !scriptWalk:
+			// The Japan boss runs its own copy of the shared update (samurai.go).
+			moveX, moveY := p.stepSamurai(zombie, prey, dx, dy, dt)
+			if scriptIdle && speed > 0 {
+				zombie.x += moveX
+				zombie.y += moveY
+				moved = moveX != 0 || moveY != 0
+			}
 		case zombie.native.kind != 0 && !scriptWalk:
 			// Spawn-record zombies run the native update (zombie_ai.go).
 			aimX, aimY := dx, dy
@@ -4723,7 +4753,11 @@ func (p *playState) updateZombies() {
 			entity.x, entity.y = zombie.x, zombie.y
 		}
 		if entity == nil || !entity.rotationSet {
-			if zombie.native.kind != 0 {
+			if zombie.native.samurai.active {
+				// FUN_000bce68: the spin draws with its own heading.
+				heading := zombie.samuraiDrawHeading()
+				zombie.angle, zombie.flipX = barryDirection(cosU16(heading), sinU16(heading))
+			} else if zombie.native.kind != 0 {
 				zombie.angle, zombie.flipX = barryDirection(cosU16(zombie.native.facing), sinU16(zombie.native.facing))
 			} else {
 				zombie.angle, zombie.flipX = barryDirection(dx, dy)

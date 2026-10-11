@@ -39,11 +39,13 @@ import (
 //     (0.3 * 64 + 0.5 * width) and FUN_000a521c deals 0.1 health and removes the
 //     bullet. A bullet also ends on life, or on a collision value 1 tile.
 //
+// SPINNER (CURVER, kind 0x18) is ported in samurai_blade.go (orbit set up by FUN_000a6640, recovered in
+// Research/native/samurai-spinner-2026-10-11.md).
+//
 // UNRESOLVED (not implemented, the zombie then behaves as unarmed): VENOM
 // (VOMIT, kind 0x17: as decompiled, Life 0 makes FUN_000a4288 remove it on the
-// first update), SPINNER (CURVER, 0x18: orbit set up by FUN_000a6640), DYNOMITE
-// (0x1d: bouncing bomb FUN_000a700c / blast FUN_000a4dc4). Their flight and
-// landing rules were not recovered completely enough to port without guessing.
+// first update) and DYNOMITE (0x1d: bouncing bomb FUN_000a700c / blast FUN_000a4dc4).
+// Their flight and landing rules were not recovered completely enough to port without guessing.
 const (
 	zombieGunInterval     = 2.25 // DAT_000a0da0: armed_zombie interval multiplier
 	zombieGunArmedTimer   = -.75 // 0xbf400000
@@ -108,8 +110,8 @@ func newZombieGun(kind, gunID int, catalog formats.ZombieWeaponCatalog) zombieGu
 			gun.timer = zombieGunArmedTimer
 			gun.interval *= zombieGunInterval
 		}
-		if gun.kind != 0x10 {
-			gun.rounds = 0 // UNRESOLVED kinds: see the header comment
+		if gun.kind != 0x10 && gun.kind != samuraiBladeKind {
+			gun.rounds = 0 // VENOM and DYNOMITE are not ported: see the header comment
 		}
 		return gun
 	}
@@ -120,6 +122,9 @@ func newZombieGun(kind, gunID int, catalog formats.ZombieWeaponCatalog) zombieGu
 func (p *playState) zombieMayShoot(z *zombieState, distSq float64, targetX, targetY float64) bool {
 	if z.native.car.active {
 		return p.carMayShoot(z, distSq, targetX, targetY)
+	}
+	if z.native.samurai.active {
+		return p.samuraiMayAttack(z, distSq, targetX, targetY, p.nearestPlayer(z.x, z.y).index) // range = sight^2 * 5
 	}
 	ai := &z.native.ai
 	if distSq <= zombieAimMinDistSq || ai.state == 2 || ai.state == 4 {
@@ -179,6 +184,11 @@ func (p *playState) zombieFire(z *zombieState) {
 		heading := z.native.facing
 		if jitter > 0 {
 			heading = heading - uint16(jitter) + uint16(zombieBounded(p.rng, uint32(jitter<<1)))
+		}
+		if gun.kind == samuraiBladeKind {
+			// SPINNER: an orbiting blade instead of a straight shot (samurai_blade.go).
+			jitter = p.fireSpinner(z, heading, jitter, lift, fall, gun)
+			continue
 		}
 		shot := zombieShot{fall: fall, projectile: weapons.NativeWeaponProjectile{X: z.x, Y: z.y, Direction: heading, Life: gun.life, Lift: lift, Width: 10, Height: -20, EntityType: gun.kind, Texture: "Common0/Textures/Bullet_SD"}}
 		shot.projectile.VX = cosU16(heading) * gun.speed

@@ -341,6 +341,10 @@ func (p *playState) separatePlayer(z *zombieState, bx, by *float64, dt, pushX, p
 // hurts, at 0.075 health per second (dt * 0.075 per frame). The native caller is the
 // candidate block of FUN_000a1b08, which a rising zombie (state 0) never reaches.
 func (p *playState) zombieContact(z *zombieState, prey playerTarget, dt float64) {
+	if z.native.samurai.active {
+		p.samuraiContact(z, prey, dt)
+		return
+	}
 	if zombieIsRising(z) {
 		return
 	}

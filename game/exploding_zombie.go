@@ -108,6 +108,9 @@ func (p *playState) isExplodingZombie(z zombieState) bool {
 // zombieDeathDelayFor is how long a killed zombie lingers before its death
 // transition (and, for exploding zombies, the blast).
 func (p *playState) zombieDeathDelayFor(z zombieState) float64 {
+	if z.native.samurai.active {
+		return p.samuraiDeathSeconds(z) // the Death clip, then the 251 frame fade (samurai.go)
+	}
 	delay := zombieDeathDelay
 	if z.deathDelay > 0 {
 		delay = z.deathDelay // a gib's hit timer (zombie_gib.go)

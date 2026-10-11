@@ -170,7 +170,8 @@ func bossLevelSweep(t *testing.T, base, bossType string, spawnedByWave bool) {
 		}
 		runScriptToEnd(t, p, 20000)
 	}
-	for frame := 0; frame < 600 && len(p.zombies) > 0; frame++ {
+	// The samurai's replacement wave ends 1.5 s after its death (samurai.go), so wait for the waves too.
+	for frame := 0; frame < 600 && (p.zombiesBlockExit() || !p.wavesFinished); frame++ {
 		p.Update(0, 0, false, false, false)
 	}
 	if !p.readyForExitScript() {
