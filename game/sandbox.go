@@ -31,7 +31,15 @@ type sandboxItem struct {
 var sandboxTabs = [...]string{"GENERAL", "ZOMBIES", "PICKUPS"}
 
 // sandboxPickups are the crates and weapons the sandbox can drop or hand over.
-var sandboxPickups = []string{"p_health", "p_shotgun", "p_uzi", "p_flamer", "p_sniper", "p_minigun", "p_buzzsaw", "p_dual_pistol", "p_grenade", "p_mine", "p_sentry", "p_bazooka", "p_cow_pat"}
+// Every pickup type the port knows: the life, shield and hover crates, every weapon, the four forced sentry
+// variants, and the mystery crates (p_rand_1..8 and p_rand_all, rolled into a weapon when they land).
+var sandboxPickups = []string{
+	"p_health", "p_shield", "p_hover",
+	"p_shotgun", "p_uzi", "p_flamer", "p_sniper", "p_minigun", "p_buzzsaw", "p_dual_pistol",
+	"p_grenade", "p_mine", "p_bazooka", "p_cow_pat", "p_sentry",
+	"p_sentryuzi", "p_sentryshotgun", "p_sentryflamer", "p_sentrybazooka",
+	"p_rand_1", "p_rand_2", "p_rand_3", "p_rand_4", "p_rand_5", "p_rand_6", "p_rand_7", "p_rand_8", "p_rand_all",
+}
 
 // spawnSpot returns a free-ish point in front of the player; repeated calls fan
 // the spawns out so crates and zombies do not stack.
@@ -58,7 +66,8 @@ func (a *app) sandboxZombieTypes() []formats.SpawnType {
 		for _, wave := range waves {
 			for _, spawner := range wave.Spawners {
 				for _, entry := range spawner.Types {
-					if strings.HasPrefix(entry.Name, "p_") || isBossType(entry.Name) || entry.Name == "train" {
+					// Bosses are listed too: nothing the game can spawn is missing from the sandbox.
+					if strings.HasPrefix(entry.Name, "p_") || entry.Name == "train" {
 						continue
 					}
 					key := entry.Name + "|" + strings.ToLower(entry.Texture)
@@ -174,6 +183,7 @@ func (a *app) sandboxItems() []sandboxItem {
 		}),
 		action("CLEAR MINES+SENTRIES", func(p *playState) { p.mines, p.sentries = nil, nil }),
 		action("RESTOCK AMMO", func(p *playState) { p.restockAmmo() }),
+		action("SPAWN TRAIN", func(p *playState) { p.spawnTrain() }),
 	}
 }
 
