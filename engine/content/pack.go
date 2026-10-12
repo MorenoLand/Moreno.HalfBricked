@@ -67,15 +67,35 @@ type Prefetcher interface{ Prefetch(paths []string) }
 // Prefetch asks the source to fetch the given pack paths in the background; sources without it ignore the call.
 func (p *Pack) Prefetch(paths []string) {
 	if prefetcher, ok := p.source.(Prefetcher); ok {
-		prefetcher.Prefetch(paths)
+		prefetcher.Prefetch(p.remotePaths(paths))
 	}
+}
+
+// remotePath resolves the older audio spellings to the real file when the source is remote: over HTTP a path
+// that does not exist is a wasted round trip (the server may even answer 500).
+func (p *Pack) remotePath(path string) string {
+	if _, remote := p.source.(Prefetcher); !remote {
+		return path
+	}
+	if alternate, ok := p.audioFallback(path); ok && !p.audioPaths[strings.ToLower(filepath.ToSlash(path))] {
+		return alternate
+	}
+	return path
+}
+
+func (p *Pack) remotePaths(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, path := range paths {
+		out[i] = p.remotePath(path)
+	}
+	return out
 }
 
 // PrefetchReady reports whether a prefetched file has arrived (true for sources that cannot prefetch, where
 // nothing is ever pending).
 func (p *Pack) PrefetchReady(path string) bool {
 	if ready, ok := p.source.(interface{ Ready(path string) bool }); ok {
-		return ready.Ready(path)
+		return ready.Ready(p.remotePath(path))
 	}
 	return true
 }
@@ -83,7 +103,7 @@ func (p *Pack) PrefetchReady(path string) bool {
 // PrefetchPending counts how many of the paths are queued or in flight for download (0 where nothing prefetches).
 func (p *Pack) PrefetchPending(paths []string) int {
 	if counter, ok := p.source.(interface{ Pending(paths []string) int }); ok {
-		return counter.Pending(paths)
+		return counter.Pending(p.remotePaths(paths))
 	}
 	return 0
 }
@@ -278,13 +298,7 @@ func (p *Pack) TexturePaths() map[string]string {
 	return out
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) {
-	if _, remote := p.source.(Prefetcher); remote {
-		// Over HTTP a path that does not exist is a wasted round trip (the server may even answer 500 and make
-		// the caller retry for seconds): resolve the older audio spellings to the real file first.
-		if alternate, ok := p.audioFallback(path); ok && !p.audioPaths[strings.ToLower(filepath.ToSlash(path))] {
-			path = alternate
-		}
-	}
+	path = p.remotePath(path)
 	reader, err := p.source.Open(path)
 	if err == nil {
 		return reader, nil

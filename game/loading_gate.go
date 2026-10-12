@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"runtime"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -17,7 +18,12 @@ type loadingGate struct {
 	paths func() []string // re-evaluated every frame (a level's file list is only known once its JSON is in)
 	total int
 	next  func() error
+	began time.Time
 }
+
+// loadingGiveUp is how long the gate waits before it goes on with whatever has not arrived (those files are then
+// fetched on demand, as before the gate existed): a stuck download must never trap the player on this screen.
+const loadingGiveUp = 45 * time.Second
 
 // beginLoading starts the gate when files of the set are still missing and reports whether it did; the caller then
 // returns without doing its action, which next performs later. Outside the browser it never gates.
@@ -31,7 +37,7 @@ func (a *app) beginLoading(label string, paths func() []string, next func() erro
 	if missing == 0 {
 		return false
 	}
-	a.loading = &loadingGate{label: label, paths: paths, total: max(1, len(list)), next: next}
+	a.loading = &loadingGate{label: label, paths: paths, total: max(1, len(list)), next: next, began: time.Now()}
 	return true
 }
 
@@ -41,7 +47,7 @@ func (a *app) updateLoading() error {
 	list := gate.paths()
 	a.pack.Prefetch(list) // names that appeared since the last frame (the level's textures after its JSON)
 	gate.total = max(gate.total, len(list))
-	if a.pack.PrefetchPending(list) > 0 {
+	if a.pack.PrefetchPending(list) > 0 && time.Since(gate.began) < loadingGiveUp {
 		return nil
 	}
 	a.loading = nil
