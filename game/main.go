@@ -255,6 +255,7 @@ type playState struct {
 	radius                                                 float64
 	flash                                                  float64
 	stick                                                  int
+	aimPointDistance                                       float64 // world px from the player to the aim point (mouse); <= 1.5 = none
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY       float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
 	bullets                                                []bullet
@@ -4021,6 +4022,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		aimDX := worldX - p.x
 		aimDY := worldY - p.y
+		p.aimPointDistance = math.Hypot(aimDX, aimDY)
 		if math.Hypot(aimDX, aimDY) > .001 && !scriptFacingLocked {
 			p.angle, p.flipX = barryDirection(aimDX, aimDY)
 		}
@@ -5028,6 +5030,7 @@ func (p *playState) fire(dx, dy float64) bool {
 		return false
 	}
 	dirX, dirY := dx/dist, dy/dist
+	p.aimPointDistance = dist // a pointer offset is in world pixels; a stick deflection is at most 1
 	dirX0, dirY0 := dirX, dirY // the facing column indexes the native tables
 	offsetX, offsetY, _, _ := muzzleTransform(dirX, dirY)
 	bx := p.x + offsetX
@@ -5166,7 +5169,15 @@ func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
 }
 func (p *playState) projectileDirection(dx, dy, offsetX, offsetY float64) (float64, float64) {
 	if p.stick != 2 {
-		dx, dy = dx*nativeFireAimDistance-offsetX, dy*nativeFireAimDistance-offsetY
+		// The native thumbstick aims every shot at a point 96 px out along the stick, so the muzzle offset is only
+		// cancelled at 96 px and a target farther away is missed by more the farther it is. The mouse has a real
+		// target: PORT ADDITION (-aim-at-cursor), the shot aims at the cursor's own distance (never closer than
+		// the muzzle clears).
+		distance := nativeFireAimDistance
+		if portAimAtCursor && p.aimPointDistance > 1.5 {
+			distance = math.Max(p.aimPointDistance, portAimMinDistance)
+		}
+		dx, dy = dx*distance-offsetX, dy*distance-offsetY
 	}
 	length := math.Hypot(dx, dy)
 	return dx / length, dy / length
@@ -5548,6 +5559,8 @@ func Run() {
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
 	storyHUD := flag.Bool("story-wave-hud", true, "show the wave counter and banners in story levels too (port addition; native shows them in survival only)")
+	regenScale := flag.Float64("regen-scale", 1, "multiplier on health regeneration (port tweak; 1 is the native rate)")
+	aimAtCursor := flag.Bool("aim-at-cursor", true, "mouse shots aim at the cursor's distance instead of a point 96 px out (port addition)")
 	survivalGate := flag.Bool("survival-gate", true, "keep a world's survival maps locked until that world is reached in story mode (port addition)")
 	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
@@ -5562,6 +5575,8 @@ func Run() {
 	portSceneCarFix = *sceneCarFix
 	portWaveBreather = math.Max(0, *waveGap)
 	survivalStoryGate = *survivalGate
+	portAimAtCursor = *aimAtCursor
+	portRegenScale = math.Max(0, *regenScale)
 	storyWaveHUD = *storyHUD
 	discordAppID = *discordID
 	switch *waveEnd {

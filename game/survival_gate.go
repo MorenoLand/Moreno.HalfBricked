@@ -48,3 +48,14 @@ func (a *app) survivalGateLocked(item formats.LevelInfo) bool {
 
 // storyWaveHUD is the -story-wave-hud flag (see drawGameHUD).
 var storyWaveHUD = true
+
+// portAimAtCursor is the -aim-at-cursor flag (see projectileDirection); portAimMinDistance keeps the aim point
+// outside the muzzle offset.
+var portAimAtCursor = true
+
+const portAimMinDistance = 48.0
+
+// portRegenScale is the -regen-scale flag: a multiplier on the health regeneration rate. 1 is the native rate
+// (0.25/s in 1.2.5, 0.75/s in 1.2.1); a smaller value is a port tweak for players who find the native recovery too
+// quick.
+var portRegenScale = 1.0

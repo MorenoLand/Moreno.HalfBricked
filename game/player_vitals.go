@@ -116,13 +116,13 @@ func (p *playState) stepVitals(dt float64) {
 		return
 	}
 	if p.waveBuild() == content.WaveBuildV7 {
-		p.health = math.Min(limit, p.health+dt*playerRegenRate)
+		p.health = math.Min(limit, p.health+dt*playerRegenRate*portRegenScale)
 		return
 	}
 	// 1.2.5 (HD cache, FUN_000f3280 0xf385c-0xf38d0): 0.25/s, and the new value is stored only when it stays in the
 	// same third of the bar (floor(h / 0.3333f)), so health recovers to the top of the third it is in and no further.
 	const third = float32(1.0 / 3.0)
-	next := math.Min(limit, p.health+dt*playerRegenRate125)
+	next := math.Min(limit, p.health+dt*playerRegenRate125*portRegenScale)
 	if math.Floor(float64(float32(next)/third)) == math.Floor(float64(float32(p.health)/third)) {
 		p.health = next
 	}
