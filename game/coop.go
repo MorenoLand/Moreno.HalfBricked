@@ -3,6 +3,7 @@ package game
 import (
 	"math"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 )
 
@@ -193,11 +194,34 @@ func hurtTint(hurt, clock float64, base [3]float32) [3]float32 {
 	return out
 }
 
-// damagePlayer applies contact damage to the given player.
-func (p *playState) damagePlayer(index int, amount float64) {
+// damagePlayer applies damage that has no zombie source to hand (blasts, flames, bullets, blades).
+func (p *playState) damagePlayer(index int, amount float64) { p.damagePlayerFrom(index, amount, nil) }
+
+// playerDamageAmount is the amount FUN_000f2208 (1.2.5) actually subtracts: halved, and divided by five more when
+// the source is a fast zombie of type 2..9. v7 (FUN_00094c6c) subtracts the amount as given.
+func (p *playState) playerDamageAmount(amount float64, source *zombieState) float64 {
+	if p.waveBuild() == content.WaveBuildV7 {
+		return amount
+	}
+	amount *= playerDamageScale125
+	if source != nil && source.native.kind >= 2 && source.native.kind <= 9 {
+		speed := source.speed * 1.1
+		if source.native.kind == 4 { // exploding zombie
+			speed *= 1.25
+		}
+		if speed/180 > playerFastSourceLimit {
+			amount /= playerFastSourceDiv125
+		}
+	}
+	return amount
+}
+
+// damagePlayerFrom applies damage to the given player; source is the zombie that dealt it, when there is one.
+func (p *playState) damagePlayerFrom(index int, amount float64, source *zombieState) {
 	if amount <= 0 || p.cheats.god || (index == 0 && p.shielded()) {
 		return
 	}
+	amount = p.playerDamageAmount(amount, source)
 	if index == 0 {
 		// FUN_00094c6c: nothing while dead or inside the 1.5 s respawn grace.
 		if p.health <= 0 || p.vitals.invulnMS > 0 {
@@ -206,6 +230,7 @@ func (p *playState) damagePlayer(index int, amount float64) {
 		p.health = math.Max(0, p.health-amount)
 		p.hurt = hurtFlashDuration
 		p.vitals.noteHit(p.health, p.waveBuild())
+		p.vitals.triggerBleed()
 		return
 	}
 	for _, c := range p.coop.players {
@@ -216,6 +241,7 @@ func (p *playState) damagePlayer(index int, amount float64) {
 			c.body.health = math.Max(0, c.body.health-amount)
 			c.body.hurt = hurtFlashDuration
 			c.body.vitals.noteHit(c.body.health, p.waveBuild())
+			c.body.vitals.triggerBleed()
 		}
 	}
 }

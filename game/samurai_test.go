@@ -246,7 +246,7 @@ func TestSamuraiContactDamage(t *testing.T) {
 	p.x, p.y = z.x+reach-.5, z.y
 	prey := playerTarget{index: 0, x: p.x, y: p.y}
 	p.zombieContact(z, prey, 1.0/60)
-	if got, want := p.health, 100-1.0/60*.15; math.Abs(got-want) > 1e-9 {
+	if got, want := p.health, 100-1.0/60*.15/2; math.Abs(got-want) > 1e-9 { // halved by the 1.2.5 damage routine
 		t.Fatalf("health %v, want %v", got, want)
 	}
 	if z.native.ai.gun.rounds != 3 {

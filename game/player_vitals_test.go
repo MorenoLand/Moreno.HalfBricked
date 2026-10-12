@@ -13,6 +13,7 @@ import (
 func TestPlayerHealthRegeneratesAfterTheNativeDelay(t *testing.T) {
 	p := &playState{health: 1, maxHealth: 1, world: &viewer.Viewer{}}
 	p.world.Level.WaveBuild = content.WaveBuildV7
+	p.vitals.bleedInit, p.vitals.bleedCtr = true, 0 // not at rest: this test is about the regeneration, not the bleed
 	p.damagePlayer(0, .5)
 	if p.health != .5 || math.Abs(p.vitals.regenDelay-1.0) > 1e-9 {
 		t.Fatalf("health %v delay %v, want .5 and 1.0 (= 0.5 + 0.5)", p.health, p.vitals.regenDelay)
@@ -53,15 +54,16 @@ func TestPlayerHealthRegeneratesAfterTheNativeDelay(t *testing.T) {
 // third of the bar the health is in; FUN_000f2208 sets the delay.
 func TestPlayerHealthRegeneratesPerThird125(t *testing.T) {
 	p := &playState{health: 1, maxHealth: 1}
-	p.damagePlayer(0, .9) // 0.1, the lowest third
+	p.vitals.bleedInit, p.vitals.bleedCtr = true, 0 // not at rest: this test is about the regeneration, not the bleed
+	p.damagePlayer(0, .9) // halved: 0.55, the middle third
 	if p.vitals.regenDelay != 1.0 {
 		t.Fatalf("delay %v, want the fixed 1.0", p.vitals.regenDelay)
 	}
 	for i := 0; i < 60*10; i++ {
 		p.stepVitals(1.0 / 60)
 	}
-	if p.health <= .3 || p.health >= 1.0/3.0 {
-		t.Fatalf("health %v: must stop just under a third", p.health)
+	if p.health <= .6 || p.health >= 2.0/3.0 {
+		t.Fatalf("health %v: must stop just under two thirds", p.health)
 	}
 }
 
@@ -88,7 +90,7 @@ func TestRespawnGraceBlocksDamageFor1500Milliseconds(t *testing.T) {
 		t.Fatalf("grace lasted %d frames, want 94 (1500 ms in 16 ms steps)", frames)
 	}
 	p.damagePlayer(0, .5)
-	if p.health != .5 {
+	if p.health != .75 { // 1.2.5 halves every amount
 		t.Fatal("damage works again after the grace period")
 	}
 }
@@ -296,5 +298,47 @@ func TestRespawnPicksTheLeastCrowdedStartMarker(t *testing.T) {
 	}
 	if p.health <= 0 || p.x != 12*32+16 {
 		t.Fatalf("respawned at %v,%v health %v", p.x, p.y, p.health)
+	}
+}
+
+// A hit with a source starts the bleed: the counter rests at -700, the hit sets it to 1 and every frame adds
+// dt*1000 until it passes 99, each frame running the damage routine once more with dt (FUN_000f3280).
+func TestHitStartsTheBleed(t *testing.T) {
+	p := &playState{health: 1, maxHealth: 1, world: &viewer.Viewer{}}
+	p.world.Level.WaveBuild = content.WaveBuildV7 // no halving: plain numbers
+	p.damagePlayer(0, .05)
+	if !p.vitals.bleeding {
+		t.Fatal("the hit did not start the bleed")
+	}
+	frames := 0
+	for p.vitals.bleeding && frames < 100 {
+		p.stepVitals(1.0 / 60)
+		frames++
+	}
+	if frames != 7 {
+		t.Fatalf("bled for %d frames, want 7 (the counter climbs 16.67 a frame, truncated, from 1 past 99)", frames)
+	}
+	if want := 1 - .05 - 7.0/60; math.Abs(p.health-want) > 1e-9 {
+		t.Fatalf("health %v, want %v", p.health, want)
+	}
+	// While the counter climbs back to rest a second hit cannot start another bleed.
+	p.damagePlayer(0, .05)
+	if p.vitals.bleeding {
+		t.Fatal("a hit during the rest period restarted the bleed")
+	}
+}
+
+// 1.2.5 divides the amount by 5 when the source is a fast zombie (speed * 1.1 / 180 > 0.9).
+func TestFastZombieContactIsDividedByFiveIn125(t *testing.T) {
+	p := &playState{health: 1, maxHealth: 1}
+	slow := &zombieState{speed: 90}
+	slow.native.kind = 2
+	fast := &zombieState{speed: 160}
+	fast.native.kind = 5
+	if got := p.playerDamageAmount(.1, slow); math.Abs(got-.05) > 1e-12 {
+		t.Fatalf("slow zombie: %v, want 0.05", got)
+	}
+	if got := p.playerDamageAmount(.1, fast); math.Abs(got-.01) > 1e-12 {
+		t.Fatalf("fast zombie: %v, want 0.01", got)
 	}
 }

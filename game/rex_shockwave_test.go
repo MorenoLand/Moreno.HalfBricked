@@ -183,7 +183,7 @@ func TestRexShockwaveHurtsButDoesNotPushThePlayer(t *testing.T) {
 	}
 	// The wave reaches the player (19.2 + size*.5 > 40/.667 = 60) at tick 9
 	// (size 90): ticks 9..12 hurt.
-	if want := 1 - 4*0.025; math.Abs(p.health-want) > 1e-9 {
+	if want := 1 - 4*0.025/2; math.Abs(p.health-want) > 1e-9 { // halved by the 1.2.5 damage routine
 		t.Fatalf("health %v, want %v (0.025 per overlapping tick)", p.health, want)
 	}
 	// The native velocity add is overwritten by the player update before use.
@@ -205,8 +205,9 @@ func TestRexShockwaveHurtsButDoesNotPushThePlayer(t *testing.T) {
 	for frame := 0; frame < 70; frame++ {
 		p.updateRexShockwaves()
 	}
-	if p.health > 0 {
-		t.Fatalf("player at the wave centre survived with %v", p.health)
+	// 1.2.5 halves every amount, so the whole wave costs about 0.58 instead of killing outright.
+	if p.health > .5 {
+		t.Fatalf("player at the wave centre only lost down to %v", p.health)
 	}
 	r2 := newRexRig(t, nil, 500, 500)
 	r2.p.x, r2.p.y = 500+330, 500

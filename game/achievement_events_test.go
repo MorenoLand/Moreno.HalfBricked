@@ -416,7 +416,7 @@ func TestBuzzsawShieldKillsNeedShield(t *testing.T) {
 	}
 	r.tick(int(shieldDuration*60) + 5)
 	r.p.damagePlayer(0, .5)
-	if r.p.health != .5 {
+	if r.p.health != .75 { // 1.2.5 halves every amount
 		t.Fatal("shield never expired")
 	}
 }

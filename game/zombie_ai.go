@@ -351,6 +351,6 @@ func (p *playState) zombieContact(z *zombieState, prey playerTarget, dt float64)
 	reach := zombieBodyReachFactor*z.size.X + zombieBodyReachFactor*entityGridPlayerBody
 	overlap := reach - math.Hypot(prey.x-z.x, prey.y-z.y)
 	if overlap > zombieContactDepth*entityGridPlayerBody {
-		p.damagePlayer(prey.index, dt*zombieContactDamage)
+		p.damagePlayerFrom(prey.index, dt*zombieContactDamage, z)
 	}
 }

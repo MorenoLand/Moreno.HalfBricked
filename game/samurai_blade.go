@@ -3,7 +3,6 @@ package game
 import (
 	"math"
 
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -23,7 +22,6 @@ const (
 	spinnerDrawScale    = float32(1.2)   // draw square = 26.5 * 1.2
 	spinnerLifeFraction = float32(.55)   // 0x3f0ccccd
 	spinnerDamage       = float32(.333)  // 0x3eaa7efa
-	spinnerDamage125    = float32(.5)    // FUN_000f2208 halves it (DAT_000f258c)
 	spinnerReachScale   = float32(.3)    // DAT_000a63d0, times the player width 64
 	spinnerWidthReach   = float32(.5)    // times the blade width
 	spinnerAspect       = float32(.666)  // 0x3f2a7efa
@@ -113,13 +111,9 @@ func (p *playState) fireSpinner(z *zombieState, heading uint16, half int, lift, 
 	return half
 }
 
-// spinnerDamageFor is the health one blade takes: 0.333 in v7, halved by FUN_000f2208 in 1.2.5.
-func (p *playState) spinnerDamageFor() float64 {
-	if p.waveBuild() == content.WaveBuild125 {
-		return float64(spinnerDamage * spinnerDamage125)
-	}
-	return float64(spinnerDamage)
-}
+// spinnerDamageFor is the amount a blade deals: 0.333. The 1.2.5 halving (FUN_000f2208) is applied for every hit
+// in damagePlayerFrom.
+func (p *playState) spinnerDamageFor() float64 { return float64(spinnerDamage) }
 
 // updateSpinners advances every blade one frame (FUN_000a5f74): age and height, the orbit move, the end tests, then
 // the player ellipse test.

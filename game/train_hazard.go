@@ -115,7 +115,7 @@ const (
 	trainWhistleTwo  = 1.3   // second whistle (DAT_000fd678)
 	trainDamage      = 500.0 // vtable +0x68 call on zombies
 	trainPlayerBlow  = 1.0   // FUN_000f2208 argument; the callee halves it (DAT_000f258c = 0.5)
-	trainPlayerScale = 0.5
+	trainPlayerScale = 1.0 // the 1.2.5 halving is applied for every hit in damagePlayerFrom
 
 	// FUN_000fd5e8 starts SFX 0x3a (train_chug) once through the 8-slot sound API
 	// FUN_0012d618 and keeps the returned handle until the train is no longer

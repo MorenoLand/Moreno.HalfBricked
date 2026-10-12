@@ -153,7 +153,7 @@ func TestZombieBlastHurtsPlayerInsideOnly(t *testing.T) {
 	if p.health >= 1 {
 		t.Fatal("player next to the blast took no damage")
 	}
-	want := 1 - 3.0/60*float64(zombieBlastWindowTicks(0, 20))
+	want := 1 - .5*3.0/60*float64(zombieBlastWindowTicks(0, 20)) // 1.2.5 halves every amount
 	if math.Abs(p.health-want) > .02 {
 		t.Fatalf("health %.3f, want about %.3f (3 health/s for the shrinking-radius window)", p.health, want)
 	}

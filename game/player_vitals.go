@@ -28,6 +28,11 @@ const (
 	playerRegenRate125   = .25 // 1.2.5 FUN_000f3280 DAT_000f3700
 	playerRegenBaseDelay = .5  // v7 DAT_00095044: delay = (1 - health) + 0.5
 	playerRegenDelay125  = 1.0 // 1.2.5 FUN_000f2208: fixed 1.0 s after a damaging hit
+	// 1.2.5 FUN_000f2208 scales every amount by 0.5 (DAT_000f258c) and divides by 5.0 (DAT_000f2598) when the source
+	// is a zombie of type 2..9 whose +0x280 (XML speed * 1.1, exploding * 1.25 more) / 180 exceeds 0.9.
+	playerDamageScale125   = .5
+	playerFastSourceDiv125 = 5.0
+	playerFastSourceLimit  = .9
 	playerRespawnGraceMS = 1500
 	playerSpeedBoostTime = 2.0
 	playerSpeedBoostMax  = 2.0
@@ -38,6 +43,42 @@ type playerVitals struct {
 	regenDelay float64 // +0x98 while alive
 	speedBoost float64 // +0x3e8
 	invulnMS   int     // +0x94
+	// The bleed (v7 +0x9c / +0xa0, 1.2.5 FUN_000f3280 0xf3734-0xf3784). A damaging hit that has a source starts
+	// seven more damage calls of dt each, once the counter has rested at -700 (about 0.93 s since the last
+	// trigger): the hit hurts a little longer than its own frame and keeps the regeneration delay running.
+	bleeding  bool
+	bleedCtr  int
+	bleedInit bool
+}
+
+const bleedRest = -700 // the counter's resting value; a hit may trigger the bleed only here
+
+// triggerBleed is the hit side: with the counter at rest the bleed starts.
+func (v *playerVitals) triggerBleed() {
+	if !v.bleedInit {
+		v.bleedCtr, v.bleedInit = bleedRest, true
+	}
+	if v.bleedCtr <= bleedRest {
+		v.bleeding, v.bleedCtr = true, 1
+	}
+}
+
+// stepBleed is the per-frame side. It reports the damage to apply this frame (0 when none).
+func (v *playerVitals) stepBleed(dt float64) float64 {
+	if !v.bleedInit {
+		v.bleedCtr, v.bleedInit = bleedRest, true
+	}
+	if v.bleeding {
+		v.bleedCtr = int(float32(v.bleedCtr) + float32(dt)*1000)
+		if v.bleedCtr > 99 {
+			v.bleeding = false
+		}
+		return dt
+	}
+	if v.bleedCtr >= bleedRest+1 {
+		v.bleedCtr = max(bleedRest, int(float32(v.bleedCtr)-float32(dt)*1000))
+	}
+	return 0
 }
 
 // stepVitals runs once per frame for the active body.
@@ -51,6 +92,18 @@ func (p *playState) stepVitals(dt float64) {
 		return
 	}
 	v.speedBoost = math.Max(0, v.speedBoost-dt)
+	if dot := v.stepBleed(dt); dot > 0 && v.invulnMS <= 0 && !p.cheats.god && !p.shielded() {
+		// The damage routine runs again with the frame time and no source (so it cannot re-trigger itself): halved
+		// in 1.2.5 like every hit, and it restarts the regeneration delay.
+		if p.waveBuild() != content.WaveBuildV7 {
+			dot *= playerDamageScale125
+		}
+		p.health = math.Max(0, p.health-dot)
+		v.noteHit(p.health, p.waveBuild())
+		if p.health <= 0 {
+			return
+		}
+	}
 	if v.regenDelay > 0 {
 		v.regenDelay -= dt
 		return

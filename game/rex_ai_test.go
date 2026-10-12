@@ -30,8 +30,8 @@ func TestRexContactDamageIsThreeTimesPointZeroFivePerSecond(t *testing.T) {
 	for tick := 0; tick < 60; tick++ {
 		p.rexContact(r.rex(), state, 1.0/60)
 	}
-	if lost := 1 - p.health; math.Abs(lost-0.15) > 1e-9 {
-		t.Fatalf("contact cost %.6f health in one second, want 0.15 (3 x 0.05)", lost)
+	if lost := 1 - p.health; math.Abs(lost-0.075) > 1e-9 {
+		t.Fatalf("contact cost %.6f health in one second, want 0.075 (3 x 0.05, halved by the 1.2.5 damage routine)", lost)
 	}
 	p.health = 1
 	r.rex().x = 600 + 58 // just outside 0.3 * (128 + 64)
@@ -321,8 +321,8 @@ func TestRexVenomLandsAsAPuddleAndHurtsTheBarelyAtAll(t *testing.T) {
 	p.x, p.y = 900, 900 // step into the puddle
 	p.rex.venom[0].life = 1.5
 	p.updateRexVenom()
-	if lost := 1 - p.health; math.Abs(lost-rexVenomDamage) > 1e-12 {
-		t.Fatalf("puddle tick cost %v, want 0.0005", lost)
+	if lost := 1 - p.health; math.Abs(lost-rexVenomDamage/2) > 1e-12 {
+		t.Fatalf("puddle tick cost %v, want 0.00025 (0.0005 halved by the 1.2.5 damage routine)", lost)
 	}
 	for tick := 0; tick < 100 && len(p.rex.venom) > 0; tick++ {
 		p.updateRexVenom()
