@@ -106,6 +106,7 @@ type Pack struct {
 	source          AssetSource
 	audioOnce       sync.Once
 	audioIndex      map[string]string
+	audioPaths      map[string]bool // every .ogg path the manifest lists, lower case
 	manifest        PackManifest
 	levels          map[string]formats.Level
 	variables       formats.FrontendVariables
@@ -277,6 +278,13 @@ func (p *Pack) TexturePaths() map[string]string {
 	return out
 }
 func (p *Pack) Open(path string) (io.ReadCloser, error) {
+	if _, remote := p.source.(Prefetcher); remote {
+		// Over HTTP a path that does not exist is a wasted round trip (the server may even answer 500 and make
+		// the caller retry for seconds): resolve the older audio spellings to the real file first.
+		if alternate, ok := p.audioFallback(path); ok && !p.audioPaths[strings.ToLower(filepath.ToSlash(path))] {
+			path = alternate
+		}
+	}
 	reader, err := p.source.Open(path)
 	if err == nil {
 		return reader, nil
@@ -296,6 +304,7 @@ func (p *Pack) audioFallback(path string) (string, bool) {
 		return "", false
 	}
 	p.audioOnce.Do(func() {
+		p.audioPaths = map[string]bool{}
 		keys := make([]string, 0, len(p.manifest.Files))
 		for key := range p.manifest.Files {
 			keys = append(keys, key)
@@ -307,6 +316,7 @@ func (p *Pack) audioFallback(path string) (string, bool) {
 			if !strings.EqualFold(filepath.Ext(value), ".ogg") {
 				continue
 			}
+			p.audioPaths[strings.ToLower(filepath.ToSlash(value))] = true
 			base := strings.ToLower(strings.TrimSuffix(filepath.Base(filepath.ToSlash(value)), filepath.Ext(value)))
 			if _, taken := p.audioIndex[base]; !taken {
 				p.audioIndex[base] = value

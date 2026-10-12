@@ -225,7 +225,7 @@ const fetchAttempts = 6
 
 func retryableFetch(err error) bool {
 	message := err.Error()
-	for _, code := range []string{"HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"} {
+	for _, code := range []string{"HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504"} {
 		if strings.Contains(message, code) {
 			return true
 		}
