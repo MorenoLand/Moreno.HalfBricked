@@ -34,17 +34,7 @@ func (a *app) prefetchSelectedLevel() {
 	}
 	switch st.stage {
 	case 0:
-		paths := []string{content.LevelPath(info.ID)}
-		if name, ok := a.pack.ScriptPath(entryScriptPath(info)); ok {
-			paths = append(paths, name)
-		}
-		if name, ok := a.pack.ScriptPath(survivalIntroScript); ok {
-			paths = append(paths, name)
-		}
-		if path, _, ok := levelMusicTrack(info); ok {
-			paths = append(paths, path)
-		}
-		a.pack.Prefetch(paths)
+		a.pack.Prefetch(a.levelEarlyPaths(info))
 		st.stage = 1
 	case 1:
 		if !a.pack.LevelLoaded(info.ID) && !a.pack.PrefetchReady(content.LevelPath(info.ID)) {
@@ -58,6 +48,21 @@ func (a *app) prefetchSelectedLevel() {
 		a.pack.Prefetch(a.levelAssetPaths(level, info))
 		st.stage = 2
 	}
+}
+
+// levelEarlyPaths are the files known from the catalogue alone: the level JSON (first), its scripts and music.
+func (a *app) levelEarlyPaths(info formats.LevelInfo) []string {
+	paths := []string{content.LevelPath(info.ID)}
+	if name, ok := a.pack.ScriptPath(entryScriptPath(info)); ok {
+		paths = append(paths, name)
+	}
+	if name, ok := a.pack.ScriptPath(survivalIntroScript); ok {
+		paths = append(paths, name)
+	}
+	if path, _, ok := levelMusicTrack(info); ok {
+		paths = append(paths, path)
+	}
+	return paths
 }
 
 // levelAssetPaths lists what a level shows beyond its JSON: the tileset atlas, the common and world textures.

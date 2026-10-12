@@ -80,6 +80,14 @@ func (p *Pack) PrefetchReady(path string) bool {
 	return true
 }
 
+// PrefetchPending counts how many of the paths are queued or in flight for download (0 where nothing prefetches).
+func (p *Pack) PrefetchPending(paths []string) int {
+	if counter, ok := p.source.(interface{ Pending(paths []string) int }); ok {
+		return counter.Pending(paths)
+	}
+	return 0
+}
+
 // LevelPath is the path Load opens for a level id.
 func LevelPath(id string) string { return filepath.ToSlash(filepath.Join("levels", id+".json")) }
 

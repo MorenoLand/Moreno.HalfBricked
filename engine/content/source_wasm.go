@@ -31,9 +31,45 @@ type prefetcher struct {
 	pending map[string]chan struct{}
 	queue   []string
 	workers int
+	// Request budget. The server limits one client to about 10 requests per second after a short burst
+	// (nginx limit_req, 503 beyond it), and answering 503 made every blocked request sleep through its retry
+	// pause. Background fetches therefore spend tokens at a steady rate, so the file the game loop is waiting
+	// for is never queued behind a rejected burst.
+	tokens float64
+	refill time.Time
 }
 
-const prefetchWorkers = 4
+const (
+	prefetchWorkers = 4
+	prefetchRate    = 7.0  // sustained background requests per second
+	prefetchBurst   = 20.0 // tokens in a full bucket
+	prefetchDebt    = -30.0
+)
+
+// take spends one token and returns how long the caller must wait before it may send its request (0 = now).
+// urgent requests (the game loop is blocked on them) never wait; they only push the balance into debt so the
+// background fetches slow down in turn.
+func (pf *prefetcher) take(urgent bool) time.Duration {
+	pf.mu.Lock()
+	defer pf.mu.Unlock()
+	now := time.Now()
+	if pf.refill.IsZero() {
+		pf.tokens, pf.refill = prefetchBurst, now
+	}
+	pf.tokens = min(prefetchBurst, pf.tokens+now.Sub(pf.refill).Seconds()*prefetchRate)
+	pf.refill = now
+	if urgent {
+		pf.tokens = max(prefetchDebt, pf.tokens-1)
+		return 0
+	}
+	if pf.tokens >= 1 {
+		pf.tokens--
+		return 0
+	}
+	wait := time.Duration((1 - pf.tokens) / prefetchRate * float64(time.Second))
+	pf.tokens--
+	return wait
+}
 
 func NewSource(root string) AssetSource {
 	if root == "" {
@@ -86,6 +122,19 @@ func (s webSource) Prefetch(paths []string) {
 	pf.mu.Unlock()
 }
 
+// Pending counts the paths still queued or downloading.
+func (s webSource) Pending(paths []string) int {
+	s.pf.mu.Lock()
+	defer s.pf.mu.Unlock()
+	count := 0
+	for _, path := range paths {
+		if _, ok := s.pf.pending[path]; ok {
+			count++
+		}
+	}
+	return count
+}
+
 // Ready reports whether a prefetched file has arrived and not been taken yet.
 func (s webSource) Ready(path string) bool {
 	s.pf.mu.Lock()
@@ -107,6 +156,9 @@ func (s webSource) prefetchWorker() {
 		pf.queue = pf.queue[1:]
 		done := pf.pending[path]
 		pf.mu.Unlock()
+		if wait := pf.take(false); wait > 0 {
+			time.Sleep(wait)
+		}
 		value, err := fetchRetry(s.target(path))
 		pf.mu.Lock()
 		if err == nil {
@@ -129,11 +181,23 @@ func (s webSource) Open(path string) (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(value)), nil
 	}
 	done, inflight := pf.pending[path]
+	// Still waiting in the queue (no worker has it): take it out and fetch it now instead of letting the caller
+	// sit behind the rest of the queue.
+	queued := false
+	if inflight {
+		for i, queuedPath := range pf.queue {
+			if queuedPath == path {
+				pf.queue = append(pf.queue[:i:i], pf.queue[i+1:]...)
+				queued = true
+				break
+			}
+		}
+	}
 	pf.mu.Unlock()
 	// From here the caller (usually the game loop) is blocked on the network; report how long.
 	waitStart := time.Now()
 	defer perfmark.Since("fetch "+path, waitStart)
-	if inflight {
+	if inflight && !queued {
 		<-done
 		pf.mu.Lock()
 		value, ok := pf.data[path]
@@ -143,7 +207,14 @@ func (s webSource) Open(path string) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(value)), nil
 		}
 	}
+	pf.take(true)
 	value, err := fetchRetry(s.target(path))
+	if queued {
+		pf.mu.Lock()
+		delete(pf.pending, path)
+		pf.mu.Unlock()
+		close(done)
+	}
 	if err != nil {
 		return nil, err
 	}

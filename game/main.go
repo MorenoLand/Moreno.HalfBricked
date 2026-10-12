@@ -46,6 +46,7 @@ type app struct {
 	lastPlayed                                   map[string]string // last_played.go
 	completed                                    map[string]bool   // story levels finished (survival_gate.go)
 	levelPrefetch                                levelPrefetchState // level_prefetch.go
+	loading                                      *loadingGate       // loading_gate.go
 	depthBand                                    viewer.EntityBand
 	depthBandActive                              bool
 	perf                                         perfCounters // perf_overlay.go
@@ -490,15 +491,16 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	game.applyExtras()
 	game.sound.MusicEnabled(!silent && game.options.music)
 	if runtime.GOOS == "js" && !silent {
-		game.prefetchMenus()
+		menuPaths := game.menuPaths()
+		game.beginLoading("LOADING", func() []string { return menuPaths }, nil)
 	}
 	return game, nil
 }
 
-// prefetchMenus starts the background download of the menu art (title, main menu, level select, shop) so the
-// menus do not stall on one HTTP request per first-drawn texture in the browser.
-func (a *app) prefetchMenus() {
-	var paths []string
+// menuPaths lists the menu art (title, main menu, level select, shop) and the menu sounds, sounds first: the game
+// holds a loading screen until they are in, so the menus never stall on one HTTP request per first-drawn texture.
+func (a *app) menuPaths() []string {
+	var paths, sounds []string
 	for _, path := range a.pack.TexturePaths() {
 		lower := strings.ToLower(filepath.ToSlash(path))
 		if strings.Contains(lower, "/frontend0/") || strings.Contains(lower, "/shopfront0/") {
@@ -506,7 +508,13 @@ func (a *app) prefetchMenus() {
 		}
 	}
 	sort.Strings(paths)
-	a.pack.Prefetch(paths)
+	// The menu sounds go first: a click plays one at once, and its first play would otherwise be a blocking fetch.
+	for _, path := range a.pack.SFXPaths() {
+		if strings.Contains(strings.ToLower(filepath.Base(path)), "menu_") {
+			sounds = append(sounds, path)
+		}
+	}
+	return append(sounds, paths...)
 }
 func (a *app) playSound(path string, volume float64) {
 	if a == nil || a.silent || !a.options.sound || a.sound == nil {
@@ -551,6 +559,9 @@ func (a *app) Update() error {
 	if a.startupFrames > 0 {
 		a.startupFrames--
 		return nil
+	}
+	if a.loading != nil {
+		return a.updateLoading()
 	}
 	if a.net != nil && !a.net.lobby && a.play == nil {
 		a.leaveNet("game over")
@@ -1073,6 +1084,10 @@ func (a *app) Draw(screen *ebiten.Image) {
 	}
 	a.frontendScaleX = float64(screen.Bounds().Dx()) / logicalWidth
 	a.frontendScaleY = float64(screen.Bounds().Dy()) / logicalHeight
+	if a.loading != nil {
+		a.drawLoading(screen)
+		return
+	}
 	if a.play != nil && a.view == nil && !a.titleScreen && a.page != 3 && a.page != 4 && a.page != 5 && a.page != 6 && a.page != creditsPage && a.startupFrames <= 0 {
 		screen.Fill(color.Black)
 	} else {
@@ -2533,6 +2548,9 @@ func (a *app) activate() error {
 			return a.openViewer()
 		}
 		a.coopPlayers = 0
+		if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), func() error { a.coopPlayers = 0; return a.openPlay() }) {
+			return nil
+		}
 		return a.openPlay()
 	}
 	return nil
@@ -2547,11 +2565,17 @@ func (a *app) activateCoop() error {
 		return nil
 	}
 	a.coopPlayers, a.coopDesktopPad = launch.players, launch.desktopPad
-	if err := a.openPlay(); err != nil {
-		a.coopPlayers = 0
-		return err
+	start := func() error {
+		if err := a.openPlay(); err != nil {
+			a.coopPlayers = 0
+			return err
+		}
+		return nil
 	}
-	return nil
+	if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), start) {
+		return nil
+	}
+	return start()
 }
 func (a *app) drawDetails(screen *ebiten.Image) {
 	if a.page == 0 {
