@@ -120,3 +120,22 @@ func TestV7WaveBannerDrawsNoMainLineOnItsCache(t *testing.T) {
 		t.Fatalf("v7 banner: %+v native=%v", line, p.banner.native)
 	}
 }
+
+// A level's trailing wave with no zombies (World0Level0: 20, 20, 40, 53, 0) gets no title, no rest and no
+// "complete" line: the wave before it ends the level.
+func TestEmptyLastWaveSaysNothing(t *testing.T) {
+	p := script125CachedHost(t, "world0_level0").play
+	p.closeScript()
+	last := len(p.world.Level.Waves) - 1
+	if p.waveZombieCount(last) != 0 {
+		t.Skipf("last wave of world0_level0 has %d zombies", p.waveZombieCount(last))
+	}
+	p.waveIndex = last
+	p.noteWave()
+	if p.banner.active {
+		t.Fatalf("the empty last wave announced itself: %+v", p.banner)
+	}
+	if !p.waveTailEmpty(last) || p.waveTailEmpty(last-1) {
+		t.Fatal("waveTailEmpty is wrong at the tail")
+	}
+}

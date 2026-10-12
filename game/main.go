@@ -4392,7 +4392,7 @@ func (p *playState) updateWaves() {
 		if next < 1 {
 			next = p.waveIndex + 1
 		}
-		if next < len(p.world.Level.Waves) && waveEndRule == waveEndAllDead && portWaveBreather > 0 && !p.wavePendingStarted {
+		if next < len(p.world.Level.Waves) && waveEndRule == waveEndAllDead && portWaveBreather > 0 && !p.wavePendingStarted && !p.waveTailEmpty(next) {
 			p.wavePendingStarted = true
 			p.wavePending = portWaveBreather
 			p.banner = waveBanner{active: true, from: p.waveIndex + 1, finished: true, count: p.waveIndex + 1, native: p.waveBuild() != content.WaveBuildV7}
@@ -4407,7 +4407,7 @@ func (p *playState) updateWaves() {
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
-			if waveEndRule == waveEndAllDead && portWaveBreather > 0 {
+			if waveEndRule == waveEndAllDead && portWaveBreather > 0 && !p.waveTailEmpty(next) {
 				// The complete line already showed during the rest: only the new wave's title comes now.
 				p.bannerSeen = p.waveIndex
 				p.startBanner(0, p.waveIndex+1)

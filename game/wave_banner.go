@@ -79,12 +79,33 @@ func (p *playState) waveZombieCount(index int) int {
 	return total
 }
 
+// waveTailEmpty reports whether no wave from index on spawns a zombie: the trailing empty wave most story levels end
+// with (pickups only; World0Level0 is 20, 20, 40, 53, 0). It clears the moment it starts, so announcing it,
+// resting before it and calling it complete only put "WAVE 5", "WAVE 5 COMPLETE" and "LEVEL COMPLETE" in a row
+// over an empty zombie bar.
+func (p *playState) waveTailEmpty(index int) bool {
+	if p.world == nil || index < 0 || index >= len(p.world.Level.Waves) {
+		return false
+	}
+	for i := index; i < len(p.world.Level.Waves); i++ {
+		if p.waveZombieCount(i) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // noteWave starts a banner whenever the running wave changes.
 func (p *playState) noteWave() {
 	if p.world == nil {
 		return
 	}
 	waves := len(p.world.Level.Waves)
+	if p.waveIndex > 0 && p.waveTailEmpty(p.waveIndex) {
+		// The last wave brings nothing: the level is over once the wave before it is cleared, so say nothing.
+		p.wavesStarted, p.bannerSeen, p.banner = true, p.waveIndex, waveBanner{}
+		return
+	}
 	if !p.wavesStarted {
 		p.wavesStarted, p.bannerSeen = true, p.waveIndex
 		p.startBanner(0, p.waveIndex+1)
