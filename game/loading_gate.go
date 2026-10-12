@@ -23,6 +23,10 @@ type loadingGate struct {
 	total int
 	next  func() error
 	began time.Time
+	// The bar is drawn from real elapsed time, not from a count per frame: the display's refresh rate is not 60 Hz
+	// and Draw runs at it, so a per-frame step made the shine and the portal turn at the refresh rate's pace.
+	last  time.Time
+	shown float64 // the fill drawn: eases toward the real progress and never moves backwards
 }
 
 // loadingGiveUp is how long the gate waits before it goes on with whatever has not arrived (those files are then
@@ -85,7 +89,13 @@ func formatBytes(n int64) string {
 // a moving shine, the file and megabyte counts, and a tip.
 func (a *app) drawLoading(screen *ebiten.Image) {
 	gate := a.loading
-	a.menuTime += 1.0 / 60.0 // Update does not run while the gate is up; the portal and the shine keep moving
+	now := time.Now()
+	dt := 1.0 / 60.0
+	if !gate.last.IsZero() {
+		dt = min(.1, now.Sub(gate.last).Seconds())
+	}
+	gate.last = now
+	a.menuTime += dt // Update does not run while the gate is up; the portal and the shine keep moving
 	screen.Fill(color.RGBA{10, 8, 14, 255})
 	a.drawBackdrop(screen)
 	a.drawMainMenuBanner(screen)
@@ -115,6 +125,15 @@ func (a *app) drawLoading(screen *ebiten.Image) {
 		done = float64(bytesTotal-bytesLeft) / float64(bytesTotal)
 	}
 	done = min(1, max(0, done))
+	// The list grows once the level JSON arrives (the textures are added), which would pull the raw progress
+	// back: the drawn fill only goes forward, and eases toward the target instead of jumping.
+	if done > gate.shown {
+		gate.shown += (done - gate.shown) * (1 - math.Exp(-7*dt))
+		if done-gate.shown < .002 {
+			gate.shown = done
+		}
+	}
+	done = gate.shown
 
 	subtitle, tip := "", loadingTips[int(a.menuTime/4)%len(loadingTips)]
 	if levels := a.filteredLevels(); gate.label == "LOADING LEVEL" && a.level >= 0 && a.level < len(levels) {
