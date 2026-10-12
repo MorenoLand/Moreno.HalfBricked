@@ -45,3 +45,6 @@ func (a *app) survivalGateLocked(item formats.LevelInfo) bool {
 	}
 	return hasStory
 }
+
+// storyWaveHUD is the -story-wave-hud flag (see drawGameHUD).
+var storyWaveHUD = true

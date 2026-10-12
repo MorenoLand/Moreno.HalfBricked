@@ -2771,9 +2771,10 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 		multiplierY = 5
 	}
 	a.drawComboHUD(screen, multiplierX, multiplierY)
-	// Native draws wave text only in survival (v7 FUN_000d0a64, 1.2.5 FUN_00133f54); story levels, boss fights
-	// included, show none (Research/native/boss-wave-counter-2026-10-11.md).
-	survivalHUD := a.play.isSurvival()
+	// Native draws wave text only in survival (v7 FUN_000d0a64, 1.2.5 FUN_00133f54); story levels show none
+	// (Research/native/boss-wave-counter-2026-10-11.md). The port has always shown the counter in story too, and
+	// keeps doing so (PORT ADDITION, -story-wave-hud=false restores the native HUD).
+	survivalHUD := a.play.isSurvival() || storyWaveHUD
 	if survivalHUD {
 		a.drawWaveBanner(screen)
 	}
@@ -5522,6 +5523,7 @@ func Run() {
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
+	storyHUD := flag.Bool("story-wave-hud", true, "show the wave counter and banners in story levels too (port addition; native shows them in survival only)")
 	survivalGate := flag.Bool("survival-gate", true, "keep a world's survival maps locked until that world is reached in story mode (port addition)")
 	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
@@ -5536,6 +5538,7 @@ func Run() {
 	portSceneCarFix = *sceneCarFix
 	portWaveBreather = math.Max(0, *waveGap)
 	survivalStoryGate = *survivalGate
+	storyWaveHUD = *storyHUD
 	discordAppID = *discordID
 	switch *waveEnd {
 	case "all-dead":
