@@ -17,8 +17,23 @@ import (
 )
 
 type webSource struct {
-	base string
-	pf   *prefetcher
+	base  string
+	pf    *prefetcher
+	sizes *sizeTable
+}
+
+// sizeTable holds the optional sizes.json (file path -> bytes) fetched in the background after start-up.
+type sizeTable struct {
+	mu    sync.Mutex
+	bytes map[string]int64
+}
+
+// Size reports a file's size once sizes.json has arrived.
+func (s webSource) Size(path string) (int64, bool) {
+	s.sizes.mu.Lock()
+	defer s.sizes.mu.Unlock()
+	n, ok := s.sizes.bytes[path]
+	return n, ok
 }
 
 // prefetcher fetches files in the background with a small, fixed number of requests in flight. Every Open used
@@ -75,7 +90,22 @@ func NewSource(root string) AssetSource {
 	if root == "" {
 		root = "data"
 	}
-	return webSource{base: strings.TrimRight(root, "/") + "/", pf: &prefetcher{data: map[string][]byte{}, pending: map[string]chan struct{}{}}}
+	source := webSource{base: strings.TrimRight(root, "/") + "/", pf: &prefetcher{data: map[string][]byte{}, pending: map[string]chan struct{}{}}, sizes: &sizeTable{}}
+	go func() {
+		// Optional: without sizes.json the loading screen counts files only.
+		value, err := fetchBytes(source.target("sizes.json"))
+		if err != nil {
+			return
+		}
+		table := map[string]int64{}
+		if json.Unmarshal(value, &table) != nil {
+			return
+		}
+		source.sizes.mu.Lock()
+		source.sizes.bytes = table
+		source.sizes.mu.Unlock()
+	}()
+	return source
 }
 
 func (s webSource) target(path string) string {

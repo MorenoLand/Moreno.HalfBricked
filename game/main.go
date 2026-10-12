@@ -717,8 +717,8 @@ func (a *app) Update() error {
 		}
 		a.play.controlWidth, a.play.controlHeight = a.outputWidth, a.outputHeight
 		pointerX, pointerY := a.pointer()
-		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
-		a.play.secondaryButtonJustPressed = uiKeyJustPressed(ebiten.KeyG) || uiKeyJustPressed(ebiten.KeyQ) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonDown = ebiten.IsKeyPressed(ebiten.KeyG) || ebiten.IsKeyPressed(ebiten.KeyQ) || ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
+		a.play.secondaryButtonJustPressed = uiKeyJustPressed(ebiten.KeyG) || uiKeyJustPressed(ebiten.KeyQ) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || (a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft))
 		a.play.secondaryPointerDown = a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 		if uiKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {

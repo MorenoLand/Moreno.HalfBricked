@@ -100,6 +100,15 @@ func (p *Pack) PrefetchReady(path string) bool {
 	return true
 }
 
+// FileSize is the size in bytes of a pack file when the source knows it (the browser source reads sizes.json,
+// written next to pack.json by scripts/web-sizes.py).
+func (p *Pack) FileSize(path string) (int64, bool) {
+	if sizer, ok := p.source.(interface{ Size(path string) (int64, bool) }); ok {
+		return sizer.Size(p.remotePath(path))
+	}
+	return 0, false
+}
+
 // PrefetchPending counts how many of the paths are queued or in flight for download (0 where nothing prefetches).
 func (p *Pack) PrefetchPending(paths []string) int {
 	if counter, ok := p.source.(interface{ Pending(paths []string) int }); ok {
