@@ -2537,7 +2537,7 @@ func (a *app) activate() error {
 		case 3:
 			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
 		case 4:
-			a.askNativeQuit(func() error { return ebiten.Termination })
+			a.askNativeQuit(quitGame)
 		}
 	case 2:
 		levels := a.filteredLevels()
