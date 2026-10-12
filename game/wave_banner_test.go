@@ -51,9 +51,9 @@ func TestWaveBannerAfterTheLastWave(t *testing.T) {
 	p.noteWave()
 	p.waveIndex = len(p.world.Level.Waves)
 	p.noteWave()
-	line, ok := p.banner.line()
-	if !ok || line.text == "" || !p.banner.finished {
-		t.Fatalf("clearing every wave should say so: %+v", p.banner)
+	// No "WAVE n COMPLETE" between the last wave and the level's own LEVEL COMPLETE.
+	if _, ok := p.banner.line(); ok || p.banner.active {
+		t.Fatalf("no banner after the last wave: %+v", p.banner)
 	}
 }
 

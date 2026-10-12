@@ -96,7 +96,9 @@ func (p *playState) noteWave() {
 	from := p.bannerSeen + 1
 	p.bannerSeen = p.waveIndex
 	if p.waveIndex >= waves {
-		p.banner = waveBanner{active: true, from: from, finished: true, count: p.banner.count, native: p.banner.native}
+		// The last wave is cleared and no wave follows: the level's own "LEVEL COMPLETE" is next, so no
+		// "WAVE n COMPLETE" line goes in between (it showed with an empty zombie bar right before it).
+		p.banner = waveBanner{}
 		return
 	}
 	p.startBanner(from, p.waveIndex+1)
