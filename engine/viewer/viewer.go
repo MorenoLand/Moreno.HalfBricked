@@ -1,12 +1,12 @@
 package viewer
 
 import (
-	"strings"
 	"encoding/json"
 	"fmt"
 	"image/color"
 	"math"
 	"sort"
+	"strconv"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/hajimehoshi/ebiten/v2"
@@ -43,6 +43,7 @@ type Viewer struct {
 	SelectedID                 uint32
 	SelectedLayer              formats.LayerKind
 	inputWidth                 int
+	drawTrace                  func(label string)
 	inputHeight                int
 }
 
@@ -177,32 +178,18 @@ func (v *Viewer) Update() {
 func (v *Viewer) Draw(screen *ebiten.Image) {
 	v.DrawWithEntities(screen, nil)
 }
+// DrawWithEntities draws the level with every entity in the last depth band (the callback is called once, after the
+// y-sorted tile rows and props). The game uses DrawWithEntityBands.
 func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Image)) {
-	screen.Fill(color.Black)
-	tileSize := v.tileSize()
-	for _, kind := range formats.BaseRenderLayerKinds {
-		if v.Layers[kind] {
-			v.drawLayer(screen, kind, tileSize)
+	var bands func(*ebiten.Image, EntityBand)
+	if entities != nil {
+		bands = func(target *ebiten.Image, band EntityBand) {
+			if band.Last {
+				entities(target)
+			}
 		}
 	}
-	if v.Props {
-		v.drawProps(screen, false)
-	}
-	if entities != nil {
-		entities(screen)
-	}
-	if v.Layers[formats.LayerH] {
-		v.drawLayer(screen, formats.LayerH, tileSize)
-	}
-	if v.Props {
-		v.drawProps(screen, true)
-	}
-	if v.Layers[formats.LayerC] {
-		v.drawCollision(screen, tileSize)
-	}
-	if v.Grid {
-		v.drawGrid(screen, tileSize)
-	}
+	v.DrawWithEntityBands(screen, bands)
 	if v.Debug {
 		scaleX, scaleY := v.renderScale()
 		ebitenutil.DrawRect(screen, 0, 0, 480*scaleX, 38*scaleY, color.RGBA{0, 0, 0, 185})
@@ -210,8 +197,22 @@ func (v *Viewer) DrawWithEntities(screen *ebiten.Image, entities func(*ebiten.Im
 		ebitenutil.DebugPrintAt(screen, "1:G 2:D 3:H 4:HB 5:C P:props G:grid R:fit F1:debug", int(4*scaleX), int(20*scaleY))
 	}
 }
-func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize int) {
+// allRows is the row range of drawLayer for a whole layer.
+const allRows = math.MaxInt32
+
+// drawLayer draws the rows [rowFrom, rowTo) of a tile layer that are inside the camera, as one DrawTriangles batch
+// (native draws the H layer as one draw object per row, FUN_000c03d0).
+func (v *Viewer) drawLayer(screen *ebiten.Image, kind formats.LayerKind, tileSize, rowFrom, rowTo int) {
 	minX, minY, maxX, maxY := v.visibleBounds(tileSize)
+	if rowFrom > minY {
+		minY = rowFrom
+	}
+	if rowTo < maxY {
+		maxY = rowTo
+	}
+	if maxY <= minY || maxX <= minX {
+		return
+	}
 	vertices := make([]ebiten.Vertex, 0, (maxX-minX)*(maxY-minY)*4)
 	indices := make([]uint16, 0, (maxX-minX)*(maxY-minY)*6)
 	for y := minY; y < maxY; y++ {
@@ -334,29 +335,6 @@ func collisionColor(value uint32) color.RGBA {
 	}
 }
 
-// tallPropHeight is the lift (in tiles) from which a prop is a tree-like canopy
-// that stands over the high-layer tiles instead of under them.
-const tallPropHeight = 3.0
-
-// isCanopyProp reports whether a prop is drawn over the entities. A prop tall enough to be one (height from 3 tiles)
-// is a canopy: trees, cacti, blossom, hanging bones, a mine shaft's top piece, pyramids and their shadows (a shadow
-// has to stay in the same pass as the pyramid it belongs to, or it is drawn as a black block). The exception is a
-// tall building, tower or blacksmith: it stands on the ground line, so the people in front of it must be drawn over it
-// (World1Level2's buildings covered Barry and the zombies when they were drawn in the canopy pass). The native prop
-// order is UNRESOLVED (rendering pass 2026-09-07).
-func isCanopyProp(texture string, height float64) bool {
-	if height < tallPropHeight {
-		return false
-	}
-	name := strings.ToLower(texture)
-	for _, ground := range []string{"building", "tower", "blacksmith"} {
-		if strings.Contains(name, ground) {
-			return false
-		}
-	}
-	return true
-}
-
 // propDraw is one prop (static or animated) ready to draw.
 type propDraw struct {
 	texture                      string
@@ -367,32 +345,80 @@ type propDraw struct {
 	animated                     bool
 }
 
-// sortedProps is every prop of the level in ground-y order. The height is a visual lift (the draw subtracts it), so
-// a car parked in front of a tall building (World1Level2: height 1 at y 152 against height 2 at y 128) is drawn over
-// its base. The native scene-list order is UNRESOLVED (rendering pass 2026-09-07).
-func (v *Viewer) sortedProps() []propDraw {
+// Native draw order constants (Research/native/prop-entity-draw-order-2026-10-12.md; v7 FUN_0006ed18, FUN_000bf6d8).
+const (
+	depthBuckets = 350 // buckets 0..349
+	// depthBucketCount is the per-bucket capacity (40): a full bucket spills into b+1. Not modelled, a single
+	// 1.3 px bucket never holds 40 objects in the port's levels.
+	depthBucketCount = 40
+	depthOrigin      = 140.0
+	rowKeyBias       = 0.25
+	// hbBucket is the first bucket drawn after the hb layer (FUN_000c0580 runs between bucket 9 and bucket 10).
+	hbBucket = 10
+	// nativeDefaultZoom is the native camera zoom z of every level start (DAT_00085dfc); see game.nativeZoomFromPort.
+	nativeDefaultZoom = 0.65
+)
+
+// DepthBucket is the native y-bucket of an object at world y: clamp(int((y - camY) / (2 z) + 140), 0, 349), with
+// camY the camera CENTRE y in world px and zNative the native camera zoom (0.65 / BaseZoom). float32 maths as in the
+// binary, int() truncates toward zero like vcvt.s32.f32.
+func DepthBucket(y, camY, zNative float64) int {
+	if zNative <= 0 {
+		zNative = nativeDefaultZoom
+	}
+	v := int((float32(y)-float32(camY))/(2*float32(zNative)) + depthOrigin)
+	switch {
+	case v < 0:
+		return 0
+	case v > depthBuckets-1:
+		return depthBuckets - 1
+	}
+	return v
+}
+
+// hRowKey is the sort key of H-layer row r (native FUN_000bf6d8: (r + 2) * 32 + 0.25).
+func hRowKey(row int) float64 { return float64(row+2)*32 + rowKeyBias }
+
+// propLift is the visual lift of a prop in world px: trunc(height) * 32 (FUN_000c2174, vcvt.s32.f32 then * 32).
+func propLift(height float64) float64 { return float64(int(height)) * 32 }
+
+// propKeyY is a prop's sort key (and drawn position) y: the position truncated toward zero.
+func propKeyY(y float64) float64 { return float64(int(y)) }
+
+// NativeZoom is the native camera zoom z the buckets are computed with (the port zoom is 0.65 / z, FOV scale excluded).
+func (v *Viewer) NativeZoom() float64 {
+	base := v.BaseZoom()
+	if base <= 0 {
+		return nativeDefaultZoom
+	}
+	return nativeDefaultZoom / base
+}
+
+// CameraCentreY is the world y at the centre of the 320 px viewport (native G+0x5096C), shake included.
+func (v *Viewer) CameraCentreY() float64 {
+	zoom := v.Zoom
+	if zoom <= 0 {
+		zoom = 1
+	}
+	return v.CameraY + (160-v.ViewportY)/zoom
+}
+
+// levelProps is every prop of the level in submission order. Native keeps static and animated props in one list in
+// XML order (FUN_000c3134); the port's level data keeps the two kinds in separate slices, so XML interleaving is lost
+// and animated props follow the static ones (PORT DIVERGENCE, only a tie inside one bucket can see it). Positions are
+// truncated like the native constructor.
+func (v *Viewer) levelProps() []propDraw {
 	props := make([]propDraw, 0, len(v.Level.Props)+len(v.Level.AnimatedProps))
 	for _, prop := range v.Level.Props {
-		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, uv1X: prop.UV1X, uv1Y: prop.UV1Y, uv2X: prop.UV2X, uv2Y: prop.UV2Y})
+		props = append(props, propDraw{texture: prop.Texture, x: propKeyY(prop.X), y: propKeyY(prop.Y), height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, uv1X: prop.UV1X, uv1Y: prop.UV1Y, uv2X: prop.UV2X, uv2Y: prop.UV2Y})
 	}
 	for _, prop := range v.Level.AnimatedProps {
-		props = append(props, propDraw{texture: prop.Texture, x: prop.X, y: prop.Y, height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, xFrames: prop.XFrames, yFrames: prop.YFrames, frameTime: prop.FrameTime, animated: true})
+		props = append(props, propDraw{texture: prop.Texture, x: propKeyY(prop.X), y: propKeyY(prop.Y), height: prop.Height, scaleX: prop.ScaleX, scaleY: prop.ScaleY, xFrames: prop.XFrames, yFrames: prop.YFrames, frameTime: prop.FrameTime, animated: true})
 	}
-	sort.SliceStable(props, func(i, j int) bool { return props[i].y < props[j].y })
 	return props
 }
 
-func (v *Viewer) drawProps(screen *ebiten.Image, overHigh bool) {
-	var list []propDraw
-	for _, prop := range v.sortedProps() {
-		if isCanopyProp(prop.texture, prop.height) == overHigh {
-			list = append(list, prop)
-		}
-	}
-	v.drawPropList(screen, list)
-}
-
-// propOnScreen reports whether the prop's quad touches the viewport (a cheap test for the band split).
+// propOnScreen reports whether the prop's quad touches the viewport (visibility only, the order never depends on it).
 func (v *Viewer) propOnScreen(prop propDraw) bool {
 	scaleX, scaleY := prop.scaleX, prop.scaleY
 	if scaleX == 0 {
@@ -403,54 +429,133 @@ func (v *Viewer) propOnScreen(prop propDraw) bool {
 	}
 	worldWidth, worldHeight := scaleX*float64(v.tileSize()), scaleY*float64(v.tileSize())
 	left := (prop.x - worldWidth/2 - v.CameraX) * v.Zoom
-	top := (prop.y - prop.height*float64(v.tileSize()) - worldHeight/2 - v.CameraY) * v.Zoom
+	top := (prop.y - propLift(prop.height) - worldHeight/2 - v.CameraY) * v.Zoom
 	return left+worldWidth*v.Zoom > -v.ViewportX && left < 480-v.ViewportX && top+worldHeight*v.Zoom > -v.ViewportY && top < 320-v.ViewportY
 }
 
-// EntityBand is one slice of the draw order handed to the entity callback of DrawWithEntityBands: the entities
-// whose ground y is in [Lo, Hi). First and Last are true for the first and the last slice, which draw the parts
-// that are not tied to a depth (shadows, portals, the train; bullets, explosions).
+// EntityBand is one slice of the native y-bucket draw list handed to the entity callback of DrawWithEntityBands: the
+// entities whose bucket (Bucket of their raw native position y) is in [LoBucket, HiBucket) are drawn now. An entity
+// in the same bucket as a tile row or prop is drawn AFTER it. First is the slice before every bucketed object (it
+// also draws the ground list: shadows, train, portals); Last is the slice after the last one (bullets, explosions).
 type EntityBand struct {
-	Lo, Hi      float64
-	First, Last bool
+	LoBucket, HiBucket int
+	First, Last        bool
+	// CamY and Z are the camera centre y and native zoom the buckets are computed with.
+	CamY, Z float64
 }
 
-// DrawWithEntityBands is DrawWithEntities with the low props interleaved into the entity depth order: a prop is drawn
-// after the entities that stand behind its ground line (smaller y) and before the ones in front of it, so a car
-// parked on the street covers Barry and the zombies behind it and is walked in front of by the ones before it.
+// Bucket is the native bucket of an entity at raw position y in this frame.
+func (b EntityBand) Bucket(y float64) int { return DepthBucket(y, b.CamY, b.Z) }
+
+// Contains reports whether an entity at raw position y belongs to this band.
+func (b EntityBand) Contains(y float64) bool {
+	bucket := b.Bucket(y)
+	return bucket >= b.LoBucket && bucket < b.HiBucket
+}
+
+// trace reports a draw step to the test hook (nil outside tests).
+func (v *Viewer) trace(label string) {
+	if v.drawTrace != nil {
+		v.drawTrace(label)
+	}
+}
+
+// depthItem is one drawn level object of the y-bucket list.
+type depthItem struct {
+	bucket int
+	label  string // "hb", "row:N", "prop:texture" (draw trace for the tests)
+	draw   func()
+}
+
+// hRows is the range of H-layer rows submitted this frame: native FUN_000bf52c takes
+// [max(0, (camTop >> 5) - 2), min(((camBottom + 10) >> 5) + 3, mapH + 1)). The port uses its own viewport edges
+// (the native 480/aspect*z half extent only widens the culled range, rows outside the screen draw nothing).
+func (v *Viewer) hRows() (int, int) {
+	zoom := v.Zoom
+	if zoom <= 0 {
+		zoom = 1
+	}
+	top := v.CameraY - v.ViewportY/zoom
+	bottom := top + 320/zoom
+	from := int(math.Floor(float64(int(top))/32)) - 2
+	to := int(math.Floor(float64(int(bottom)+10)/32)) + 3
+	if from < 0 {
+		from = 0
+	}
+	if to > v.Level.Height {
+		to = v.Level.Height
+	}
+	return from, to
+}
+
+// hRowHasTiles reports whether H row r has a drawn tile inside the visible columns.
+func (v *Viewer) hRowHasTiles(row, minX, maxX int) bool {
+	layer := v.Level.Layers[formats.LayerH]
+	if row < 0 || row >= v.Level.Height || len(layer) < (row+1)*v.Level.Width {
+		return false
+	}
+	for x := minX; x < maxX && x < v.Level.Width; x++ {
+		if x >= 0 && rendersTileWord(formats.LayerH, layer[row*v.Level.Width+x]) {
+			return true
+		}
+	}
+	return false
+}
+
+// DrawWithEntityBands draws the level in the native order (Research/native/prop-entity-draw-order-2026-10-12.md):
+// layers G, D, then the ground slice (the First band), then one y-bucket list that holds the hb layer (before
+// bucket 10), the H-layer rows (key (r+2)*32+0.25), the props (trunc(y), XML order) and the entities (raw position
+// y, drawn by the callback in slices between the other objects). Within a bucket: hb, rows, props, entities.
 func (v *Viewer) DrawWithEntityBands(screen *ebiten.Image, entities func(*ebiten.Image, EntityBand)) {
 	screen.Fill(color.Black)
 	tileSize := v.tileSize()
 	for _, kind := range formats.BaseRenderLayerKinds {
 		if v.Layers[kind] {
-			v.drawLayer(screen, kind, tileSize)
+			v.trace("layer:" + string(kind))
+			v.drawLayer(screen, kind, tileSize, 0, allRows)
 		}
 	}
-	lo := math.Inf(-1)
-	first := true
-	if v.Props && v.Textures != nil {
-		for _, prop := range v.sortedProps() {
-			if isCanopyProp(prop.texture, prop.height) || !v.propOnScreen(prop) {
-				continue
-			}
-			if entities != nil {
-				entities(screen, EntityBand{Lo: lo, Hi: prop.y, First: first})
-			}
-			first = false
-			v.drawPropList(screen, []propDraw{prop})
-			lo = prop.y
-		}
-	} else if v.Props {
-		v.drawProps(screen, false)
-	}
-	if entities != nil {
-		entities(screen, EntityBand{Lo: lo, Hi: math.Inf(1), First: first, Last: true})
+	camY, z := v.CameraCentreY(), v.NativeZoom()
+	var items []depthItem
+	if v.Layers[formats.LayerHB] {
+		items = append(items, depthItem{bucket: hbBucket, label: "hb", draw: func() { v.drawLayer(screen, formats.LayerHB, tileSize, 0, allRows) }})
 	}
 	if v.Layers[formats.LayerH] {
-		v.drawLayer(screen, formats.LayerH, tileSize)
+		minX, _, maxX, _ := v.visibleBounds(tileSize)
+		from, to := v.hRows()
+		for row := from; row < to; row++ {
+			if !v.hRowHasTiles(row, minX, maxX) {
+				continue
+			}
+			row := row
+			items = append(items, depthItem{bucket: DepthBucket(hRowKey(row), camY, z), label: "row:" + strconv.Itoa(row), draw: func() { v.drawLayer(screen, formats.LayerH, tileSize, row, row+1) }})
+		}
 	}
-	if v.Props {
-		v.drawProps(screen, true)
+	if v.Props && v.Textures != nil {
+		for _, prop := range v.levelProps() {
+			if !v.propOnScreen(prop) {
+				continue
+			}
+			prop := prop
+			items = append(items, depthItem{bucket: DepthBucket(propKeyY(prop.y), camY, z), label: "prop:" + prop.texture, draw: func() { v.drawPropList(screen, []propDraw{prop}) }})
+		}
+	}
+	// Stable: hb first, then rows, then props at equal buckets (their append order), as the native flush does.
+	sort.SliceStable(items, func(i, j int) bool { return items[i].bucket < items[j].bucket })
+	lo, first := math.MinInt32, true
+	for _, item := range items {
+		if entities != nil && (first || lo < item.bucket) {
+			v.trace(fmt.Sprintf("band:%d..%d", lo, item.bucket))
+			entities(screen, EntityBand{LoBucket: lo, HiBucket: item.bucket, First: first, CamY: camY, Z: z})
+		}
+		first = false
+		v.trace(item.label)
+		item.draw()
+		lo = item.bucket
+	}
+	if entities != nil {
+		v.trace(fmt.Sprintf("band:%d..", lo))
+		entities(screen, EntityBand{LoBucket: lo, HiBucket: math.MaxInt32, First: first, Last: true, CamY: camY, Z: z})
 	}
 	if v.Layers[formats.LayerC] {
 		v.drawCollision(screen, tileSize)
@@ -513,7 +618,7 @@ func (v *Viewer) drawPropList(screen *ebiten.Image, props []propDraw) {
 		worldWidth := scaleX * float64(v.tileSize())
 		worldHeight := scaleY * float64(v.tileSize())
 		destinationX0 := float32((prop.x-worldWidth/2-v.CameraX)*v.Zoom + v.ViewportX)
-		destinationY0 := float32((prop.y-prop.height*float64(v.tileSize())-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
+		destinationY0 := float32((prop.y-propLift(prop.height)-worldHeight/2-v.CameraY)*v.Zoom + v.ViewportY)
 		destinationX1 := destinationX0 + float32(worldWidth*v.Zoom)
 		destinationY1 := destinationY0 + float32(worldHeight*v.Zoom)
 		renderScaleX, renderScaleY := v.renderScale()

@@ -14,7 +14,10 @@ const (
 
 var LayerKinds = []LayerKind{LayerG, LayerD, LayerH, LayerHB, LayerC}
 var RenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
-var BaseRenderLayerKinds = []LayerKind{LayerG, LayerHB, LayerD}
+// BaseRenderLayerKinds are the layers drawn before the y-bucket list: g then d (native FUN_000bff80). The hb layer is
+// drawn inside the bucket list between bucket 9 and bucket 10 (viewer.DrawWithEntityBands) and h is drawn as
+// per-row objects in it (Research/native/prop-entity-draw-order-2026-10-12.md).
+var BaseRenderLayerKinds = []LayerKind{LayerG, LayerD}
 
 type LevelInfo struct {
 	ID               string   `json:"id"`

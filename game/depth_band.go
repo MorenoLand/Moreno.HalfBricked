@@ -1,28 +1,29 @@
 package game
 
-import "math"
+import "github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
 
-// inDepthBand reports whether an entity at ground y belongs to the band being drawn (always true outside a banded draw).
+// inDepthBand reports whether an entity at raw native position y belongs to the band being drawn (always true
+// outside a banded draw). The band holds y-buckets, not pixels: native submits every entity at its own position y
+// (no feet offset, Research/native/prop-entity-draw-order-2026-10-12.md) into a 1.3 px bucket, and an entity in the
+// bucket of a tile row or prop is drawn after it.
 func (a *app) inDepthBand(y float64) bool {
 	if !a.depthBandActive {
 		return true
 	}
-	return y >= a.depthBand.Lo && y < a.depthBand.Hi
+	return a.depthBand.Contains(y)
 }
 
-// playerFeetOffset is how far Barry's drawn feet are below his position (his 64 px body is centred 25 px above it).
-const playerFeetOffset = 7.0
-
-// zombieFeetY is the bottom edge of a zombie's drawn sprite in world y: the sprite is centred zombieRenderAnchor of
-// its height above the position, so the feet are a few pixels below it. Props are sorted by their bottom edge, so a
-// zombie must be sorted by its feet too, or it pokes out under the prop it is drawn behind.
-func zombieFeetY(z *zombieState) float64 {
-	height := z.size.Y
-	if height <= 0 {
-		height = nativeZombieDefaultRenderSize
+// depthBucket is the native y-bucket of an entity at raw position y (a.depthBand's camera, or the live camera).
+func (a *app) depthBucket(y float64) int {
+	if a.depthBandActive {
+		return a.depthBand.Bucket(y)
 	}
-	return z.y - zombieSpriteLift(*z, height) + height/2
+	if a.play == nil || a.play.world == nil {
+		return viewer.DepthBucket(y, 0, 0)
+	}
+	return viewer.DepthBucket(y, a.play.world.CameraCentreY(), a.play.world.NativeZoom())
 }
+
 
 // zombieSpriteLift is how far the sprite's centre is lifted above the zombie's position (native: +0x2d4 * +0x30).
 // For the plain zombies +0x30 is the drawn height; the Don Zombie's car keeps its 2 * half size there while its
@@ -32,49 +33,4 @@ func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 		return carRenderAnchor * z.native.sizeZ
 	}
 	return renderHeight * zombieRenderAnchor
-}
-
-// scriptEntityFeetY is the bottom edge of a script-created sprite (CreateEntity / SpawnEntity). Those sprites are
-// drawn centred on their position, so sorting them against props by the position alone puts a figure that stands in
-// front of a prop (feet below its edge) behind it, with its head under the prop.
-func (a *app) scriptEntityFeetY(e *scriptEntity) float64 {
-	if e == nil || e.kind == "pickup" {
-		if e == nil {
-			return 0
-		}
-		return e.y
-	}
-	return e.y + a.scriptEntityDrawHeight(e)/2
-}
-
-// scriptEntityDrawHeight is the drawn height in world pixels, the same arithmetic as drawScriptEntity.
-func (a *app) scriptEntityDrawHeight(e *scriptEntity) float64 {
-	if e.sized {
-		return math.Max(0, e.scaleY)
-	}
-	animation, has := a.spriteAnimationByIndex(e.texture, e.animation)
-	path := commonSDTexture(e.texture)
-	columns, rows := 5, 4
-	if has {
-		path = animation.Texture
-		if animation.Angles > 0 {
-			columns = animation.Angles
-		}
-		if animation.Frames > 0 {
-			rows = animation.Frames
-		}
-	}
-	texture, err := a.Texture(path)
-	if err != nil || rows <= 0 {
-		return 0
-	}
-	cell := float64(texture.Bounds().Dy()) / float64(rows)
-	if has && columns == 1 && rows > 1 && texture.Bounds().Dx() > texture.Bounds().Dy() {
-		cell = float64(texture.Bounds().Dy())
-	}
-	scale := e.scaleY
-	if scale == 0 {
-		scale = 1
-	}
-	return cell * scale / a.pack.TextureSourceScale(path)
 }

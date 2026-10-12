@@ -168,8 +168,11 @@ func TestSpawnEntityDistinguishesNativePickupNames(t *testing.T) {
 	}
 }
 
+// Native order (Research/native/prop-entity-draw-order-2026-10-12.md): g, d, then the y-bucket list with hb between
+// bucket 9 and bucket 10 (FUN_000c0580 in FUN_0006f4b8; the v7 baking FUN_000c5488 puts d at table 0x5f20 and hb at
+// 0x88b0). The hb layer is drawn by viewer.DrawWithEntityBands, so the base layers are only g and d.
 func TestBaseRenderLayersUseNativeOrder(t *testing.T) {
-	want := []formats.LayerKind{formats.LayerG, formats.LayerHB, formats.LayerD}
+	want := []formats.LayerKind{formats.LayerG, formats.LayerD}
 	if len(formats.BaseRenderLayerKinds) != len(want) {
 		t.Fatalf("base render layers = %#v, want %#v", formats.BaseRenderLayerKinds, want)
 	}
