@@ -100,3 +100,21 @@ func TestBuzzsawAndDualPistolPickupsAreEquippable(t *testing.T) {
 		}
 	}
 }
+
+// A dual pistol crate (P_DUAL_PISTOL, which p_rand_all can roll) announces itself like every other weapon.
+func TestDualPistolPickupPlaysItsVoice(t *testing.T) {
+	a := newHeadlessApp(t, "bin/data-cache")
+	if err := a.selectCaptureLevel("World0Level0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.openPlay(); err != nil {
+		t.Fatal(err)
+	}
+	p := a.play
+	p.levelInfo.VoiceoverPrefix = "VO_Western"
+	p.pickupVoices = nil
+	p.collectPickup("p_dual_pistol")
+	if len(p.pickupVoices) == 0 {
+		t.Fatal("no voice for the dual pistol pickup")
+	}
+}

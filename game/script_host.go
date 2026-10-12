@@ -1671,7 +1671,9 @@ func (p *playState) spawnPickup(name string, point formats.Vec2) {
 
 func (p *playState) collectPickup(name string) {
 	name = strings.ToUpper(strings.TrimSpace(name))
-	if weapon, ok := p.weapons.Find(strings.TrimPrefix(name, "P_")); ok {
+	if weapon, ok := p.weapons.Find(catalogWeaponName(strings.TrimPrefix(name, "P_"))); ok {
+		// catalogWeaponName: the pickup is P_DUAL_PISTOL but the weapon is DUALPISTOL; without it the dual pistol
+		// (and so a random crate that rolled it) was picked up silently.
 		if path, found := weapons.PickupParityVoice(p.levelInfo.VoiceoverPrefix, weapon.SFXVO); found {
 			p.pickupVoices = append(p.pickupVoices, path)
 		}
