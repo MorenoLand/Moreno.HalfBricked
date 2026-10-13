@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package game
+package platform
 
 import (
 	"runtime"
@@ -13,7 +13,7 @@ import (
 // With ?perf the page's own panel (index.html) lists every blocking operation the game reports through perfmark,
 // next to the browser's long-task and frame-gap measurements, so a freeze can be matched to what the game was doing.
 func init() {
-	if !perfOverlay {
+	if !PerfOverlay {
 		return
 	}
 	perfmark.Hook = func(label string, d time.Duration) {

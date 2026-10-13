@@ -7,14 +7,9 @@ import (
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
-)
 
-// wireCombo is one tracker popup in the online snapshot (screen space).
-type wireCombo struct {
-	Text       string
-	X, Y, Size float64
-	R, G, B, A uint8
-}
+	"github.com/MorenoLand/Moreno.HalfBricked/game/netwire"
+)
 
 // comboShownTrackers lists what is drawn: exactly one combo count, the live counter, which stands for both held slots
 // (see shownPopup). Released trackers draw only their tier or bonus words ("Good", "+2", "Epic Fail"); their count text
@@ -41,21 +36,21 @@ func (c *comboSystem) shownPopup(t *comboTracker) (comboPopup, bool) {
 }
 
 // comboWire exports the host's popups and HUD flash for guests.
-func (p *playState) comboWire() ([]wireCombo, float64, [3]float64) {
-	var out []wireCombo
+func (p *playState) comboWire() ([]netwire.Combo, float64, [3]float64) {
+	var out []netwire.Combo
 	for _, t := range p.comboShownTrackers() {
 		if popup, ok := p.combo.shownPopup(t); ok {
-			out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
+			out = append(out, netwire.Combo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 		}
 	}
 	if popup, ok := p.killPopPopup(); ok {
-		out = append(out, wireCombo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
+		out = append(out, netwire.Combo{Text: popup.Text, X: popup.X, Y: popup.Y, Size: popup.Size, R: popup.R, G: popup.G, B: popup.B, A: popup.A})
 	}
 	return out, p.combo.hudFlash, p.combo.hudColor
 }
 
 // applyComboWire stores the host's popups; guests do not run trackers.
-func (p *playState) applyComboWire(popups []wireCombo, flash float64, color [3]float64) {
+func (p *playState) applyComboWire(popups []netwire.Combo, flash float64, color [3]float64) {
 	p.combo.mirror = append(p.combo.mirror[:0], popups...)
 	p.combo.hudFlash, p.combo.hudColor = flash, color
 	p.combo.updateHUD(1.0/60.0, p.multiplier)

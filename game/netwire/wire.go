@@ -1,0 +1,181 @@
+// Package netwire is the wire format of online co-op. The host runs the whole simulation and sends Snapshots of
+// what the guests need to draw; guests send only their controls (Input). Everything here is plain data with
+// exported fields (JSON encoded), so it has no dependency on the game package; the game converts its own state
+// to and from these types in net_wire.go.
+package netwire
+
+import (
+	"encoding/json"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
+)
+
+type Msg struct {
+	T       string        `json:"t"`
+	Level   string        `json:"level,omitempty"`
+	Mode    int           `json:"mode,omitempty"`
+	Self    int           `json:"self,omitempty"`
+	Players int           `json:"players,omitempty"`
+	In      *Input    `json:"in,omitempty"`
+	Snap    *Snapshot `json:"snap,omitempty"`
+	Res     *Results  `json:"res,omitempty"`
+}
+
+type Input struct {
+	MoveX, MoveY, AimX, AimY float64
+	Secondary                bool
+	SecondaryCount           int // increments per throw so a dropped packet cannot lose one
+}
+
+type Player struct {
+	X, Y                float64
+	Angle               int
+	FlipX, Moving, Dead bool
+	Health, MaxHealth   float64
+	Flash               float64
+	Hurt                float64
+	Age                 float64
+	Gun                 string
+	Ammo                int
+	Grenades            int
+	SecondaryType       string
+	Joined              bool
+	// Buzzsaw / dual pistol weapon object (GunVisual): spin or flash timer, blink
+	// flag, hand flag and the offset of the hand that fired last.
+	GunSpin, GunHandX, GunHandY float64
+	GunBlink, GunRight          bool
+}
+
+type Zombie struct {
+	X, Y, Frame, Alpha, HitFlash, DeathAge, Health, Fps, RexRage float64
+	Lift                                                         float64 // rex leap lift (rex_shockwave.go)
+	W, H                                                         float64
+	Tex, Anim                                                    int // indexes into the snapshot's string table
+	Angle                                                        int
+	FlipX, FlipY, Dying, BossRage, AnimTime                      bool
+	Exploding                                                    bool
+	Brightness                                                   float64 // +0x2b8 tint (zombie_model.go)
+	Speedy                                                       bool    // afterimage trail
+	Ghosts                                                       [2]Ghost
+	// Gib state (zombie_gib.go): native death state 1/2, the Disintegrate body flag and its age.
+	DeathState int
+	Gibbed     bool
+	PresentAge float64
+}
+
+type Bullet struct {
+	X, Y, VX, VY, Life, Angle float64
+	Kind                      string
+	Proj                      *weapons.NativeWeaponProjectile
+}
+
+type Pickup struct {
+	ID      int
+	X, Y    float64
+	Texture string
+	Lift    float64
+}
+
+type Snapshot struct {
+	Seq        uint32
+	Time       float64
+	Strings    []string
+	Players    []Player
+	Zombies    []Zombie
+	GibBodies  []Zombie // Disintegrate bodies (playState.gibBodies)
+	Bullets    []Bullet
+	Pickups    []Pickup
+	Mines      [][3]float64
+	Sentries   []Sentry
+	Explosions [][3]float64
+	Blood      []Blood
+	Portals    []Portal
+	Score      int
+	Lives      int
+	Multiplier int
+	WaveIndex  int
+	Kills      int
+	ZombieSum  int
+	Finished   bool
+	WaveLive   bool
+	Train      *Train
+	Progress   float64
+	Zoom       float64
+	HasProg    bool
+	Over       bool
+	RexWaves   [][4]float64 // x, y, age, max size of each rex shockwave
+	RexVenom   []Venom
+	Sfx        []string
+	Combo      []Combo
+	HudFlash   float64
+	HudColor   [3]float64
+}
+
+// Venom is one rex venom projectile (rex_ai.go) as the guest draws it.
+type Venom struct {
+	X, Y, Heading, Height, Size, Age, Life float64
+	State                                  int
+}
+
+type Sentry struct {
+	X, Y, Age, Cooldown float64
+	Gun                 string
+	Column              int
+	FlipX               bool
+	Lift, Shake         float64
+}
+
+type Blood struct {
+	X, Y, Age float64
+	Variant   int
+}
+
+// Portal mirrors portalState with exported fields.
+type Portal struct {
+	X, Y, Age, Size, Rotation, Speed float64
+	CellX, CellY, Frame              int
+	Alpha                            float64
+}
+
+// Results is what the guests' results screen shows; only the host can pick
+// Replay or Menu.
+type Results struct {
+	Score, Kills, Highscore int32
+	LevelStart              int32
+	Flags                   uint32
+	Survival, Dead          bool
+}
+
+// Train is the level's train as the guests draw it.
+type Train struct {
+	X, Y   float64
+	Active bool
+	Frame  int
+}
+
+// Ghost is a speedy zombie afterimage as it travels in a snapshot.
+type Ghost struct {
+	X, Y, W, H, Frame float64
+	Angle, Alpha      int
+	FlipX             bool
+}
+
+// Combo is one tracker popup in the online snapshot (screen space).
+type Combo struct {
+	Text       string
+	X, Y, Size float64
+	R, G, B, A uint8
+}
+
+func Encode(m Msg) []byte {
+	raw, _ := json.Marshal(m)
+	return raw
+}
+
+func Decode(raw []byte) (Msg, bool) {
+	var m Msg
+	if json.Unmarshal(raw, &m) != nil || m.T == "" {
+		return Msg{}, false
+	}
+	return m, true
+}

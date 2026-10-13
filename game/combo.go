@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/netwire"
 )
 
 // Kill combo and score multiplier. Native evidence is in
@@ -343,7 +344,7 @@ type comboSystem struct {
 	hudColor           [3]float64
 	hudScale           float64 // +0x94
 	hudPulse           float64 // +0x98
-	mirror             []wireCombo
+	mirror             []netwire.Combo
 	mirrorFlash        float64
 	kill               killPopState // combo_kill_pop.go: the count pop-up that replaces the live badge
 }

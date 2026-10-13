@@ -6,16 +6,9 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 )
-
-// perfOverlay is the frame-time readout of the browser build: open the page with ?perf (or set it from the
-// console) to show the update and draw CPU times and the frame rates in the top-left corner. It is for finding
-// where a slow machine loses its time; it is off otherwise and costs nothing.
-var perfOverlay bool
-
-// audioDisabled (?noaudio in the browser) starts the game with no sound system at all, to tell whether audio
-// decoding is what holds the frame rate down.
-var audioDisabled bool
 
 type perfCounters struct {
 	update, draw float64 // smoothed milliseconds
@@ -29,21 +22,21 @@ type perfCounters struct {
 }
 
 func (a *app) perfTrackUpdate(start time.Time) {
-	if !perfOverlay {
+	if !platform.PerfOverlay {
 		return
 	}
 	a.perf.update += (float64(time.Since(start).Microseconds())/1000 - a.perf.update) * .1
 }
 
 func (a *app) perfTrackDraw(start time.Time) {
-	if !perfOverlay {
+	if !platform.PerfOverlay {
 		return
 	}
 	a.perf.draw += (float64(time.Since(start).Microseconds())/1000 - a.perf.draw) * .1
 }
 
 func (a *app) drawPerfOverlay(screen *ebiten.Image) {
-	if !perfOverlay || runtime.GOOS == "js" { // the page panel (index.html) replaces it in the browser
+	if !platform.PerfOverlay || runtime.GOOS == "js" { // the page panel (index.html) replaces it in the browser
 		return
 	}
 	now := time.Now()

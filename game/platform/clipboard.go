@@ -1,4 +1,4 @@
-package game
+package platform
 
 import "sync"
 
@@ -16,8 +16,8 @@ func (c *clipboardBox) set(text string) {
 
 var clipboardResult clipboardBox
 
-// clipboardTake returns text from a finished clipboardRequest, once.
-func clipboardTake() (string, bool) {
+// ClipboardTake returns text from a finished clipboardRequest, once.
+func ClipboardTake() (string, bool) {
 	clipboardResult.mu.Lock()
 	defer clipboardResult.mu.Unlock()
 	text, ok := clipboardResult.text, clipboardResult.ready

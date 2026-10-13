@@ -1,13 +1,13 @@
 //go:build js && wasm
 
-package game
+package platform
 
 import (
 	"fmt"
 	"syscall/js"
 )
 
-func readPlayerProfile() (data []byte, err error) {
+func ReadProfile() (data []byte, err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			err = fmt.Errorf("profile storage: %v", value)
@@ -19,7 +19,7 @@ func readPlayerProfile() (data []byte, err error) {
 	}
 	return []byte(value.String()), nil
 }
-func writePlayerProfile(data []byte) (err error) {
+func WriteProfile(data []byte) (err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			err = fmt.Errorf("profile storage: %v", value)

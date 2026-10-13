@@ -1,6 +1,9 @@
-package game
+// Package nativemath holds small pure ports of the original game's arithmetic (each documents the native
+// function it mirrors): script-visible layout values, HUD text geometry, sprite scaling and the portal fade. It has
+// no state and imports nothing from the game package, so it can be unit-tested on its own.
+package nativemath
 
-// scriptCameoY is the value the script call GetCameoY returns: the native closure
+// CameoY is the value the script call GetCameoY returns: the native closure
 // 0x0013f5f8 (1.2.5; v7 0x000dcbf0) pushes FUN_0012a8dc(1) (v7 FUN_000c7a9c), the top of the
 // on-screen dialogue panel expressed in 320-high script units:
 //
@@ -11,7 +14,7 @@ package game
 // CONVERT_SIZE_X|CONVERT_SIZE_Y_KAR, so y = 65/320*H pixels) and
 // px(v) = v/320 * ((2/3) / (H/W)) * H the CONVERT_SIZE_Y conversion with W the
 // surface width. For the port's 480x320 logical surface this is 224.
-func scriptCameoY(width, height float32) float32 {
+func CameoY(width, height float32) float32 {
 	if width <= 0 || height <= 0 {
 		return 0
 	}

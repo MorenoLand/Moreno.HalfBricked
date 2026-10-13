@@ -1,17 +1,17 @@
 //go:build js && wasm
 
-package game
+package platform
 
 import "syscall/js"
 
-func clipboardWrite(text string) {
+func ClipboardWrite(text string) {
 	defer func() { _ = recover() }()
 	if board := js.Global().Get("navigator").Get("clipboard"); board.Truthy() {
 		board.Call("writeText", text)
 	}
 }
 
-func clipboardRequest() {
+func ClipboardRequest() {
 	defer func() { _ = recover() }()
 	board := js.Global().Get("navigator").Get("clipboard")
 	if !board.Truthy() {

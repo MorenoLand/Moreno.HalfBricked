@@ -1,8 +1,8 @@
-package game
+package nativemath
 
 import "image"
 
-func zombieSpriteScale(width, height float64, source image.Rectangle, zoom, frontendX, frontendY float64) (float64, float64) {
+func ZombieSpriteScale(width, height float64, source image.Rectangle, zoom, frontendX, frontendY float64) (float64, float64) {
 	x, y := .5*zoom, .5*zoom
 	if width > 0 {
 		x = width / float64(source.Dx()) * zoom

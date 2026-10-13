@@ -1,3 +1,8 @@
+// Package game is the playable application: menus, level play, the script host, local and online co-op and
+// all rendering, driven from Run. Machine glue, the Discord client, the co-op wire format, the controller focus
+// graph parser and a few native formulas live in subpackages (platform, discord, netwire, focusgraph, nativemath).
+//
+// README.md in this directory maps every remaining file to an area and says what blocks splitting it further.
 package game
 
 import (
@@ -28,6 +33,9 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/ui"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/discord"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/nativemath"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -54,7 +62,7 @@ type app struct {
 	cursorModeSet                                bool
 	extraRow                                     int
 	extraDrag                                    bool
-	discord                                      discordRPC
+	discord                                      discord.RPC
 	discordClock                                 int
 	statistics                                   stats.StatsData
 	statsScreen                                  *statsMenu
@@ -415,7 +423,6 @@ var barryMuzzleOffsets = [...]struct{ x, y float64 }{{-6, 24}, {4, 26}, {13, 24}
 const playerCollisionStep = 4.0
 const zombieHitFlashDuration = .125
 const zombieDeathDelay = .1
-const portalRotationUnitsPerSecond = 65338.0
 const portalOpenRotationSpeed = 1.2
 const portalRotationLerp = .05
 const zombieRenderAnchor = .35
@@ -466,7 +473,7 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 		return nil, fmt.Errorf("default pistol is not present in the weapon catalog")
 	}
 	var sound *engine.SoundSystem
-	if audioDisabled {
+	if platform.AudioDisabled {
 		sound = nil
 	} else if silent {
 		sound = engine.NewSilentSoundSystem(pack)
@@ -2537,7 +2544,7 @@ func (a *app) activate() error {
 		case 3:
 			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
 		case 4:
-			a.askNativeQuit(quitGame)
+			a.askNativeQuit(platform.QuitGame)
 		}
 	case 2:
 		levels := a.filteredLevels()
@@ -2762,7 +2769,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	scoreText := fmt.Sprintf("%010d", a.play.score)
 	if a.font != nil {
 		frontendX, frontendY := a.renderScale()
-		x, y, size := scoreTextGeometry(scoreX, scoreY, a.fontTextWidth(scoreText, scoreScale), float64(a.font.LineHeight)*scoreScale, scoreScale, frontendX, frontendY)
+		x, y, size := nativemath.ScoreTextGeometry(scoreX, scoreY, a.fontTextWidth(scoreText, scoreScale), float64(a.font.LineHeight)*scoreScale, scoreScale, frontendX, frontendY)
 		a.font.DrawScaled(screen, scoreText, x, y, size, size)
 	}
 	multiplierX, multiplierXOK := a.variables.FloatValue("HUD_SCORE_MULTI_X_VAR")
@@ -3319,7 +3326,7 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
-	scaleX, scaleY := zombieSpriteScale(zombie.size.X, zombie.size.Y, rect, scale, frontendX, frontendY)
+	scaleX, scaleY := nativemath.ZombieSpriteScale(zombie.size.X, zombie.size.Y, rect, scale, frontendX, frontendY)
 	scaleX, scaleY = scriptEntityRenderScale(scaleX, scaleY, flipX, zombie.flipY)
 	options.GeoM.Scale(scaleX, scaleY)
 	if tint := zombieTint(zombie); tint != 1 {
@@ -4868,7 +4875,7 @@ func (p *playState) updatePortals() {
 	active := p.portals[:0]
 	for _, portal := range p.portals {
 		portal.age += 1.0 / 60.0
-		portal.rotationUnits = portalAngleStep(portal.rotationUnits, portal.rotationSpeed)
+		portal.rotationUnits = nativemath.PortalAngleStep(portal.rotationUnits, portal.rotationSpeed)
 		if portal.animationTimer < 1 {
 			portal.frame = (portal.frame + 1) % 4
 			portal.animationTimer = 100
@@ -4883,12 +4890,12 @@ func (p *playState) updatePortals() {
 		portal.size += (targetSize - portal.size) * .1
 		targetRotationSpeed := portalOpenRotationSpeed
 		if remaining <= portalLateRemaining {
-			targetRotationSpeed = portalLateRotationSpeed
+			targetRotationSpeed = nativemath.PortalLateRotationSpeed
 		}
 		if remaining < portalCloseRemaining {
 			targetRotationSpeed = 0
 		}
-		portal.alpha = portalAlphaStep(portal.alpha, remaining < portalCloseRemaining)
+		portal.alpha = nativemath.PortalAlphaStep(portal.alpha, remaining < portalCloseRemaining)
 		portal.rotationSpeed += (targetRotationSpeed - portal.rotationSpeed) * portalRotationLerp
 		if remaining >= portalRemoveRemaining {
 			active = append(active, portal)
@@ -5544,7 +5551,7 @@ func Run() {
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
-	discordID := flag.String("discord-app-id", discordDefaultAppID, "Discord application id for Rich Presence (port addition)")
+	discordID := flag.String("discord-app-id", discord.DefaultAppID, "Discord application id for Rich Presence (port addition)")
 	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (default: every spawner done and no zombie alive) or native (FUN_000bf120 as recovered: timer, and fewer than end_wave_zombies alive, so the next wave can start with some left)")
 	flag.Parse()
 	portSlowMo = *slowMotion
@@ -5556,7 +5563,7 @@ func Run() {
 	portAimAtCursor = *aimAtCursor
 	portRegenScale = math.Max(0, *regenScale)
 	storyWaveHUD = *storyHUD
-	discordAppID = *discordID
+	discord.SetAppID(*discordID)
 	switch *waveEnd {
 	case "all-dead":
 		waveEndRule = waveEndAllDead

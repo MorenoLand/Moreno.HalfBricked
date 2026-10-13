@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package game
+package platform
 
 import (
 	"syscall/js"
@@ -8,10 +8,10 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-// quitGame is "quit to desktop". In a browser tab ending the game loop leaves a frozen page, so the tab is closed
+// QuitGame is "quit to desktop". In a browser tab ending the game loop leaves a frozen page, so the tab is closed
 // as well: window.close() works for tabs the page opened itself; a tab the user opened refuses it, and then the
 // page is replaced by a blank one so the game is really gone.
-func quitGame() error {
+func QuitGame() error {
 	defer func() { _ = recover() }()
 	window := js.Global()
 	window.Call("close")

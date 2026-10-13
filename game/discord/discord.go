@@ -1,4 +1,6 @@
-package game
+// Package discord is the optional Discord Rich Presence client (a port addition, not in the original game).
+// It has no dependency on the rest of the game: the game package calls Configure and Set on an RPC value.
+package discord
 
 import (
 	"encoding/binary"
@@ -15,11 +17,14 @@ import (
 
 // PORT ADDITION (not in the original game): Discord Rich Presence over the local Discord IPC socket. It speaks the
 // documented handshake (opcode 0) and SET_ACTIVITY (opcode 1) frames itself, so it needs no library. The
-// application id defaults to discordDefaultAppID and can be replaced with -discord-app-id. Presence is only sent
+// application id defaults to DefaultAppID and can be replaced with -discord-app-id. Presence is only sent
 // while the "DISCORD RPC" extra is on and Discord is running; failures are quiet and retried every 30 s.
-const discordDefaultAppID = "1558851518835466373"
+const DefaultAppID = "1558851518835466373"
 
-var discordAppID = discordDefaultAppID
+var appID = DefaultAppID
+
+// SetAppID replaces the Discord application id (the -discord-app-id flag); it must be called before Configure.
+func SetAppID(id string) { appID = id }
 
 const (
 	discordSendGap  = 15 * time.Second // Discord rate-limits SET_ACTIVITY to about once per 15 s
@@ -27,7 +32,7 @@ const (
 	discordTick     = 2 * time.Second
 )
 
-type discordRPC struct {
+type RPC struct {
 	mu      sync.Mutex
 	enabled bool
 	details string
@@ -38,10 +43,10 @@ type discordRPC struct {
 }
 
 // Configure turns presence on or off and starts the sender on first use.
-func (d *discordRPC) Configure(enabled bool) {
+func (d *RPC) Configure(enabled bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.enabled = enabled && discordAppID != "" && runtime.GOOS != "js"
+	d.enabled = enabled && appID != "" && runtime.GOOS != "js"
 	if d.enabled && !d.running {
 		d.running = true
 		d.stop = make(chan struct{})
@@ -57,19 +62,19 @@ func (d *discordRPC) Configure(enabled bool) {
 }
 
 // Set stores the activity text to show; the sender picks it up on its next tick.
-func (d *discordRPC) Set(details, state string) {
+func (d *RPC) Set(details, state string) {
 	d.mu.Lock()
 	d.details, d.state = details, state
 	d.mu.Unlock()
 }
 
-func (d *discordRPC) snapshot() (details, state string, started time.Time) {
+func (d *RPC) snapshot() (details, state string, started time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.details, d.state, d.started
 }
 
-func (d *discordRPC) loop(stop chan struct{}) {
+func (d *RPC) loop(stop chan struct{}) {
 	var conn io.ReadWriteCloser
 	var sentDetails, sentState string
 	var lastSend, lastFail time.Time
@@ -95,7 +100,7 @@ func (d *discordRPC) loop(stop chan struct{}) {
 		}
 		if conn == nil {
 			var err error
-			if conn, err = discordConnect(discordAppID); err != nil {
+			if conn, err = discordConnect(appID); err != nil {
 				conn, lastFail = nil, time.Now()
 				continue
 			}

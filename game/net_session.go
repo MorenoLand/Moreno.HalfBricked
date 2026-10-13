@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/netplay"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/netwire"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
@@ -54,7 +56,7 @@ type netSession struct {
 	joining chan netJoinResult
 	self    int
 	secSent int
-	snap    *wireSnapshot
+	snap    *netwire.Snapshot
 	gotSnap uint32
 
 	seq  uint32
@@ -66,14 +68,14 @@ type netSession struct {
 
 func (n *netSession) close() {
 	for _, peer := range n.peers {
-		peer.link.Send(true, encodeWire(wireMsg{T: "end"}))
+		peer.link.Send(true, netwire.Encode(netwire.Msg{T: "end"}))
 		peer.link.Close()
 	}
 	if n.pending != nil {
 		n.pending.Link.Close()
 	}
 	if n.link != nil {
-		n.link.Send(true, encodeWire(wireMsg{T: "end"}))
+		n.link.Send(true, netwire.Encode(netwire.Msg{T: "end"}))
 		n.link.Close()
 	}
 }
@@ -119,11 +121,11 @@ func (a *app) updateNetLobby() error {
 		a.leaveNet("cancelled")
 		return nil
 	}
-	if text, ok := clipboardTake(); ok {
+	if text, ok := platform.ClipboardTake(); ok {
 		a.netPasted(strings.TrimSpace(text))
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyV) || (inpututil.IsKeyJustPressed(ebiten.KeyInsert) && ebiten.IsKeyPressed(ebiten.KeyShift)) {
-		clipboardRequest()
+		platform.ClipboardRequest()
 	}
 	if err := a.updateLobbyMouse(); err != nil || a.net == nil || !a.net.lobby {
 		return err
@@ -172,7 +174,7 @@ func (a *app) updateHostLobby() error {
 		}
 		n.pending = result.host
 		n.note, n.problem = "", ""
-		clipboardWrite(result.host.Code)
+		platform.ClipboardWrite(result.host.Code)
 	default:
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyH) && n.pending == nil && n.hosting == nil && len(n.peers) < maxNetGuests {
@@ -223,7 +225,7 @@ func (a *app) startNetHostGame() error {
 	}
 	n.lobby = false
 	for _, peer := range n.peers {
-		peer.link.Send(true, encodeWire(wireMsg{T: "start", Level: levels[a.level].ID, Mode: a.mode, Self: peer.index, Players: len(n.peers) + 1}))
+		peer.link.Send(true, netwire.Encode(netwire.Msg{T: "start", Level: levels[a.level].ID, Mode: a.mode, Self: peer.index, Players: len(n.peers) + 1}))
 	}
 	return nil
 }
@@ -251,7 +253,7 @@ func (a *app) joinNetPlayersInPlace(p *playState) error {
 	a.coopPlayers = total
 	for i, peer := range n.peers {
 		peer.index = base + i
-		peer.link.Send(true, encodeWire(wireMsg{T: "start", Level: p.levelInfo.ID, Mode: a.mode, Self: peer.index, Players: total}))
+		peer.link.Send(true, netwire.Encode(netwire.Msg{T: "start", Level: p.levelInfo.ID, Mode: a.mode, Self: peer.index, Players: total}))
 	}
 	n.lobby = false
 	p.paused = false
@@ -268,7 +270,7 @@ func (a *app) updateGuestLobby() error {
 			return nil
 		}
 		n.link = result.link
-		clipboardWrite(result.reply)
+		platform.ClipboardWrite(result.reply)
 		n.reply, n.note = result.reply, "Reply code copied. Send it to the host and wait for them to start."
 	default:
 	}
@@ -282,7 +284,7 @@ func (a *app) updateGuestLobby() error {
 		return nil
 	}
 	for _, raw := range n.link.Receive() {
-		msg, ok := decodeWire(raw)
+		msg, ok := netwire.Decode(raw)
 		if !ok {
 			continue
 		}
@@ -308,7 +310,7 @@ func (a *app) selectLevelByID(id string, mode int) bool {
 	return false
 }
 
-func (a *app) startNetGuestGame(msg wireMsg) error {
+func (a *app) startNetGuestGame(msg netwire.Msg) error {
 	n := a.net
 	if !a.selectLevelByID(msg.Level, msg.Mode) {
 		n.problem = "The host picked a level this copy doesn't have."
@@ -334,7 +336,7 @@ func (a *app) netHostPoll() {
 	for _, peer := range n.peers {
 		peer.input.secondaryHit = false
 		for _, raw := range peer.link.Receive() {
-			msg, ok := decodeWire(raw)
+			msg, ok := netwire.Decode(raw)
 			if !ok {
 				continue
 			}
@@ -371,7 +373,7 @@ func (a *app) netHostSend() {
 	snap := a.play.snapshot(n.seq)
 	snap.Sfx = n.sfx
 	n.sfx = nil
-	raw := encodeWire(wireMsg{T: "snap", Snap: snap})
+	raw := netwire.Encode(netwire.Msg{T: "snap", Snap: snap})
 	for _, peer := range n.peers {
 		peer.link.Send(false, raw)
 	}
@@ -443,7 +445,7 @@ func (a *app) updateNetGuest() error {
 		return nil
 	}
 	for _, raw := range n.link.Receive() {
-		msg, ok := decodeWire(raw)
+		msg, ok := netwire.Decode(raw)
 		if !ok {
 			continue
 		}
@@ -455,7 +457,7 @@ func (a *app) updateNetGuest() error {
 			}
 		case "results":
 			if msg.Res != nil {
-				a.resultsScreen = newResultsMenu(msg.Res.data())
+				a.resultsScreen = newResultsMenu(resultsDataFromWire(msg.Res))
 				a.page = 5
 				a.stopWeaponPlayback()
 				return nil
@@ -473,7 +475,7 @@ func (a *app) updateNetGuest() error {
 	if hit {
 		n.secSent++
 	}
-	n.link.Send(false, encodeWire(wireMsg{T: "in", In: &wireInput{MoveX: in.moveX, MoveY: in.moveY, AimX: in.aimX, AimY: in.aimY, Secondary: in.secondary, SecondaryCount: n.secSent}}))
+	n.link.Send(false, netwire.Encode(netwire.Msg{T: "in", In: &netwire.Input{MoveX: in.moveX, MoveY: in.moveY, AimX: in.aimX, AimY: in.aimY, Secondary: in.secondary, SecondaryCount: n.secSent}}))
 	p.updateCamera()
 	p.updateProgressOpacity(1.0 / 60.0)
 	p.banner.advance(1.0 / 60.0)
@@ -494,7 +496,7 @@ func (a *app) netHostResults() {
 		return
 	}
 	n.resultsSent = true
-	raw := encodeWire(wireMsg{T: "results", Res: a.wireResultsFrom(a.resultsScreen)})
+	raw := netwire.Encode(netwire.Msg{T: "results", Res: a.wireResultsFrom(a.resultsScreen)})
 	for _, peer := range n.peers {
 		peer.link.Send(true, raw)
 	}
@@ -513,7 +515,7 @@ func (a *app) netBroadcastStart() {
 		total = a.coopPlayers
 	}
 	for _, peer := range n.peers {
-		peer.link.Send(true, encodeWire(wireMsg{T: "start", Level: a.play.levelInfo.ID, Mode: a.mode, Self: peer.index, Players: total}))
+		peer.link.Send(true, netwire.Encode(netwire.Msg{T: "start", Level: a.play.levelInfo.ID, Mode: a.mode, Self: peer.index, Players: total}))
 	}
 }
 
@@ -532,7 +534,7 @@ func (a *app) updateGuestResults() error {
 		return nil
 	}
 	for _, raw := range n.link.Receive() {
-		msg, ok := decodeWire(raw)
+		msg, ok := netwire.Decode(raw)
 		if !ok {
 			continue
 		}

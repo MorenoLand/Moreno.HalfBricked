@@ -4,6 +4,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"image/color"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 )
 
 var pauseMenuLabels = [...]string{"RESUME", "OPTIONS", "STATS", "QUIT TO MENU", "QUIT TO DESKTOP", "ACHIEVEMENTS", "JOIN / HOST"}
@@ -63,7 +65,7 @@ func (a *app) activatePauseMenu(index int) error {
 	case 3:
 		a.askConfirm("QUIT TO MENU?", a.quitToMenu)
 	case 4:
-		a.askNativeQuit(quitGame)
+		a.askNativeQuit(platform.QuitGame)
 	case 5:
 		a.openAchievements()
 	case 6:

@@ -6,6 +6,7 @@ import (
 	"image/color"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
@@ -92,10 +93,10 @@ func (a *app) updateLobbyMouse() error {
 		}
 		switch button.action {
 		case "copy":
-			clipboardWrite(n.ownCode())
+			platform.ClipboardWrite(n.ownCode())
 			n.copied = 90
 		case "paste":
-			clipboardRequest()
+			platform.ClipboardRequest()
 		case "start":
 			return a.startNetHostGame()
 		case "add":

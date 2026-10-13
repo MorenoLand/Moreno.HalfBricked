@@ -1,4 +1,4 @@
-package game
+package nativemath
 
 import "math"
 
@@ -15,23 +15,27 @@ import "math"
 //     update up to 255; while closing the update subtracts dt * 1000, and when the step
 //     would go below zero it adds the alpha to itself instead (assembly 0x0009d1bc..
 //     0x0009d1d0: vmovmi s16,s15 then vadd), a native quirk that is reproduced.
+
+// PortalRotationUnitsPerSecond is the native ushort-angle rate the rotation step subtracts per second.
+const PortalRotationUnitsPerSecond = 65338.0
+
 const (
-	portalLateRotationSpeed = 1.0
-	portalAlphaStepPerFrame = 1000.0 / 60.0
+	PortalLateRotationSpeed = 1.0
+	PortalAlphaStepPerFrame = 1000.0 / 60.0
 )
 
-// portalAngleStep is the ushort angle update; it never leaves 0 from a start of 0.
-func portalAngleStep(angle, speed float64) float64 {
-	next := float64(float32(angle) - float32(1.0/60.0)*float32(speed)*float32(portalRotationUnitsPerSecond))
+// PortalAngleStep is the ushort angle update; it never leaves 0 from a start of 0.
+func PortalAngleStep(angle, speed float64) float64 {
+	next := float64(float32(angle) - float32(1.0/60.0)*float32(speed)*float32(PortalRotationUnitsPerSecond))
 	if next <= 0 {
 		return 0
 	}
 	return math.Trunc(next)
 }
 
-// portalAlphaStep is the alpha byte update of FUN_0009d078.
-func portalAlphaStep(alpha float64, closing bool) float64 {
-	step := float32(portalAlphaStepPerFrame)
+// PortalAlphaStep is the alpha byte update of FUN_0009d078.
+func PortalAlphaStep(alpha float64, closing bool) float64 {
+	step := float32(PortalAlphaStepPerFrame)
 	a := float32(alpha)
 	var next float32
 	if closing {

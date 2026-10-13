@@ -1,153 +1,26 @@
 package game
 
 import (
-	"encoding/json"
-	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 	"math"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/netwire"
 )
 
 // Online co-op is host-authoritative: the host runs the whole simulation and
 // sends snapshots of what the guests need to draw; guests send only their
-// controls. Everything here is the wire format between the two.
-
-type wireMsg struct {
-	T       string        `json:"t"`
-	Level   string        `json:"level,omitempty"`
-	Mode    int           `json:"mode,omitempty"`
-	Self    int           `json:"self,omitempty"`
-	Players int           `json:"players,omitempty"`
-	In      *wireInput    `json:"in,omitempty"`
-	Snap    *wireSnapshot `json:"snap,omitempty"`
-	Res     *wireResults  `json:"res,omitempty"`
-}
-
-type wireInput struct {
-	MoveX, MoveY, AimX, AimY float64
-	Secondary                bool
-	SecondaryCount           int // increments per throw so a dropped packet cannot lose one
-}
-
-type wirePlayer struct {
-	X, Y                float64
-	Angle               int
-	FlipX, Moving, Dead bool
-	Health, MaxHealth   float64
-	Flash               float64
-	Hurt                float64
-	Age                 float64
-	Gun                 string
-	Ammo                int
-	Grenades            int
-	SecondaryType       string
-	Joined              bool
-	// Buzzsaw / dual pistol weapon object (GunVisual): spin or flash timer, blink
-	// flag, hand flag and the offset of the hand that fired last.
-	GunSpin, GunHandX, GunHandY float64
-	GunBlink, GunRight          bool
-}
-
-type wireZombie struct {
-	X, Y, Frame, Alpha, HitFlash, DeathAge, Health, Fps, RexRage float64
-	Lift                                                         float64 // rex leap lift (rex_shockwave.go)
-	W, H                                                         float64
-	Tex, Anim                                                    int // indexes into the snapshot's string table
-	Angle                                                        int
-	FlipX, FlipY, Dying, BossRage, AnimTime                      bool
-	Exploding                                                    bool
-	Brightness                                                   float64 // +0x2b8 tint (zombie_model.go)
-	Speedy                                                       bool    // afterimage trail
-	Ghosts                                                       [2]wireGhost
-	// Gib state (zombie_gib.go): native death state 1/2, the Disintegrate body flag and its age.
-	DeathState int
-	Gibbed     bool
-	PresentAge float64
-}
-
-type wireBullet struct {
-	X, Y, VX, VY, Life, Angle float64
-	Kind                      string
-	Proj                      *weapons.NativeWeaponProjectile
-}
-
-type wirePickup struct {
-	ID      int
-	X, Y    float64
-	Texture string
-	Lift    float64
-}
-
-type wireSnapshot struct {
-	Seq        uint32
-	Time       float64
-	Strings    []string
-	Players    []wirePlayer
-	Zombies    []wireZombie
-	GibBodies  []wireZombie // Disintegrate bodies (playState.gibBodies)
-	Bullets    []wireBullet
-	Pickups    []wirePickup
-	Mines      [][3]float64
-	Sentries   []wireSentry
-	Explosions [][3]float64
-	Blood      []wireBlood
-	Portals    []portalState2
-	Score      int
-	Lives      int
-	Multiplier int
-	WaveIndex  int
-	Kills      int
-	ZombieSum  int
-	Finished   bool
-	WaveLive   bool
-	Train      *wireTrain
-	Progress   float64
-	Zoom       float64
-	HasProg    bool
-	Over       bool
-	RexWaves   [][4]float64 // x, y, age, max size of each rex shockwave
-	RexVenom   []wireVenom
-	Sfx        []string
-	Combo      []wireCombo
-	HudFlash   float64
-	HudColor   [3]float64
-}
-
-// wireVenom is one rex venom projectile (rex_ai.go) as the guest draws it.
-type wireVenom struct {
-	X, Y, Heading, Height, Size, Age, Life float64
-	State                                  int
-}
-
-type wireSentry struct {
-	X, Y, Age, Cooldown float64
-	Gun                 string
-	Column              int
-	FlipX               bool
-	Lift, Shake         float64
-}
-
-type wireBlood struct {
-	X, Y, Age float64
-	Variant   int
-}
-
-// portalState2 mirrors portalState with exported fields.
-type portalState2 struct {
-	X, Y, Age, Size, Rotation, Speed float64
-	CellX, CellY, Frame              int
-	Alpha                            float64
-}
+// controls. The wire types themselves live in game/netwire; this file converts the
+// game's state to and from them.
 
 func round(v float64) float64 { return math.Round(v*10) / 10 }
 
-func (p *playState) wireBody(b bodyState, joined, dead bool) wirePlayer {
-	return wirePlayer{X: round(b.x), Y: round(b.y), Angle: b.angle, FlipX: b.flipX, Moving: b.moving, Dead: dead, Health: b.health, MaxHealth: b.maxHealth, Flash: b.flash, Hurt: b.hurt, Gun: b.weapon.GunType, Ammo: b.weapon.Ammo, Grenades: b.grenades, SecondaryType: b.secondaryType, Joined: joined, GunSpin: float64(b.gun.Spin), GunHandX: float64(b.gun.HandX), GunHandY: float64(b.gun.HandY), GunBlink: b.gun.BlinkOn, GunRight: b.gun.Right}
+func (p *playState) wireBody(b bodyState, joined, dead bool) netwire.Player {
+	return netwire.Player{X: round(b.x), Y: round(b.y), Angle: b.angle, FlipX: b.flipX, Moving: b.moving, Dead: dead, Health: b.health, MaxHealth: b.maxHealth, Flash: b.flash, Hurt: b.hurt, Gun: b.weapon.GunType, Ammo: b.weapon.Ammo, Grenades: b.grenades, SecondaryType: b.secondaryType, Joined: joined, GunSpin: float64(b.gun.Spin), GunHandX: float64(b.gun.HandX), GunHandY: float64(b.gun.HandY), GunBlink: b.gun.BlinkOn, GunRight: b.gun.Right}
 }
 
 // snapshot captures everything a guest needs to draw this frame.
-func (p *playState) snapshot(seq uint32) *wireSnapshot {
-	s := &wireSnapshot{Seq: seq, Time: p.time, Score: p.score, Lives: p.lives, Multiplier: p.multiplier, WaveIndex: p.waveIndex, WaveLive: p.wavesStarted, Kills: p.levelKills, ZombieSum: p.levelZombieTotal, Finished: p.wavesFinished, Sfx: append([]string(nil), p.sfxQueue...)}
+func (p *playState) snapshot(seq uint32) *netwire.Snapshot {
+	s := &netwire.Snapshot{Seq: seq, Time: p.time, Score: p.score, Lives: p.lives, Multiplier: p.multiplier, WaveIndex: p.waveIndex, WaveLive: p.wavesStarted, Kills: p.levelKills, ZombieSum: p.levelZombieTotal, Finished: p.wavesFinished, Sfx: append([]string(nil), p.sfxQueue...)}
 	s.Players = append(s.Players, p.wireBody(p.body(), true, p.health <= 0))
 	if p.coopActive() {
 		for _, c := range p.coop.players {
@@ -176,10 +49,10 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 	}
 	for _, shot := range p.zombieShots {
 		projectile := shot.projectile
-		s.Bullets = append(s.Bullets, wireBullet{X: round(projectile.X), Y: round(projectile.Y), Proj: &projectile})
+		s.Bullets = append(s.Bullets, netwire.Bullet{X: round(projectile.X), Y: round(projectile.Y), Proj: &projectile})
 	}
 	for _, b := range p.bullets {
-		wb := wireBullet{X: round(b.x), Y: round(b.y), VX: b.vx, VY: b.vy, Life: b.life, Angle: b.angle, Kind: b.kind}
+		wb := netwire.Bullet{X: round(b.x), Y: round(b.y), VX: b.vx, VY: b.vy, Life: b.life, Angle: b.angle, Kind: b.kind}
 		if b.projectile != nil {
 			projectile := *b.projectile
 			wb.Proj = &projectile
@@ -188,38 +61,38 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 	}
 	for id, e := range p.scriptEntities {
 		if e != nil && e.kind == "pickup" {
-			s.Pickups = append(s.Pickups, wirePickup{ID: id, X: round(e.x), Y: round(e.y), Texture: e.texture, Lift: round(e.lift)})
+			s.Pickups = append(s.Pickups, netwire.Pickup{ID: id, X: round(e.x), Y: round(e.y), Texture: e.texture, Lift: round(e.lift)})
 		}
 	}
 	for _, b := range p.thrown {
 		// Guests draw a thrown bomb as a grenade bullet at its lifted position.
-		s.Bullets = append(s.Bullets, wireBullet{X: round(b.x), Y: round(b.y - b.lift + nativeProjectileRenderAnchor), Angle: math.Atan2(b.dirY, b.dirX) + math.Pi/2, Kind: "grenade"})
+		s.Bullets = append(s.Bullets, netwire.Bullet{X: round(b.x), Y: round(b.y - b.lift + nativeProjectileRenderAnchor), Angle: math.Atan2(b.dirY, b.dirX) + math.Pi/2, Kind: "grenade"})
 	}
 	for _, w := range p.rex.waves {
 		s.RexWaves = append(s.RexWaves, [4]float64{round(w.x), round(w.y), w.age, w.max})
 	}
 	for _, v := range p.rex.venom {
-		s.RexVenom = append(s.RexVenom, wireVenom{X: round(v.x), Y: round(v.y), Heading: v.heading, Height: v.height, Size: v.size, Age: v.age, Life: v.life, State: v.state})
+		s.RexVenom = append(s.RexVenom, netwire.Venom{X: round(v.x), Y: round(v.y), Heading: v.heading, Height: v.height, Size: v.size, Age: v.age, Life: v.life, State: v.state})
 	}
 	for _, m := range p.mines {
 		s.Mines = append(s.Mines, [3]float64{round(m.x), round(m.y), m.age})
 	}
 	for _, t := range p.sentries {
-		s.Sentries = append(s.Sentries, wireSentry{X: round(t.x), Y: round(t.y), Age: t.age, Cooldown: t.cooldown, Gun: t.weapon.GunType, Column: t.column, FlipX: t.flipX, Lift: t.lift, Shake: t.shake})
+		s.Sentries = append(s.Sentries, netwire.Sentry{X: round(t.x), Y: round(t.y), Age: t.age, Cooldown: t.cooldown, Gun: t.weapon.GunType, Column: t.column, FlipX: t.flipX, Lift: t.lift, Shake: t.shake})
 	}
 	for _, e := range p.explosions {
 		s.Explosions = append(s.Explosions, [3]float64{round(e.x), round(e.y), e.age})
 	}
 	for _, b := range p.bloodPops {
-		s.Blood = append(s.Blood, wireBlood{X: round(b.x), Y: round(b.y), Age: b.age, Variant: b.variant})
+		s.Blood = append(s.Blood, netwire.Blood{X: round(b.x), Y: round(b.y), Age: b.age, Variant: b.variant})
 	}
 	for _, o := range p.portals {
-		s.Portals = append(s.Portals, portalState2{X: o.x, Y: o.y, Age: o.age, Size: o.size, Rotation: o.rotationUnits, Speed: o.rotationSpeed, CellX: o.cellX, CellY: o.cellY, Frame: o.frame, Alpha: o.alpha})
+		s.Portals = append(s.Portals, netwire.Portal{X: o.x, Y: o.y, Age: o.age, Size: o.size, Rotation: o.rotationUnits, Speed: o.rotationSpeed, CellX: o.cellX, CellY: o.cellY, Frame: o.frame, Alpha: o.alpha})
 	}
 	s.Combo, s.HudFlash, s.HudColor = p.comboWire()
 	s.Over = p.allPlayersDown()
 	if t := p.train; t != nil {
-		s.Train = &wireTrain{X: round(t.x), Y: round(t.y), Active: t.active, Frame: t.frame}
+		s.Train = &netwire.Train{X: round(t.x), Y: round(t.y), Active: t.active, Frame: t.frame}
 	}
 	if p.world != nil {
 		s.Zoom = p.world.BaseZoom()
@@ -230,7 +103,7 @@ func (p *playState) snapshot(seq uint32) *wireSnapshot {
 	return s
 }
 
-func (p *playState) bodyFromWire(w wirePlayer, previous bodyState) bodyState {
+func (p *playState) bodyFromWire(w netwire.Player, previous bodyState) bodyState {
 	b := previous
 	b.x, b.y, b.angle, b.flipX, b.moving = w.X, w.Y, w.Angle, w.FlipX, w.Moving
 	b.health, b.maxHealth, b.flash, b.hurt = w.Health, w.MaxHealth, w.Flash, w.Hurt
@@ -248,7 +121,7 @@ func (p *playState) bodyFromWire(w wirePlayer, previous bodyState) bodyState {
 }
 
 // applySnapshot overwrites the guest's mirror of the host's world.
-func (p *playState) applySnapshot(s *wireSnapshot) {
+func (p *playState) applySnapshot(s *netwire.Snapshot) {
 	p.time, p.score, p.lives, p.multiplier = s.Time, s.Score, s.Lives, s.Multiplier
 	p.applyComboWire(s.Combo, s.HudFlash, s.HudColor)
 	p.waveIndex, p.levelKills, p.levelZombieTotal, p.wavesFinished = s.WaveIndex, s.Kills, s.ZombieSum, s.Finished
@@ -347,31 +220,9 @@ func (p *playState) applySnapshot(s *wireSnapshot) {
 	p.sfxQueue = append(p.sfxQueue, s.Sfx...)
 }
 
-func encodeWire(m wireMsg) []byte {
-	raw, _ := json.Marshal(m)
-	return raw
-}
-
-func decodeWire(raw []byte) (wireMsg, bool) {
-	var m wireMsg
-	if json.Unmarshal(raw, &m) != nil || m.T == "" {
-		return wireMsg{}, false
-	}
-	return m, true
-}
-
-// wireResults is what the guests' results screen shows; only the host can pick
-// Replay or Menu.
-type wireResults struct {
-	Score, Kills, Highscore int32
-	LevelStart              int32
-	Flags                   uint32
-	Survival, Dead          bool
-}
-
-func (a *app) wireResultsFrom(menu *resultsMenu) *wireResults {
+func (a *app) wireResultsFrom(menu *resultsMenu) *netwire.Results {
 	d := menu.Data
-	res := &wireResults{Score: d.Score, LevelStart: d.LevelStartScore, Flags: d.Flags, Survival: d.Survival, Dead: d.Dead}
+	res := &netwire.Results{Score: d.Score, LevelStart: d.LevelStartScore, Flags: d.Flags, Survival: d.Survival, Dead: d.Dead}
 	if d.Kills != nil {
 		res.Kills = *d.Kills
 	}
@@ -381,16 +232,9 @@ func (a *app) wireResultsFrom(menu *resultsMenu) *wireResults {
 	return res
 }
 
-func (r *wireResults) data() resultsData {
+func resultsDataFromWire(r *netwire.Results) resultsData {
 	kills, best := r.Kills, r.Highscore
 	return resultsData{Survival: r.Survival, Dead: r.Dead, Flags: r.Flags, Score: r.Score, LevelStartScore: r.LevelStart, Kills: &kills, Highscore: &best}
-}
-
-// wireTrain is the level's train as the guests draw it.
-type wireTrain struct {
-	X, Y   float64
-	Active bool
-	Frame  int
 }
 
 // speedyKind restores the one native kind that changes how a guest draws a zombie.
@@ -401,21 +245,14 @@ func speedyKind(speedy bool) int {
 	return 0
 }
 
-// wireGhost is a speedy zombie afterimage as it travels in a snapshot.
-type wireGhost struct {
-	X, Y, W, H, Frame float64
-	Angle, Alpha      int
-	FlipX             bool
-}
-
-func ghostsToWire(ghosts [2]zombieGhost) (out [2]wireGhost) {
+func ghostsToWire(ghosts [2]zombieGhost) (out [2]netwire.Ghost) {
 	for i, g := range ghosts {
-		out[i] = wireGhost{X: g.x, Y: g.y, W: g.w, H: g.h, Frame: g.frame, Angle: g.angle, Alpha: g.alpha, FlipX: g.flipX}
+		out[i] = netwire.Ghost{X: g.x, Y: g.y, W: g.w, H: g.h, Frame: g.frame, Angle: g.angle, Alpha: g.alpha, FlipX: g.flipX}
 	}
 	return out
 }
 
-func ghostsFromWire(ghosts [2]wireGhost) (out [2]zombieGhost) {
+func ghostsFromWire(ghosts [2]netwire.Ghost) (out [2]zombieGhost) {
 	for i, g := range ghosts {
 		out[i] = zombieGhost{x: g.X, y: g.Y, w: g.W, h: g.H, frame: g.Frame, angle: g.Angle, alpha: g.Alpha, flipX: g.FlipX}
 	}
@@ -423,11 +260,11 @@ func ghostsFromWire(ghosts [2]wireGhost) (out [2]zombieGhost) {
 }
 
 // zombieToWire is the snapshot form of one zombie (or gib body).
-func (p *playState) zombieToWire(z zombieState, intern func(string) int) wireZombie {
-	return wireZombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts), DeathState: z.deathState, Gibbed: z.gibbed, PresentAge: z.presentAge}
+func (p *playState) zombieToWire(z zombieState, intern func(string) int) netwire.Zombie {
+	return netwire.Zombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts), DeathState: z.deathState, Gibbed: z.gibbed, PresentAge: z.presentAge}
 }
 
 // zombieFromWire rebuilds a zombie from its snapshot form.
-func zombieFromWire(z wireZombie, str func(int) string) zombieState {
+func zombieFromWire(z netwire.Zombie, str func(int) string) zombieState {
 	return zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, deathState: z.DeathState, gibbed: z.Gibbed, presentAge: z.PresentAge, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}}
 }

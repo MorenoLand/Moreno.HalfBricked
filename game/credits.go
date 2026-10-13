@@ -8,6 +8,7 @@ import (
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/focusgraph"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
@@ -251,8 +252,8 @@ func creditsStepTrack(track, delta int) int {
 
 // creditsNavigate walks the controller graph; the focus is unchanged when the
 // direction has no target.
-func creditsNavigate(controller *uiController, focus, dir string) string {
-	if target, ok := controller.neighbour(focus, dir); ok {
+func creditsNavigate(controller *focusgraph.Graph, focus, dir string) string {
+	if target, ok := controller.Neighbour(focus, dir); ok {
 		return target
 	}
 	return focus
@@ -305,7 +306,7 @@ func (a *app) openCredits(info formats.LevelInfo, exit creditsExit) error {
 	a.play.closeScript()
 	focus := ""
 	if controller := a.uiController("CreditsScreen"); controller != nil {
-		focus = controller.def
+		focus = controller.Default
 	}
 	a.credits = newCreditsState(exit, focus)
 	a.credits.backPage = a.page
@@ -418,8 +419,8 @@ func (a *app) updateCredits() error {
 	}
 	controller := a.uiController("CreditsScreen")
 	back := "Back"
-	if controller != nil && controller.back != "" {
-		back = controller.back
+	if controller != nil && controller.Back != "" {
+		back = controller.Back
 	}
 	if uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyBackspace) {
 		c.focus = back

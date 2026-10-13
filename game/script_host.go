@@ -14,6 +14,7 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/nativemath"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
@@ -728,7 +729,7 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		return scripting.CallResult{}, err
 	case "GetCameoY":
 		// Native 0x0013f5f8 -> FUN_0012a8dc(1): top of the dialogue panel in script units (cameo_y.go).
-		return scriptValues(float64(scriptCameoY(logicalWidth, logicalHeight))), nil
+		return scriptValues(float64(nativemath.CameoY(logicalWidth, logicalHeight))), nil
 	case "DrawText1":
 		return h.drawScriptText(args, false)
 	case "DrawText2":

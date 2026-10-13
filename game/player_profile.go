@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 	"log"
 	"math"
 )
@@ -23,7 +24,7 @@ type playerProfile struct {
 }
 
 func (a *app) loadPlayerProfile() error {
-	data, err := readPlayerProfile()
+	data, err := platform.ReadProfile()
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func (a *app) savePlayerProfile() error {
 	if err != nil {
 		return err
 	}
-	return writePlayerProfile(data)
+	return platform.WriteProfile(data)
 }
 func (a *app) updateStatsClock() {
 	if a.statistics.Available == nil {

@@ -12,3 +12,4 @@ test-output/
 
 # Tests are kept locally and are not published
 *_test.go
+tests/
