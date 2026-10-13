@@ -9,3 +9,6 @@ test-output/
 *.golden
 *.capture.png
 *.trace
+
+# Tests are kept locally and are not published
+*_test.go
