@@ -73,6 +73,7 @@ func newWaveZombie(record zombieSpawnRecord, rng *weapons.NativeRNG, catalog for
 	ai.sightBase = float64(float32(sight) * float32(sight))
 	ai.wander = float64(zombieRandom(rng, .3)) + .2
 	brightness := float64(zombieRandom(rng, .199)) + .8
+	nativeFXRNG.Bounded(3) // 1.2.5 FUN_000ffa44: the constructor's default texture pick draws once from the global generator
 	ai.alertRadius = float64(record.AlertRadius)
 	ai.gun = newZombieGun(record.Kind, record.Gun, catalog)
 	z := zombieState{

@@ -80,6 +80,10 @@ type thrownBomb struct {
 	zombieBomb bool
 	bounces    int
 	ownerID    int
+	// boost replaces the DYNOMITE class's +0x84 (205) when it is not zero and shockwave adds the kind 0x1a shockwave of
+	// the detonation (Mad Dog's grenade, west_boss.go: +0x84 = -10 and +0x8d = 1).
+	boost     float64
+	shockwave bool
 }
 
 // throwGrenade launches a grenade or dynamite from (x, y) along (dirX, dirY).

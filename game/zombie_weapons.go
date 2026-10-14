@@ -74,6 +74,10 @@ type zombieShot struct {
 	projectile weapons.NativeWeaponProjectile
 	age        float64
 	fall       float64 // +0x7c: lift lost per second
+	// hitsZombies is the hit-entities flag (+0x59): Mad Dog's bullets (west_boss.go) also hurt other zombies, never their
+	// owner (ownerID is the script id of the zombie that fired it).
+	hitsZombies bool
+	ownerID     int
 }
 
 // PORT ADDITION (not in the original binary): zombie guns fire with the matching weapon sound. The native fire path
@@ -163,6 +167,14 @@ func (p *playState) zombieFire(z *zombieState) {
 		p.robotFire(z) // FUN_0009f7e4 with the robot's post-fire hook FUN_000baf68 (robot_projectiles.go)
 		return
 	}
+	if z.native.egypt.active {
+		p.egyptFire(z) // FUN_0009f7e4 with the mummy's post-fire hook FUN_000b5558 (egypt_boss.go)
+		return
+	}
+	if z.native.west.active {
+		p.westFire(z) // FUN_0009f7e4 with Mad Dog's post-fire hook FUN_000b88a8 (west_boss.go)
+		return
+	}
 	ai := &z.native.ai
 	gun := &ai.gun
 	gun.timer = 0
@@ -247,6 +259,9 @@ func (p *playState) updateZombieShots(dt float64) {
 				hit = true
 				break
 			}
+		}
+		if !hit && shot.hitsZombies {
+			hit = p.zombieShotHitsZombie(shot)
 		}
 		if !hit {
 			live = append(live, shot)

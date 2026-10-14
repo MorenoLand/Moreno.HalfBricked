@@ -46,6 +46,7 @@ type spinnerBlade struct {
 	cx, cy, radius   float32 // +0x80, +0x84, +0x8c
 	orbit            uint16  // +0x90
 	omega            float32 // +0x94 units per second, signed
+	texture          string  // +0x3c resource when it is not the shuriken (the mummy's "eblade", egypt_boss.go)
 }
 
 func rndF(p *playState, extent float32) float32 { return zombieRandom(p.rng, extent) }
@@ -186,11 +187,17 @@ func (a *app) drawSpinners(screen *ebiten.Image) {
 	for _, b := range a.play.spinners {
 		x := (float64(b.x)-world.CameraX)*zoom + world.ViewportX
 		y := (float64(b.y)-world.CameraY)*zoom + world.ViewportY
+		bladeTexture := texture
+		if b.texture != "" {
+			if other, err := a.Texture(b.texture); err == nil {
+				bladeTexture = other
+			}
+		}
 		for pass := 0; pass < 2; pass++ {
 			options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
-			options.GeoM.Translate(-float64(texture.Bounds().Dx())/2, -float64(texture.Bounds().Dy())/2)
-			scaleX := size * zoom / float64(texture.Bounds().Dx())
-			scaleY := size * zoom / float64(texture.Bounds().Dy())
+			options.GeoM.Translate(-float64(bladeTexture.Bounds().Dx())/2, -float64(bladeTexture.Bounds().Dy())/2)
+			scaleX := size * zoom / float64(bladeTexture.Bounds().Dx())
+			scaleY := size * zoom / float64(bladeTexture.Bounds().Dy())
 			if !(b.omega > 0) {
 				scaleX = -scaleX
 			}
@@ -200,7 +207,7 @@ func (a *app) drawSpinners(screen *ebiten.Image) {
 			if pass == 0 {
 				options.ColorScale.Scale(0, 0, 0, spinnerShadowAlpha)
 			}
-			a.drawImage(screen, texture, options)
+			a.drawImage(screen, bladeTexture, options)
 		}
 	}
 }

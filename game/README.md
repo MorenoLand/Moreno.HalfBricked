@@ -65,7 +65,8 @@ Reusable engine code stays in `../engine/*` (formats, content, scripting, weapon
 
 ### Bosses
 - `boss_fights.go`, `rex_ai.go`, `rex_shockwave.go`, `samurai.go`, `samurai_blade.go`, `gangster_car.go`,
-  `egypt_boss.go`, `scene_car.go`.
+  `egypt_boss.go` (the mummy: attack cycle, flames, slam, minigun beams, sickles), `west_boss.go` (Mad Dog: modes, rage fade,
+  arms sprite, grenades), `scene_car.go`. The HD survival boss spawn is `survivalBossSpawn` in `survival.go`.
 
 ### Weapons and projectiles
 - `weapon_playback.go`, `weapon_render.go`, `gun_visual.go`, `secondary_slot.go`, `sentry.go`, `shield.go`,

@@ -172,6 +172,7 @@ type bullet struct {
 	origin     killOrigin
 	hostile    bool // also hits the players (gib flames, flame_flight.go)
 	noZombies  bool // hit-entities flag clear: the robot's death flames hurt the player only (robot_boss.go)
+	ownerID    int  // script id of the zombie that fired it: that zombie takes no damage from it (the mummy's flames, egypt_boss.go)
 }
 
 type explosionState struct {
@@ -211,6 +212,7 @@ type zombieState struct {
 	invulnerable     bool
 	bossRage         bool
 	animTimeMode     bool
+	animScale        float64 // +0x44 of SetZombieAnimTime: the sprite clock factor while animTimeMode is set
 	rexRageTimer     float64
 	lift             float64 // guests only: the host's rex leap lift in px (net_wire.go)
 	spawnAway        bool
@@ -1311,7 +1313,7 @@ func (a *app) setCaptureState(state string) error {
 		a.titleScreen, a.page = false, 3
 	case "stats":
 		a.titleScreen, a.page = false, 4
-		a.statsScreen = newStatsMenu(&a.statistics)
+		a.statsScreen = newStatsMenuBuild(&a.statistics, a.statsWestern())
 	case "achievements", "achievements-untracked":
 		a.titleScreen = false
 		a.openAchievements()
@@ -2593,7 +2595,7 @@ func (a *app) activate() error {
 		case 2:
 			a.page = 3
 		case 3:
-			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
+			a.statsScreen, a.page = newStatsMenuBuild(&a.statistics, a.statsWestern()), 4
 		case 4:
 			a.askNativeQuit(platform.QuitGame)
 		case menuActionAchievements:
@@ -3418,6 +3420,8 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	options.GeoM.Translate(screenX, screenY)
 	a.drawImage(screen, source, options)
 	a.drawExplodingGlow(screen, zombie)
+	a.drawEgyptGlow(screen, zombie)
+	a.drawWestArms(screen, zombie, flipX, screenX, screenY, alpha)
 }
 
 func (a *app) drawBloodPop(screen *ebiten.Image, pop bloodPop) {
@@ -3834,6 +3838,9 @@ func (a *app) openPlay() error {
 	world.Layers[formats.LayerH] = true
 	tileSize := tileSizeFor(tileset)
 	spawnX, spawnY := spawnPosition(level, tileSize)
+	// Port addition: the native global generator lives for the process; the port restarts it per level so a run is
+	// reproducible from its inputs (the determinism test and replays depend on it).
+	nativeFXRNG = weapons.NewStaticNativeRNG()
 	play := &playState{world: world, x: spawnX, y: spawnY, spawnX: spawnX, spawnY: spawnY, tileSize: tileSize, radius: playerCollisionRadius, weapon: a.weapon, weapons: a.weapons, zombieWeapons: a.zombieWeapons, sprites: a.sprites, health: 1, maxHealth: 1, lives: 3, multiplier: 1, hudVisible: true, moveControl: a.mode != 0, shootControl: a.mode != 0, scriptNextEntity: 1, scriptEntities: map[int]*scriptEntity{}, scriptTextures: map[int]*scriptTexture{}, scriptAlpha: 1, scriptPlayerPosSet: false, rng: a.nativeRNGForPlay()}
 	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
 	play.levelInfo = level.Info
@@ -4297,6 +4304,9 @@ func (p *playState) updateBulletsAndKills() {
 			if p.zombies[index].health <= 0 {
 				continue
 			}
+			if b.ownerID != 0 && p.zombies[index].scriptID == b.ownerID {
+				continue
+			}
 			if !p.bulletReachesZombie(b, &p.zombies[index]) {
 				continue
 			}
@@ -4359,17 +4369,25 @@ func (p *playState) updateBulletsAndKills() {
 		if zombie.native.robot.active {
 			p.robotDeath(&zombie)
 		}
+		if zombie.native.egypt.active {
+			p.egyptDeath(&zombie)
+		}
+		if zombie.native.west.active {
+			p.westDeath(&zombie)
+		}
 		if entity := p.scriptEntities[zombie.scriptID]; entity != nil && isBossType(entity.entityType) && zombie.dying {
 			p.onBossDefeated(entity.entityType, zombie.texture)
 		}
 		p.explodeZombie(zombie)
-		p.levelKills = int(int32(p.levelKills) + 1)
-		if p.hudVisible {
-			points := int32(zombie.rawPoints) / 10 * 10
-			award := (points / 20) * int32(p.multiplier)
-			p.score = int(int32(p.score) + award)
+		if !zombie.native.egypt.scored && !zombie.native.west.scored { // (the mummy's and Mad Dog's death hooks credit the kill when they start dying)
+			p.levelKills = int(int32(p.levelKills) + 1)
+			if p.hudVisible {
+				points := int32(zombie.rawPoints) / 10 * 10
+				award := (points / 20) * int32(p.multiplier)
+				p.score = int(int32(p.score) + award)
+			}
 		}
-		if !zombie.spawnAway && !zombie.native.samurai.active && !zombie.native.robot.active {
+		if !zombie.spawnAway && !zombie.native.samurai.active && !zombie.native.robot.active && !zombie.native.egypt.active && !zombie.native.west.active {
 			// (the samurai's death slot FUN_000bcaec replaces the pop and the death sound of the plain class; the robot's
 			// FUN_000baa28 does too)
 			if zombie.dying && zombie.deathState == zombieDeathGib {
@@ -4485,6 +4503,7 @@ func (p *playState) updateWaves() {
 			// FUN_000998ac submits it as SPECIFIC "wave" (see Research/native/achievement-audit-2026-10-10.md).
 			p.achieve.waveAdvances++
 			p.survivalAdvance(next)
+			p.survivalBossSpawn() // HD survival hook FUN_000998ac: a random boss while fewer bosses than players live
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
@@ -4516,7 +4535,7 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 // spawnZombieAtTurn is spawnZombieAt. A non-nil turn is the native turnSpeed range of a survival type (survival.go).
 func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec2, turn *turnRange) {
 	native := nativeZombieTypes[entry.Name]
-	waveZombie := (native >= zombieKindPlain && native <= zombieKindProspect) || native == zombieKindSamurai || native == zombieKindRobot
+	waveZombie := (native >= zombieKindPlain && native <= zombieKindProspect) || native == zombieKindSamurai || native == zombieKindRobot || native == zombieKindEgypt || native == zombieKindWest
 	var record zombieSpawnRecord
 	speed := entry.Speed.X
 	if entry.Speed.Y > 0 {
@@ -4565,7 +4584,8 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 	p.scriptNextEntity++
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: entry.Name, x: point.X, y: point.Y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
 	p.markRexSpawn(id, entry.Name)
-	if name := bossIntroScript(entry.Name, texture); name != "" {
+	if name := bossIntroScript(entry.Name, texture); name != "" && !p.isSurvival() {
+		// (the boss post-inits launch the intro script only in story mode; survival bosses, HD survivalBossSpawn, run none)
 		p.bossScripts = append(p.bossScripts, name)
 	}
 	if isGangsterCarName(entry.Name) {
@@ -4581,6 +4601,12 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 		}
 		if native == zombieKindRobot {
 			p.initRobot(&z)
+		}
+		if native == zombieKindEgypt {
+			p.initEgypt(&z)
+		}
+		if native == zombieKindWest {
+			p.initWest(&z)
 		}
 		z.fps = p.spriteFPS(texture, "")
 		p.zombies = append(p.zombies, z)
@@ -4790,6 +4816,17 @@ func (p *playState) updateZombies() {
 				p.robotDeath(zombie)
 				p.robotAI(zombie, p.nearestPlayer(zombie.x, zombie.y), dt)
 			}
+			if zombie.native.egypt.active {
+				// FUN_000b5070 starts the death and the boss step keeps running the attack cycle's dead block (FUN_000b5930).
+				p.egyptDeath(zombie)
+				p.egyptAI(zombie, dt)
+				p.egyptDeathPose(zombie)
+			}
+			if zombie.native.west.active {
+				// FUN_000b7e1c starts the death and the AI's dead branch (FUN_000b8720) runs the Death / FinalWords clips.
+				p.westDeath(zombie)
+				p.westDeadStep(zombie, dt)
+			}
 			continue
 		}
 		if zombie.spawnAway || zombie.health <= 0 || p.cheats.freezeZombies {
@@ -4851,6 +4888,23 @@ func (p *playState) updateZombies() {
 				zombie.y += moveY
 				moved = moveX != 0 || moveY != 0
 			}
+		case zombie.native.egypt.active && !scriptWalk:
+			// The mummy runs its own copy of the shared update and never moves (egypt_boss.go).
+			p.stepEgypt(zombie, prey, dx, dy, dt)
+		case zombie.native.west.active && !scriptWalk:
+			// Mad Dog runs its own copy of the shared update (west_boss.go).
+			if entity != nil && entity.rotationSet && scriptIdle {
+				// SetEntityRotation writes the heading (+0x36) the AI then keeps turning: once no script owns the body the
+				// scripted rotation becomes its facing instead of freezing the drawn direction.
+				zombie.native.facing = scriptHeading(entity.rotation)
+				entity.rotationSet = false
+			}
+			moveX, moveY := p.westStep(zombie, prey, dx, dy, dt)
+			if scriptIdle && speed > 0 {
+				zombie.x += moveX
+				zombie.y += moveY
+				moved = moveX != 0 || moveY != 0
+			}
 		case zombie.native.kind != 0 && !scriptWalk:
 			// Spawn-record zombies run the native update (zombie_ai.go).
 			aimX, aimY := dx, dy
@@ -4900,7 +4954,7 @@ func (p *playState) updateZombies() {
 		} else {
 			p.zombieUnstickObserve(zombie, distance, 0, 0, 0, dt, unstickAlert)
 		}
-		if !zombie.native.robot.active {
+		if !zombie.native.robot.active && !zombie.native.egypt.active {
 			p.separateZombie(index, dt)
 		}
 		if zombie.native.kind == zombieKindSpeedy {
@@ -4908,7 +4962,7 @@ func (p *playState) updateZombies() {
 		}
 		if !scriptWalk && zombie.native.car.active {
 			p.carContact(zombie, prey, dt)
-		} else if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) && !zombie.native.robot.active {
+		} else if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) && !zombie.native.robot.active && !zombie.native.egypt.active && !zombie.native.west.active {
 			p.zombieContact(zombie, prey, dt)
 		}
 		if entity != nil {
@@ -4919,6 +4973,8 @@ func (p *playState) updateZombies() {
 				// FUN_000bce68: the spin draws with its own heading.
 				heading := zombie.samuraiDrawHeading()
 				zombie.angle, zombie.flipX = barryDirection(cosU16(heading), sinU16(heading))
+			} else if zombie.native.egypt.active {
+				zombie.angle = 0 // the sprite's flip byte is set by the attack cycle (egyptSetAnim)
 			} else if zombie.native.kind != 0 {
 				zombie.angle, zombie.flipX = barryDirection(cosU16(zombie.native.facing), sinU16(zombie.native.facing))
 			} else {
@@ -4938,10 +4994,18 @@ func (p *playState) updateZombies() {
 		if fps <= 0 {
 			fps = p.spriteFPS(zombie.texture, "")
 		}
-		if zombie.native.kind != 0 && !zombie.native.robot.active {
-			fps *= zombie.native.ai.speedFactor // (the robot's clock runs at dt: FUN_000ba8f8)
+		if zombie.animTimeMode {
+			fps *= zombie.animScale // FUN_000a1b08: dt * +0x44 while SetZombieAnimTime's mode byte (+0x40) is set
+		} else if zombie.native.kind != 0 && !zombie.native.robot.active && !zombie.native.egypt.active {
+			fps *= zombie.native.ai.speedFactor // (the robot's clock runs at dt: FUN_000ba8f8; the mummy's sprite clock FUN_000f1ca4 too)
 		}
 		zombie.frame += dt * fps * p.rexAnimationFactor(zombie)
+		if zombie.native.egypt.active {
+			p.egyptClampFrame(zombie)
+		}
+		if zombie.native.west.active {
+			p.westPostUpdate(zombie, dt)
+		}
 	}
 	p.updateRexBoss()
 }

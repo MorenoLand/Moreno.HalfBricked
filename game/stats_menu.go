@@ -37,7 +37,13 @@ type statsMenu struct {
 }
 
 func statsRecords(d *stats.StatsData) []statsRecord {
-	return []statsRecord{
+	return statsRecordsBuild(d, false)
+}
+
+// statsRecordsBuild is the record list of one build: 1.2.5's string table carries "Best Western Boss Time" (the
+// statistic Mad Dog's death hook writes, +0xf8 of the stats object) after the Future boss row; v7's does not.
+func statsRecordsBuild(d *stats.StatsData, western bool) []statsRecord {
+	records := []statsRecord{
 		{0, "PERSONAL BESTS", nil, 64},
 		{1, "Best Story Level Score", &d.BestStoryScore, 55}, {1, "Best Survival Level Score", &d.BestSurvivalScore, 55},
 		{1, "Highest Survival Wave", &d.HighestSurvivalWave, 55}, {1, "Highest Multiplier", &d.HighestMultiplier, 55}, {4, "", nil, 55},
@@ -56,14 +62,35 @@ func statsRecords(d *stats.StatsData) []statsRecord {
 		{1, "Shots Fired", &d.ShotsFired, 55}, {1, "Bosses Killed", &d.BossesKilled, 55},
 		{1, "Fruit Sliced", &d.FruitSliced, 55}, {1, "Stats screen views", &d.ScreenViews, 55}, {4, "", nil, 80}, {4, "", nil, 400},
 	}
+	if !western {
+		return records
+	}
+	for index, record := range records {
+		if record.Label == "Best Future Boss Time" {
+			row := statsRecord{2, "Best Western Boss Time", &d.BestBonusTime, 55}
+			records = append(records[:index+1], append([]statsRecord{row}, records[index+1:]...)...)
+			break
+		}
+	}
+	return records
 }
 func newStatsMenu(data *stats.StatsData) *statsMenu {
+	return newStatsMenuBuild(data, false)
+}
+
+// statsWestern reports the 1.2.5 (HD) cache, whose statistics page lists the Western boss time.
+func (a *app) statsWestern() bool {
+	return a.pack != nil && a.pack.TextureSourceScale("Frontend0/Textures/menu_zombie_2_SD") > 1
+}
+
+// newStatsMenuBuild is newStatsMenu for a build (western: the 1.2.5 list with the Western boss row).
+func newStatsMenuBuild(data *stats.StatsData, western bool) *statsMenu {
 	data.ScreenViews++
 	if data.Available == nil {
 		data.Available = map[string]bool{}
 	}
 	data.Available["Stats screen views"] = true
-	return &statsMenu{Records: statsRecords(data), Alpha: 255, Data: data}
+	return &statsMenu{Records: statsRecordsBuild(data, western), Alpha: 255, Data: data}
 }
 func (menu *statsMenu) update(dt float32, back, levelActive, animationActive bool) statsDestination {
 	nodes := menu.Nodes[:0]

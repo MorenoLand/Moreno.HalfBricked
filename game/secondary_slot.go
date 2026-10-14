@@ -195,6 +195,10 @@ func (a *app) flushSfxQueue(p *playState) {
 		if symbol == "" || symbol == "0" {
 			continue
 		}
+		if symbol == egyptSoundSickle {
+			a.playEgyptSickle() // stop-then-play of sound id 0x37 (egypt_boss.go)
+			continue
+		}
 		if weapons.NativeWeaponSoundLoopSamples(symbol) >= 0 || symbol == "SFX_FLAMETHROWER" {
 			p.sentryLoopHold = .12
 			if a.weaponPlayback.player == nil {

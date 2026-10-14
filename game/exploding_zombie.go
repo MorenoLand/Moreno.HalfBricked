@@ -121,6 +121,12 @@ func (p *playState) zombieDeathDelayFor(z zombieState) float64 {
 	if z.native.robot.active {
 		return p.robotDeathSeconds(z) // the same persistent body (robot_boss.go)
 	}
+	if z.native.egypt.active {
+		return p.samuraiDeathSeconds(z) // the mummy's body is persistent in story mode too (egypt_boss.go)
+	}
+	if z.native.west.active {
+		return p.samuraiDeathSeconds(z) // and so is Mad Dog's (west_boss.go)
+	}
 	if p.isRexBoss(&z) {
 		return p.rexDeathSeconds(z) // the 1.5 s timer and the Death clip (rex_death.go)
 	}
@@ -205,6 +211,9 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 		zombie := &p.zombies[index]
 		if zombie.health <= 0 || zombie.dying || zombie.spawnAway || zombie.invulnerable || (b.ownerID != 0 && zombie.scriptID == b.ownerID) {
 			continue
+		}
+		if zombie.native.west.active && origin.gun == "EXPZOMBIE" {
+			continue // FUN_000b848c: a mine-class blast owned by an exploding zombie does nothing to Mad Dog
 		}
 		reach := radius + zombieBlastBodyScale*zombie.size.X
 		if !zombieBlastEllipse(zombie.x-b.x, zombie.y-b.y, reach) {

@@ -11,8 +11,9 @@ package game
 //     the boss death hooks store the boss clock (+0x328, seconds, advanced while FUN_000d9ab4 reports no running
 //     script) as the best time when none is set (-1) or it does not exceed the stored one, only outside survival
 //     (scene +0x514e8 == 0), and always add one to BossesKilled (+0x12c).
-//   - Not written: BestBonusTime (+0xf8) and FruitSliced have no writer in the v7 exports and no mini-game exists in
-//     the shipped data; Mad Dog's death FUN_000b82d4 writes no statistic.
+//   - BestBonusTime (+0xf8, 1.2.5's "Best Western Boss Time") is written by Mad Dog's death hook FUN_000b7e1c exactly like
+//     the other boss clocks (west_boss.go; the earlier audit that read FUN_000b82d4 found no writer). FruitSliced has no
+//     writer and no mini-game exists in the shipped data.
 
 // noteLaunchStats is GameSave::Load's TimesPlayed increment.
 func (a *app) noteLaunchStats() {
@@ -72,6 +73,8 @@ func (p *playState) bossStatsKind(z *zombieState) string {
 		return "trex"
 	case "boss_egyptian":
 		return "egypt"
+	case "boss_west":
+		return "west"
 	}
 	return ""
 }
@@ -116,6 +119,8 @@ func (p *playState) noteBossDeathStats(z *zombieState) {
 		slot, label = &p.statistics.BestGangsterTime, "Best Gangster Boss Time"
 	case "egypt":
 		slot, label = &p.statistics.BestEgyptTime, "Best Egypt Boss Time"
+	case "west":
+		slot, label = &p.statistics.BestBonusTime, "Best Western Boss Time" // FUN_000b7e1c writes stats +0xf8
 	}
 	if !p.isSurvival() {
 		p.recordBestBossTime(slot, label, z.native.bossTime)

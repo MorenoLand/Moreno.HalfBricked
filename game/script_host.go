@@ -1116,14 +1116,24 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		}
 		id := h.play.scriptNextEntity
 		h.play.scriptNextEntity++
-		const size, health = 60.0, 40000.0
+		// FUN_000dc83c builds the 11-word spawn record (position, speed 0, half size 60, strength 40000, turn 100, weave
+		// 0xfa / 0, alert 0xfa, weapon NONE) and runs the shared initialiser FUN_000a0b80 (newWaveZombie draws the same
+		// random numbers); the post-init FUN_000b82d4 then registers the boss and sets the Mad Dog state (initWest).
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_west", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "maddog", speed: 0}
-		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", ""), scriptControlled: true, native: zombieNative{maxHealth: health}})
+		boss := newWaveZombie(westRecord(), h.play.rng, h.play.zombieWeapons, formats.Vec2{X: x, Y: y}, 0, "maddog", id)
+		boss.fps = h.play.spriteFPS("maddog", "")
+		boss.scriptControlled = true
+		h.play.initWest(&boss)
+		h.play.zombies = append(h.play.zombies, boss)
 		return scriptValues(id), nil
 	case "SetWesternBossDead":
 		for index := range h.play.zombies {
 			entity := h.play.scriptEntities[h.play.zombies[index].scriptID]
 			if entity != nil && entity.entityType == "boss_west" {
+				if h.play.zombies[index].native.west.active {
+					h.play.westSetDead(&h.play.zombies[index]) // FUN_000b7fe4: the Dead clip on the body sprite
+					continue
+				}
 				h.play.zombies[index].animation = "Dead"
 				h.play.zombies[index].speed = 0
 			}
@@ -1378,6 +1388,12 @@ func (h *playScriptHost) entityProperty(name string, args []scripting.Value) (sc
 	case "SetFrame":
 		entity.frame, err = scriptID(args, 1)
 		entity.frameTime = 0
+		if err == nil && entity.kind == "zombie" {
+			// FUN_000f1ddc on the zombie's body sprite (clamped to its clip); the sprite clock restarts its second.
+			if zombie := h.findZombie(entity.id); zombie != nil {
+				zombie.frame = float64(entity.frame)
+			}
+		}
 	case "StopAnimation":
 		entity.walking, entity.playing = false, false
 	case "SetEntityColour":
@@ -1422,7 +1438,8 @@ func (h *playScriptHost) zombieProperty(name string, args []scripting.Value) (sc
 				time, err = scriptNumber(args, 2)
 			}
 			if err == nil {
-				zombie.animTimeMode, zombie.frame = mode, time
+				// FUN_000dc180: byte +0x40 = the mode, float +0x44 = the factor of the sprite clock (FUN_000a1b08).
+				zombie.animTimeMode, zombie.animScale = mode, time
 			}
 		}
 	case "SetZombieTexture":

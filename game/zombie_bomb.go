@@ -57,7 +57,11 @@ func (p *playState) stepZombieBomb(b *thrownBomb, dt float64) bool {
 	b.age += dt
 	b.lift -= dt * b.fall // FUN_000a5f74
 	// FUN_000a700c
-	b.fall += dt * zombieBombSpeedBoost
+	boost := zombieBombSpeedBoost
+	if b.boost != 0 {
+		boost = b.boost
+	}
+	b.fall += dt * boost
 	b.fall += dt * zombieBombGravity
 	b.x += b.dirX * b.speed * dt
 	b.y += b.dirY * b.speed * dt
@@ -102,6 +106,11 @@ func (p *playState) detonateZombieBomb(b *thrownBomb) {
 	last := &p.zombieBlasts[len(p.zombieBlasts)-1]
 	last.playerRate = zombieBombPlayerRate
 	last.ownerID = b.ownerID
+	if b.shockwave {
+		// FUN_000a4050 with +0x8d set: a kind 0x1a shockwave (life 0.4, 200 px, hit flags 1 / 1, owner the thrower).
+		p.rex.waves = append(p.rex.waves, rexShockwave{x: b.x, y: b.y, shot: p.newShot(), owner: b.ownerID, max: westBlastSize, life: westBlastLife, noCredit: true})
+		p.sfxQueue = append(p.sfxQueue, rexShockwaveSound)
+	}
 }
 
 // fireZombieVenom is one pellet of a zombie's VOMIT volley: a venom blob at the zombie plus 16 px along its facing,

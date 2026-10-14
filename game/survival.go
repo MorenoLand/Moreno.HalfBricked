@@ -268,6 +268,99 @@ func (p *playState) survivalBossPresent() bool {
 	return false
 }
 
+// HD-only survival boss spawn (1.2.5 FUN_000998ac, the survival mode hook at vtable +0x44 that FUN_00123180 runs at every
+// valid wave advance; Research/native/boss-wave-counter-2026-10-11.md section (b), resolved here).
+//
+//   - n = the entities of the per-type lists 10..15 (every boss class, FUN_0009788c); the player count is frame+0x451f4.
+//     When n < the player count one boss is made.
+//   - Position: FUN_00121a70(frame+0x375e4) picks entry rnd(count) of the map's 8-byte point vector (+0x40..+0x44), which
+//     the level loader FUN_00126608 fills with the centre of every cell whose collision value (raw + 1) is 3..8, i.e. the
+//     zombie spawn markers 0..5, in column-major order; with no point it is the player's position.
+//   - Type: table {10 boss_rex, 13 boss_samurai, 15 boss_west} at 0x00860098 indexed by (3 * hi32(state)) >> 32 of the
+//     global generator (nativeFXRNG), not the scene generator.
+//   - FUN_000c34e0 builds the record {position, speed -1, half size 20, strength 100, turn -1, cycle 250, weave 17,
+//     alert 250, no weapon} and runs the class initialiser; every boss post-init (rex 0x0011cad0, samurai 0x0011ff0c,
+//     Mad Dog 0x0011a850) then hard-codes the numbers of the level XML's boss type (health, speed, size, turn), and runs
+//     the intro script only in story mode, so the spawn here uses those numbers and queues no script.
+//   - Port: the global generator is a second NativeRNG; of its native consumers only the zombie constructor (one draw per
+//     zombie, newWaveZombie) and this pick are modelled (pickup and particle effects also draw from it and are not), so the
+//     exact boss sequence differs while the distribution (uniform thirds) is native.
+var survivalBossTable = [3]string{"boss_rex", "boss_samurai", "boss_west"}
+
+// nativeFXRNG is the global generator object of 1.2.5 (see weapons.NewStaticNativeRNG).
+var nativeFXRNG = weapons.NewStaticNativeRNG()
+
+// survivalBossCount is FUN_0009788c(10, 16): the living bosses (the port counts the zombies that are not dying; the
+// moment a boss leaves its list is UNRESOLVED).
+func (p *playState) survivalBossCount() int {
+	count := 0
+	for _, z := range p.zombies {
+		if z.dying || z.health <= 0 || z.spawnAway {
+			continue
+		}
+		if e := p.scriptEntities[z.scriptID]; e != nil && isBossType(e.entityType) {
+			count++
+		}
+	}
+	return count
+}
+
+// survivalPlayerCount is frame+0x451f4.
+func (p *playState) survivalPlayerCount() int {
+	if p.coopActive() {
+		return 1 + len(p.coop.players)
+	}
+	return 1
+}
+
+// survivalBossPoint is FUN_00121a70 on the map: a random spawn-marker cell centre, or the player's position.
+func (p *playState) survivalBossPoint() formats.Vec2 {
+	var points []formats.Vec2
+	if p.world != nil && p.tileSize > 0 {
+		half := float64(p.tileSize) / 2
+		for x := 0; x < p.world.Level.Width; x++ {
+			for y := 0; y < p.world.Level.Height; y++ {
+				if value := p.collisionValue(x, y); value >= 3 && value <= 8 {
+					points = append(points, formats.Vec2{X: float64(x*p.tileSize) + half, Y: float64(y*p.tileSize) + half})
+				}
+			}
+		}
+	}
+	if len(points) > 0 && p.rng != nil {
+		return points[p.rng.Bounded(uint32(len(points)))]
+	}
+	return formats.Vec2{X: p.x, Y: p.y}
+}
+
+// survivalBossEntry is the spawn type of a survival boss: the level XML's numbers of that boss, which the 1.2.5
+// post-inits hard-code, with the fixed weave and alert values of the FUN_000c34e0 record (so the roll draws nothing).
+func survivalBossEntry(name string) formats.SpawnType {
+	entry := formats.SpawnType{Name: name, Chance: 100, TurnSpeed: 12, AlertRadius: 250, DeviateCycleSpeed: 250, DeviateAmount: 17}
+	switch name {
+	case "boss_rex":
+		entry.Speed, entry.Strength, entry.Size, entry.Texture = formats.Vec2{X: 170, Y: 170}, 25000, formats.Vec2{X: 80, Y: 80}, "rexwalk_1"
+	case "boss_samurai":
+		entry.Speed, entry.Strength, entry.Size, entry.Texture = formats.Vec2{X: 130, Y: 130}, 20000, formats.Vec2{X: 55, Y: 55}, "samurai"
+	default:
+		entry.Speed, entry.Strength, entry.Size, entry.Texture = formats.Vec2{X: 92, Y: 92}, westHealth, formats.Vec2{X: 70, Y: 70}, "maddog"
+	}
+	return entry
+}
+
+// survivalBossSpawn is the tail of FUN_000998ac: at a wave advance of an HD survival level with fewer bosses than players
+// one random boss is made at a random spawn marker.
+func (p *playState) survivalBossSpawn() {
+	if p.world == nil || !p.isSurvival() || p.waveBuild() == content.WaveBuildV7 || p.rng == nil {
+		return
+	}
+	if p.survivalBossCount() >= p.survivalPlayerCount() {
+		return
+	}
+	point := p.survivalBossPoint()
+	name := survivalBossTable[nativeFXRNG.Bounded(3)]
+	p.spawnZombieAt(survivalBossEntry(name), point)
+}
+
 // rollSurvivalSpawnRecord is rollZombieSpawnRecord with the native turnSpeed range. FUN_000bec48 rolls size, speed,
 // turnSpeed (no draw when the range is a point), deviateAmount, alertRadius and deviateCycleSpeed in that order.
 func rollSurvivalSpawnRecord(entry formats.SpawnType, turn turnRange, rng *weapons.NativeRNG) zombieSpawnRecord {

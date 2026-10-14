@@ -169,6 +169,10 @@ type zombieNative struct {
 	samurai samuraiBoss
 	// robot is the future boss's state (robot_boss.go).
 	robot robotBoss
+	// egypt is the mummy's state (egypt_boss.go).
+	egypt egyptBoss
+	// west is Mad Dog's state (west_boss.go).
+	west westBoss
 	// boss marks a boss class on a guest, which has no script entities to ask (the host sends it, net_wire.go).
 	boss bool
 	// bossTime is +0x328 of the rex / car / mummy classes and bossStatsDone marks the death hook as run (stats_writers.go).
@@ -206,6 +210,12 @@ func (p *playState) hurtZombie(z *zombieState, hit zombieHit) bool {
 	if z.dying || z.health <= 0 {
 		return true
 	}
+	if z.native.egypt.active && !p.egyptCanBeHurt() {
+		return false // FUN_000b5410 / 0x00117378: no damage once the player is dead
+	}
+	if z.native.west.active && !p.westCanBeHurt(z) {
+		return false // FUN_000b848c / 0x0011aa64: none while the rage fade runs or the player is dead
+	}
 	amount, flash := float64(hit.damage), zombieDamageFlash
 	blocked := false
 	if z.native.kind == zombieKindShield && hit.kind == 0x10 {
@@ -223,8 +233,9 @@ func (p *playState) hurtZombie(z *zombieState, hit zombieHit) bool {
 	z.health -= amount
 	z.hitFlash = flash
 	if z.health > 0 {
-		if hit.kind == 0x10 && !z.native.robot.active {
-			// FUN_000bae44 (the robot's damage slot) spawns a spark instead of playing the hurt sound.
+		if hit.kind == 0x10 && !z.native.robot.active && !z.native.egypt.active && !z.native.west.active {
+			// FUN_000bae44 (the robot's damage slot) spawns a spark instead of playing the hurt sound; the mummy's
+			// FUN_000b5410 does the same.
 			p.queueZombieHurtSound()
 		}
 		return false

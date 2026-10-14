@@ -61,7 +61,7 @@ func (a *app) activatePauseMenu(index int) error {
 	case 1:
 		a.page = 3
 	case 2:
-		a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
+		a.statsScreen, a.page = newStatsMenuBuild(&a.statistics, a.statsWestern()), 4
 	case 3:
 		a.askConfirm("QUIT TO MENU?", a.quitToMenu)
 	case 4:

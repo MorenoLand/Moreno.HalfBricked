@@ -515,7 +515,7 @@ func (p *playState) samuraiDrawAlpha(z zombieState) (float64, bool) {
 // zombiesBlockExit reports whether a zombie other than the dead samurai's persistent body is still in the list.
 func (p *playState) zombiesBlockExit() bool {
 	for _, z := range p.zombies {
-		if !(z.native.samurai.active && z.native.samurai.dead) && !(z.native.robot.active && z.native.robot.dead) {
+		if !(z.native.samurai.active && z.native.samurai.dead) && !(z.native.robot.active && z.native.robot.dead) && !(z.native.egypt.active && z.native.egypt.dead) && !(z.native.west.active && z.native.west.dead) {
 			return true
 		}
 	}

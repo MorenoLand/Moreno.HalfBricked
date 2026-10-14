@@ -40,7 +40,9 @@ func isBossType(entityType string) bool { return strings.HasPrefix(entityType, "
 
 // onBossDefeated ends the wave schedule and removes the remaining zombies.
 func (p *playState) onBossDefeated(entityType, texture string) {
-	if p.bossDefeated {
+	if p.bossDefeated || p.isSurvival() {
+		// Survival bosses (HD survivalBossSpawn) end nothing: the death hooks skip the wave replacement and the
+		// kill-off outside story mode (scene mode byte != 0) and only count the boss.
 		return
 	}
 	p.bossDefeated = true

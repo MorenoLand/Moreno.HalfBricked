@@ -43,6 +43,9 @@ func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 	if z.native.car.active {
 		return carRenderAnchor * z.native.sizeZ
 	}
+	if z.native.egypt.active {
+		return egyptRenderAnchor * z.native.sizeZ // FUN_000b5198: +0x2d4 = 0.5
+	}
 	return renderHeight * zombieRenderAnchor
 }
 
