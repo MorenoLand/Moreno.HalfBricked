@@ -103,6 +103,7 @@ const (
 	zombieNoiseMax        = 350.0 // DAT_00094a7c
 	zombieNoiseRegen      = .5    // FUN_000962f4: +0x3e0 regrows to 1 at 0.5/s
 	zombiePushScale       = 10.0  // DAT_000a2090
+	shieldPushBack        = .025  // DAT_0009f7a0: contact push of a zombie against a shielded player
 	playerScriptPushScale = 2.5   // DAT_000a207c (1.2.5 DAT_00101004): Barry pushed by overlap * dt * 2.5
 	zombieSeparationSize  = 1.25  // DAT_000a2074
 	zombieContactDamage   = .075  // DAT_0009f79c: damage per second while deeply overlapping
@@ -352,5 +353,15 @@ func (p *playState) zombieContact(z *zombieState, prey playerTarget, dt float64)
 	overlap := reach - math.Hypot(prey.x-z.x, prey.y-z.y)
 	if overlap > zombieContactDepth*entityGridPlayerBody {
 		p.damagePlayerFrom(prey.index, dt*zombieContactDamage, z)
+		return
+	}
+	// FUN_0009f6e8, else branch: with the player's shield timer (+0x3e4) running, a shallower overlap pushes the ZOMBIE
+	// back along the unit contact vector by overlap * 0.025 (no dt; v7 DAT_0009f7a0). The push joins the separation
+	// accumulator (+0x54..+0x5c) of FUN_000a1b08, so it adds to the overlap * dt * 10 push of separatePlayer.
+	if overlap > 0 && prey.index == 0 && p.shielded() {
+		if dist := math.Hypot(prey.x-z.x, prey.y-z.y); dist >= .001 {
+			z.x -= (prey.x - z.x) / dist * overlap * shieldPushBack
+			z.y -= (prey.y - z.y) / dist * overlap * shieldPushBack
+		}
 	}
 }

@@ -443,7 +443,7 @@ func (p *playState) samuraiContact(z *zombieState, prey playerTarget, dt float64
 	if math.Hypot(prey.x-z.x, prey.y-z.y) >= reach {
 		return
 	}
-	p.damagePlayer(prey.index, dt*samuraiContactDamage)
+	p.damagePlayerAt(prey.index, dt*samuraiContactDamage, z.x, z.y)
 	if z.native.ai.state == 5 {
 		p.samuraiLoadGun(z)
 	}

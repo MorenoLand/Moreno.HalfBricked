@@ -66,7 +66,7 @@ func menuGroupChildFrom(component *formats.UIComponent) menuGroupChild {
 }
 
 // menuGroupNames maps the main menu button action to its MainScreen group.
-var menuGroupNames = map[int]string{0: "PlayZombie", 2: "OptionsZombie", 3: "StatsZombie", 4: "QuitZombie"}
+var menuGroupNames = map[int]string{0: "PlayZombie", 2: "OptionsZombie", 3: "StatsZombie", 4: "QuitZombie", menuActionAchievements: "AchievementsZombie"}
 
 // parseMenuGroupLayout reads one zombie group out of MainScreen.uiscreen.
 func parseMenuGroupLayout(screen *formats.UIScreen, group string) *menuGroupLayout {
@@ -217,6 +217,10 @@ func (a *app) drawMarqueeButtonNative(screen *ebiten.Image, button menuButton, l
 				a.drawImage(screen, hands, menuGroupChildOptions(layout, motion, hand, float64(bounds.Dx()), float64(bounds.Dy()), float64(bounds.Dx())/2, float64(bounds.Dy())/2, 1, 1))
 			}
 		}
+	}
+	if button.action == menuActionAchievements {
+		a.drawAchievementsLabel(screen, layout, motion)
+		return
 	}
 	labels, err := a.Texture("Common0/Textures/Button_Text_SD")
 	textRect, ok := buttonTextRect(button.labelRow)

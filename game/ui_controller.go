@@ -41,13 +41,17 @@ func (a *app) uiController(screen string) *focusgraph.Graph {
 // mainMenuNodes maps MainScreen.txt button aliases to the port's main-menu
 // actions (mainMenuButtons[i].action). Aliases with no port button (Achievements,
 // MoreGames, News, Privacy, Credits) are absent: focus does not move onto them.
-var mainMenuNodes = map[string]int{"PlayButton": 0, "OptionsButton": 2, "StatsButton": 3, "QuitButton": 4}
+var mainMenuNodes = map[string]int{"PlayButton": 0, "OptionsButton": 2, "StatsButton": 3, "QuitButton": 4, "AchievementsButton": menuActionAchievements}
 
 // mainMenuNavigate returns the main-menu button index reached from index in dir
 // along MainScreen.txt's graph, or -1 when the native graph has no present
 // target (or the controller file is missing).
 func (a *app) mainMenuNavigate(index int, dir string) int {
-	return mainMenuTarget(a.uiController("MainScreen"), index, dir)
+	target := mainMenuTarget(a.uiController("MainScreen"), index, dir)
+	if target >= 0 && !a.mainMenuButtonAvailable(target) {
+		return -1 // a group the loaded pack does not have
+	}
+	return target
 }
 
 func mainMenuTarget(controller *focusgraph.Graph, index int, dir string) int {

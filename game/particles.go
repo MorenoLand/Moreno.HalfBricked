@@ -21,8 +21,8 @@ import (
 //	type 5 (charge, 1 per call, stationary, 8 frames over 0.75 s): the muzzle flash that opens the robot's minigun
 //	  sweep (v7 FUN_000bab94, 1.2.5 FUN_0011d860).
 //
-// Types 1 and 2 are also spawned by the player's damage and death (FUN_00094c6c, FUN_000962f4), by the rex's death
-// (FUN_000b9624 with type 2) and type 4 (blue) is never used by a call site found; none of those is ported.
+// Types 1 and 2 are also spawned by the player's damage and death (FUN_00094c6c, FUN_000962f4: player_hit_feedback.go)
+// and by the rex's death (FUN_000b9624 with type 2: rex_death.go); type 4 (blue) is never used by a call site found.
 const (
 	particleKindHit    = 0
 	particleKindSpurt  = 1

@@ -154,7 +154,7 @@ func (p *playState) updateSpinners(dt float64) {
 			dy := (float32(target.y) - b.y) / spinnerAspect
 			reach := spinnerPlayerWidth*spinnerReachScale + b.w*spinnerWidthReach
 			if dx*dx+dy*dy < reach*reach {
-				p.damagePlayer(target.index, p.spinnerDamageFor())
+				p.damagePlayerAt(target.index, p.spinnerDamageFor(), float64(b.x), float64(b.y))
 				hit = true
 				break
 			}

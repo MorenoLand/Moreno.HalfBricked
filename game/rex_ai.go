@@ -299,7 +299,7 @@ func (p *playState) rexContact(zombie *zombieState, state *rexBossState, dt floa
 			continue
 		}
 		for call := 0; call < rexContactCalls; call++ {
-			p.damagePlayer(target.index, dt*rexContactDamage)
+			p.damagePlayerAt(target.index, dt*rexContactDamage, zombie.x, zombie.y)
 		}
 		if state.ai.state == 5 {
 			state.ai.reload(rexAmmoContact)
@@ -438,7 +438,7 @@ func (p *playState) updateRexVenom() {
 			}
 			dx, dy := target.x-v.x, (target.y-v.y)/rexShockwaveAspect
 			if dx*dx+dy*dy < reach*reach {
-				p.damagePlayer(target.index, rexVenomDamage)
+				p.damagePlayerAt(target.index, rexVenomDamage, v.x, v.y)
 				hit = true
 			}
 		}

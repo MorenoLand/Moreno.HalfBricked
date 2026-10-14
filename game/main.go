@@ -152,6 +152,7 @@ type app struct {
 	frontendScaleX                               float64
 	frontendScaleY                               float64
 	menuClick                                    *menuClickState
+	menuAchLabel                                 *ebiten.Image // cached "ACHIEVEMENTS" label of the main menu group (main_menu_achievements.go)
 	debugPanelVisible                            bool
 	debugPanelDragging                           bool
 	debugPanelX, debugPanelY                     float64
@@ -264,6 +265,7 @@ type playState struct {
 	flash                                                  float64
 	stick                                                  int
 	quietHit                                               bool // the current damage call has no source object: no hurt sound
+	hitFrom                                                hitOrigin // position of the damage source for a call without a zombie (player_hit_feedback.go)
 	aimPointDistance                                       float64 // world px from the player to the aim point (mouse); <= 1.5 = none
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY       float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
@@ -330,6 +332,7 @@ type playState struct {
 	scriptText1X, scriptText1Y, scriptText2X, scriptText2Y float64
 	scriptText1Size, scriptText2Size                       float64
 	scriptTextVisible                                      bool
+	tutorial                                               tutorialControllerPanel // Tutorial_Controller panel (tutorial_controller.go)
 	scriptAlpha                                            float64
 	scriptFadeRemaining                                    float64
 	scriptFadeDuration                                     float64
@@ -501,6 +504,7 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 	if err := game.loadPlayerProfile(); err != nil {
 		return nil, err
 	}
+	game.noteLaunchStats()
 	game.applyExtras()
 	game.sound.MusicEnabled(!silent && game.options.music)
 	if runtime.GOOS == "js" && !silent {
@@ -799,6 +803,7 @@ func (a *app) Update() error {
 			return a.updateGameplayAchievements(a.play)
 		}
 		x, y := a.pointer()
+		a.updateTutorialPanel()
 		if !a.play.paused {
 			if err := a.play.updateScript(); err != nil {
 				return err
@@ -913,6 +918,10 @@ func (a *app) Update() error {
 				a.menuSelection = index
 				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 				return a.beginMenuClick(index)
+			}
+			if a.creditsButtonAvailable() && image.Pt(px, py).In(creditsIconRect()) {
+				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+				return a.openCreditsFromMenu()
 			}
 		} else {
 			index := (py - 96) / 28
@@ -1831,6 +1840,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 			}
 			a.drawMarqueeButton(screen, button, a.menuZombies[index], index == a.menuSelection)
 		}
+		a.drawCreditsButton(screen)
 	} else if a.page == 3 {
 		a.drawBackdrop(screen)
 		a.drawOptionsMenu(screen, &a.options)
@@ -2249,6 +2259,8 @@ var mainMenuButtons = []menuButton{
 	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
 	{zombie: 3, labelRow: 6, action: 4, cx: 76, cy: 274, width: 128, height: 64, angle: -0.16},
 	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
+	// 1.2.5 only (main_menu_achievements.go): the native Achievements group at its authored position and scale.
+	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 243, cy: 84.75, width: 128, height: 64},
 }
 
 func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
@@ -2301,6 +2313,7 @@ func (a *app) updateMenuZombieMotion(dt float32) {
 			a.menuZombies[i] = menumotion.NewNativeMenuZombieMotion(float32(button.cx), float32(button.cy), 0, scale, weapons.NativeWeaponRandomFloat(&rng, 3))
 			a.menuZombies[i].SetState(menumotion.NativeMenuZombieEntering)
 		}
+		a.hideUnavailableMenuZombies()
 		a.menuMotionActive = true
 		return
 	}
@@ -2537,6 +2550,9 @@ func (a *app) cursor() int {
 func (a *app) move(delta int) {
 	if a.page == 0 {
 		index := clamp(a.menuSelection+delta, 0, len(mainMenuButtons)-1)
+		if !a.mainMenuButtonAvailable(index) {
+			return
+		}
 		a.menuSelection = index
 		return
 	}
@@ -2580,6 +2596,8 @@ func (a *app) activate() error {
 			a.statsScreen, a.page = newStatsMenu(&a.statistics), 4
 		case 4:
 			a.askNativeQuit(platform.QuitGame)
+		case menuActionAchievements:
+			a.openAchievements() // back returns to this page (achievementsBackPage)
 		}
 	case 2:
 		levels := a.filteredLevels()
@@ -2764,6 +2782,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	a.drawScriptText(screen)
 	a.drawPlayControls(screen)
 	a.drawGameHUD(screen)
+	a.drawTutorialPanel(screen)
 	if !a.play.paused && !a.sandboxOpen && !a.play.storyGameOver(a.mode) && (!a.mobile || a.play.scriptForceReticule) && (a.play.hudVisible || a.play.scriptForceReticule) {
 		a.drawReticule(screen)
 	}
@@ -2851,6 +2870,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	livesText := fmt.Sprintf("x%d", max(a.play.lives, 0))
 	a.text(screen, livesText, 410, 20, 22.0/32.0)
 	a.drawLifePopups(screen)
+	a.drawShieldHUD(screen)
 	if a.play.coopActive() {
 		a.drawCoopHUD(screen)
 	} else {
@@ -3305,6 +3325,13 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if isGibClip {
 		animation, hasAnimation = gibClip, true
 	}
+	// A dying rex / president plays its one-shot Death clip once the 1.5 s timer has run out (rex_death.go).
+	rexDeath := false
+	if zombie.dying && a.play.isRexBoss(&zombie) && zombie.deathAge >= rexDeathTimer {
+		if clip, ok := a.spriteAnimation(textureName, "Death"); ok && clip.Frames > 0 {
+			animation, hasAnimation, rexDeath = clip, true, true
+		}
+	}
 	texturePath := commonSDTexture(textureName)
 	columns, rows := 5, 4
 	if hasAnimation {
@@ -3329,6 +3356,9 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if isGibClip {
 		frame = gibFrame
 	}
+	if rexDeath {
+		frame, _ = a.play.rexDeathFrame(zombie, animation.Frames, animation.FPS)
+	}
 	if frame < 0 {
 		frame += rows
 	}
@@ -3344,6 +3374,10 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 	if isGibClip && gibClip.Angles <= 1 {
 		// Disintegrate is a one-angle strip with its frames across (zombie_gib.go).
 		rect = zombieGibStripCell(frame, gibClip.Frames, texture.Bounds())
+	}
+	if rexDeath {
+		// rexdeath is a 4 frame strip across the sheet.
+		rect = zombieGibStripCell(frame, animation.Frames, texture.Bounds())
 	}
 	if rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
@@ -3854,6 +3888,9 @@ func (a *app) openPlay() error {
 	a.stopWeaponPlayback()
 	a.warmTextures(level.Info)
 	a.noteAchievementLevelEntry(a.play, level.Info)
+	if !a.netGuest() {
+		a.noteLevelEntryStats()
+	}
 	a.play = play
 	musicStart := time.Now()
 	a.setLevelMusic(level.Info)
@@ -4576,7 +4613,12 @@ func (p *playState) spawnZombieFor(spawner formats.Spawner, turns []turnRange, o
 		return
 	}
 	if strings.HasPrefix(strings.ToLower(entry.Name), "p_") {
-		p.spawnPickup(entry.Name, point)
+		// FUN_000bec48 / FUN_00121b50: up to 10 marker points then 10 random map cells, away from other pickups.
+		placed, ok := p.nativePickupPoint(points, point)
+		if !ok {
+			return
+		}
+		p.spawnPickup(entry.Name, placed)
 		return
 	}
 	if isBossType(entry.Name) && p.bossPresent(entry.Name) {
@@ -4726,7 +4768,9 @@ func (p *playState) updateZombies() {
 		zombie := &p.zombies[index]
 		zombie.hitFlash = math.Max(0, zombie.hitFlash-dt)
 		zombie.rexRageTimer = math.Max(0, zombie.rexRageTimer-1000*dt)
+		p.stepBossClock(zombie, dt)
 		if zombie.dying {
+			p.noteBossDeathStats(zombie)
 			if zombie.native.car.active {
 				if !zombie.native.car.wrecked {
 					p.leaveCarWreck(zombie)
@@ -4736,6 +4780,7 @@ func (p *playState) updateZombies() {
 			p.stepGibFlames(zombie)
 			p.zombieDeathSpurt(zombie)
 			zombie.deathAge += dt
+			p.rexDeathStep(zombie)
 			if zombie.native.samurai.active {
 				p.samuraiDeath(zombie)
 				p.samuraiDeathPose(zombie)
@@ -4933,6 +4978,7 @@ func (p *playState) updatePlayerDeath() bool {
 		p.moveControl, p.shootControl = false, false
 	}
 	p.deathTimer = math.Max(0, p.deathTimer-1.0/60.0)
+	p.deadSpurt()
 	if p.deathTimer > 0 || p.outOfLives() {
 		return true
 	}

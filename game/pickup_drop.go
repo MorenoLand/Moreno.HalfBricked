@@ -37,6 +37,7 @@ func (p *playState) stepPickupDrops(dt float64) {
 			height = 0
 			speed *= float32(pickupBounceScale)
 			e.landed = true
+			e.registered = true
 		}
 		e.lift, e.liftVel = float64(height), float64(speed)
 	}

@@ -129,6 +129,7 @@ func (p *playState) classifyZombieDeath(z *zombieState, kind uint8, x, y float64
 	if zombieDeathStateFor(kind, math.Hypot(x-z.x, y-z.y), c) == zombieDeathGib {
 		z.deathState = zombieDeathGib
 		z.deathDelay = zombieGibHitTime(p.rng, c)
+		p.noteZombieIgnited() // 0x000a0304: the stats +0x108 increment of a death-state-2 hit
 	}
 }
 

@@ -96,6 +96,9 @@ type zombieBlast struct {
 	// the rocket handler FUN_000a50f4: 1.5); noZombies is the hit-entities flag cleared (robot_projectiles.go).
 	playerRate float64
 	noZombies  bool
+	// ownerID is the script id of the zombie that threw the bomb: the generic hit pass skips its owner (+0x50), see
+	// zombie_bomb.go.
+	ownerID int
 }
 
 func (p *playState) isExplodingZombie(z zombieState) bool {
@@ -117,6 +120,9 @@ func (p *playState) zombieDeathDelayFor(z zombieState) float64 {
 	}
 	if z.native.robot.active {
 		return p.robotDeathSeconds(z) // the same persistent body (robot_boss.go)
+	}
+	if p.isRexBoss(&z) {
+		return p.rexDeathSeconds(z) // the 1.5 s timer and the Death clip (rex_death.go)
 	}
 	delay := zombieDeathDelay
 	if z.deathDelay > 0 {
@@ -187,7 +193,7 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 				if b.playerRate > 0 {
 					rate = b.playerRate
 				}
-				p.damagePlayer(target.index, dt*rate)
+				p.damagePlayerAt(target.index, dt*rate, b.x, b.y)
 			}
 		}
 	}
@@ -197,7 +203,7 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 	origin := b.origin
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
-		if zombie.health <= 0 || zombie.dying || zombie.spawnAway || zombie.invulnerable {
+		if zombie.health <= 0 || zombie.dying || zombie.spawnAway || zombie.invulnerable || (b.ownerID != 0 && zombie.scriptID == b.ownerID) {
 			continue
 		}
 		reach := radius + zombieBlastBodyScale*zombie.size.X

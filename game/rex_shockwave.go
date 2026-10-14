@@ -381,7 +381,7 @@ func (p *playState) rexShockwaveHit(wave rexShockwave) {
 		// 0.5 * unit(player - wave) to player+0x1c. The velocity add has no effect:
 		// the player update FUN_00096818 rewrites +0x1c from the controls every
 		// frame (0x00096bfc) before it is read, and nothing else consumes it.
-		p.damagePlayer(target.index, rexShockwavePlayerDamage)
+		p.damagePlayerAt(target.index, rexShockwavePlayerDamage, wave.x, wave.y)
 	}
 	query := float32(size) * rexShockwaveHalf
 	for index := range p.zombies {

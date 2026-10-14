@@ -42,10 +42,8 @@ import (
 // SPINNER (CURVER, kind 0x18) is ported in samurai_blade.go (orbit set up by FUN_000a6640, recovered in
 // Research/native/samurai-spinner-2026-10-11.md).
 //
-// UNRESOLVED (not implemented, the zombie then behaves as unarmed): VENOM
-// (VOMIT, kind 0x17: as decompiled, Life 0 makes FUN_000a4288 remove it on the
-// first update) and DYNOMITE (0x1d: bouncing bomb FUN_000a700c / blast FUN_000a4dc4).
-// Their flight and landing rules were not recovered completely enough to port without guessing.
+// VOMIT (VENOM, kind 0x17) reuses the rex's spit (zombie_bomb.go fireZombieVenom, rex_ai.go) and DYNOMITE (0x1d) is the
+// bouncing bomb of zombie_bomb.go (G06).
 const (
 	zombieGunInterval     = 2.25 // DAT_000a0da0: armed_zombie interval multiplier
 	zombieGunArmedTimer   = -.75 // 0xbf400000
@@ -110,8 +108,8 @@ func newZombieGun(kind, gunID int, catalog formats.ZombieWeaponCatalog) zombieGu
 			gun.timer = zombieGunArmedTimer
 			gun.interval *= zombieGunInterval
 		}
-		if gun.kind != 0x10 && gun.kind != samuraiBladeKind {
-			gun.rounds = 0 // VENOM and DYNOMITE are not ported: see the header comment
+		if gun.kind != 0x10 && gun.kind != samuraiBladeKind && gun.kind != zombieBombKind && gun.kind != 0x17 {
+			gun.rounds = 0 // other bullet kinds are not ported
 		}
 		return gun
 	}
@@ -194,6 +192,15 @@ func (p *playState) zombieFire(z *zombieState) {
 			jitter = p.fireSpinner(z, heading, jitter, lift, fall, gun)
 			continue
 		}
+		if gun.kind == zombieBombKind {
+			p.fireZombieBomb(z, heading, lift, fall, gun) // DYNOMITE (zombie_bomb.go)
+			continue
+		}
+		if gun.kind == 0x17 {
+			// VOMIT (kind 0x17, VENOM): the rex's spit (rex_ai.go), 16 px along the facing, height 0.3 of the body.
+			p.fireZombieVenom(z, heading, gun)
+			continue
+		}
 		shot := zombieShot{fall: fall, projectile: weapons.NativeWeaponProjectile{X: z.x, Y: z.y, Direction: heading, Life: gun.life, Lift: lift, Width: 10, Height: -20, EntityType: gun.kind, Texture: "Common0/Textures/Bullet_SD"}}
 		shot.projectile.VX = cosU16(heading) * gun.speed
 		shot.projectile.VY = sinU16(heading) * gun.speed
@@ -236,7 +243,7 @@ func (p *playState) updateZombieShots(dt float64) {
 		for _, target := range p.livingPlayers() {
 			reach := zombieBodyScale*entityGridPlayerBody + zombieShotPlayerScale*pr.Width
 			if zombieBlastEllipse(target.x-pr.X, target.y-pr.Y, reach) {
-				p.damagePlayer(target.index, zombieShotPlayerHit)
+				p.damagePlayerAt(target.index, zombieShotPlayerHit, pr.X, pr.Y)
 				hit = true
 				break
 			}

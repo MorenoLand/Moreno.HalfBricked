@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 )
 
@@ -21,8 +22,12 @@ import (
 //   - FUN_000b6e00 (may-shoot): the squared distance is within 73000, 64 <= x <= (levelWidth - 2) * 32 and the
 //     line to the player is clear (or the state is already 2/4).
 //
-// UNRESOLVED (not implemented): the vertical knock-back the contact applies to the player (+0x20 += +-(0.2 + 0.5 *
-// speedFactor)), the tile collision FUN_00091918 of the movement, the boss meter hook FUN_000b48c0 beyond the
+// The vertical knock-back the contact adds to the player (+0x20 += +-(0.2 + 0.5 * speedFactor)) is a native no-op:
+// the player update FUN_00096818 rewrites +0x1c/+0x20/+0x24 from the controls (lines 276-291) before the movement
+// reads them (lines 414-416), so it is deliberately not applied (G20). SFX_CAR_GUN (0x30) has no caller in the
+// binary (sound-trigger-audit 2.x), so the car plays no gun sound.
+//
+// UNRESOLVED (not implemented): the tile collision FUN_00091918 of the movement, the boss meter hook FUN_000b48c0 beyond the
 // health fraction the HUD already reads, and the bazooka / grenade shots the gun roll can pick (kinds 0x13 / 0x14
 // are not ported, so those rolls leave the car without a gun).
 const (
@@ -66,7 +71,14 @@ func (p *playState) leaveCarWreck(z *zombieState) {
 	// amplitudes; that mapping is inferred.
 	p.sfxQueue = append(p.sfxQueue, "SFX_CAR_DEATH")
 	p.spawnBlast(z.x, z.y, zombieBlastSound, killOrigin{}, true)
-	p.startCameraShake(z.x, z.y, 1.5, 1, 1, cameraShakeAngleMul(p.waveBuild()))
+	// v7 FUN_000b6c58 calls FUN_000be1fc(pos, DAT_000b6dec = 3.0, 1.5, 1.0, 1.0): with FUN_000be1fc's signature (pos,
+	// duration, ampX, ampY, angleMul) that is a 3.0 s shake, ampX 1.5, ampY 1.0, angle multiplier 1.0 (the earlier
+	// "1.5 / 1.0 / 1.0" reading dropped the first literal). The 1.2.5 car death was not decoded: it keeps the old values.
+	if p.waveBuild() == content.WaveBuildV7 {
+		p.startCameraShake(z.x, z.y, 3.0, 1.5, 1, cameraShakeAngleMul(p.waveBuild()))
+	} else {
+		p.startCameraShake(z.x, z.y, 1.5, 1, 1, cameraShakeAngleMul(p.waveBuild()))
+	}
 	definition, ok := p.sprites.Find(z.texture)
 	if !ok {
 		return
@@ -206,7 +218,7 @@ func (p *playState) carContact(z *zombieState, prey playerTarget, dt float64) {
 	reach := carContactFactor*z.size.X + carContactFactor*entityGridPlayerBody
 	dx, dy := prey.x-z.x, prey.y-z.y
 	if dx*dx+dy*dy < reach*reach {
-		p.damagePlayer(prey.index, carContactCalls*dt*carContactDamage)
+		p.damagePlayerAt(prey.index, carContactCalls*dt*carContactDamage, z.x, z.y)
 		z.native.ai.gun.rounds = 0
 	}
 }

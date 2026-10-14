@@ -171,7 +171,7 @@ func (p *playState) nearestPlayer(x, y float64) playerTarget {
 
 // PORT ADDITION (no native source): FUN_00094c6c / FUN_00096818 (v7) apply no tint to
 // Barry when he is hurt; the native cues are the regeneration delay and the camera shake
-// (+0x9c < -699, FUN_000be1fc, not ported). The red flash below is the port's own
+// (+0x9c < -699, FUN_000be1fc: player_hit_feedback.go). The red flash below is the port's own
 // feedback. portHurtFlash switches it off for strict parity.
 var portHurtFlash = true
 
@@ -233,6 +233,7 @@ func (p *playState) damagePlayerFrom(index int, amount float64, source *zombieSt
 		p.hurt = hurtFlashDuration
 		p.vitals.noteHit(p.health, p.waveBuild())
 		p.playerHitSound(&p.vitals, p.health)
+		p.playerHitFeedback(&p.vitals, p.x, p.y, source)
 		p.vitals.triggerBleed()
 		return
 	}
@@ -245,6 +246,7 @@ func (p *playState) damagePlayerFrom(index int, amount float64, source *zombieSt
 			c.body.hurt = hurtFlashDuration
 			c.body.vitals.noteHit(c.body.health, p.waveBuild())
 			p.playerHitSound(&c.body.vitals, c.body.health)
+			p.playerHitFeedback(&c.body.vitals, c.body.x, c.body.y, source)
 			c.body.vitals.triggerBleed()
 		}
 	}

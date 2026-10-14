@@ -55,6 +55,9 @@ type scriptEntity struct {
 	// +0x20. drop is set by spawnPickup only; landed is true in a frame whose update
 	// ended on the ground (the only frames in which the pickup can be collected).
 	drop, landed  bool
+	// registered: the pickup has been listed in the entity grid (first landing, FUN_000928f4's bounce branch); only a
+	// listed pickup blocks the spawner's placement tries (pickup_placement.go).
+	registered bool
 	lift, liftVel float64
 	// markerAlpha is the off-screen "markerweapon" arrow alpha (v7 +0x244, 1.2.5 +0x240), see
 	// offscreen_markers.go.

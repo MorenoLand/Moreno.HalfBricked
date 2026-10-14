@@ -75,6 +75,11 @@ type thrownBomb struct {
 	parentLife       float64
 	parentSpeed      float64
 	origin           killOrigin
+	// zombieBomb is a zombie's DYNOMITE (kind 0x1d, zombie_bomb.go): bounces counts its landings left, ownerID is the
+	// throwing zombie's script id.
+	zombieBomb bool
+	bounces    int
+	ownerID    int
 }
 
 // throwGrenade launches a grenade or dynamite from (x, y) along (dirX, dirY).
@@ -94,6 +99,12 @@ func (p *playState) updateThrown() {
 	var spawned []thrownBomb
 	kept := p.thrown[:0]
 	for _, b := range p.thrown {
+		if b.zombieBomb {
+			if p.stepZombieBomb(&b, dt) {
+				kept = append(kept, b)
+			}
+			continue
+		}
 		b.age += dt
 		b.lift -= dt * b.fall
 		// FUN_000a7218, state 2.
@@ -194,7 +205,7 @@ func (a *app) drawThrown(screen *ebiten.Image) {
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.thrown {
 		name := "Common0/Textures/grenade_SD"
-		if b.dynamite {
+		if b.dynamite || b.zombieBomb {
 			name = "DLC1/Textures/Dynomite_SD"
 		}
 		texture, err := a.Texture(name)

@@ -93,6 +93,10 @@ func (h *playScriptHost) callScript125(name string, args []scripting.Value) (scr
 			return scripting.CallResult{}, err
 		}
 	}
+	if h.ui == nil && h.play != nil {
+		// The Tutorial_Controller panel (tutorial_controller.go) is the only BrickUI screen the shipped scripts use.
+		h.ui = &h.play.tutorial
+	}
 	if h.ui == nil {
 		return scripting.CallResult{}, fmt.Errorf("%s requires the parent BrickUI screen/property/animation and controller-action host for %q", name, screen)
 	}

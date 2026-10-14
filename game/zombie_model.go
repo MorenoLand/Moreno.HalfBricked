@@ -171,6 +171,9 @@ type zombieNative struct {
 	robot robotBoss
 	// boss marks a boss class on a guest, which has no script entities to ask (the host sends it, net_wire.go).
 	boss bool
+	// bossTime is +0x328 of the rex / car / mummy classes and bossStatsDone marks the death hook as run (stats_writers.go).
+	bossTime      float64
+	bossStatsDone bool
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.

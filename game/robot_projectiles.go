@@ -312,7 +312,7 @@ func (p *playState) stepRobotFlyer(f *robotFlyer, dt float64) bool {
 		if f.state == 0 {
 			f.speed *= f.age / f.life
 			f.age, f.state = 0, 1
-			p.damagePlayer(target.index, robotFlyerDamage)
+			p.damagePlayerAt(target.index, robotFlyerDamage, f.x, f.y)
 		}
 		break
 	}
@@ -332,7 +332,7 @@ func (p *playState) stepRobotRocket(rk *robotRocket, dt float64) bool {
 	}
 	for _, target := range p.livingPlayers() {
 		if robotPlayerHit(target.x, target.y, rk.x, rk.y, robotRocketWidth) {
-			p.damagePlayer(target.index, dt*robotRocketRate)
+			p.damagePlayerAt(target.index, dt*robotRocketRate, rk.x, rk.y)
 			p.spawnRobotBlast(rk.x, rk.y)
 			return false
 		}
@@ -362,7 +362,7 @@ func (p *playState) stepRobotBeam(b *robotBeam, dt float64) bool {
 	if b.hits {
 		for _, target := range p.livingPlayers() {
 			if robotPlayerHit(target.x, target.y, b.x, b.y, b.size) {
-				p.damagePlayer(target.index, robotBeamDamage)
+				p.damagePlayerAt(target.index, robotBeamDamage, b.x, b.y)
 				break
 			}
 		}
