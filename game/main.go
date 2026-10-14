@@ -4007,6 +4007,14 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		worldY := (float64(pointerY)-p.world.ViewportY)/p.world.Zoom + p.world.CameraY
 		aimDX := worldX - p.x
 		aimDY := worldY - p.y
+		// PORT ADDITION (-aim-at-cursor): the 5-3 robot boss is drawn 105 px above the ground point bullets hit
+		// (native tests the raw position, Research/native/bullet-hit-centre-2026-10-14.md), so a click on his
+		// body aims at his ground position instead of the empty floor behind him.
+		if portAimAtCursor {
+			if bx, by, ok := p.robotBodyAimPoint(worldX, worldY); ok {
+				aimDX, aimDY = bx-p.x, by-p.y
+			}
+		}
 		p.aimPointDistance = math.Hypot(aimDX, aimDY)
 		if math.Hypot(aimDX, aimDY) > .001 && !scriptFacingLocked {
 			p.angle, p.flipX = barryDirection(aimDX, aimDY)

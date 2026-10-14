@@ -86,3 +86,19 @@ func (a *app) scriptEntityDrawHeight(e *scriptEntity) float64 {
 	}
 	return cell * scale / a.pack.TextureSourceScale(path)
 }
+
+// robotBodyAimPoint reports the ground position of a living robot boss when the world point (x, y) lies inside his
+// drawn body (centred zombieSpriteLift above his position).
+func (p *playState) robotBodyAimPoint(x, y float64) (float64, float64, bool) {
+	for index := range p.zombies {
+		z := &p.zombies[index]
+		if z.native.kind != zombieKindRobot || z.health <= 0 || z.dying {
+			continue
+		}
+		centreY := z.y - zombieSpriteLift(*z, z.size.Y)
+		if math.Abs(x-z.x) <= z.size.X/2 && math.Abs(y-centreY) <= z.size.Y/2 {
+			return z.x, z.y, true
+		}
+	}
+	return 0, 0, false
+}

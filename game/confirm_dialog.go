@@ -118,6 +118,12 @@ func (a *app) updateConfirm() (bool, error) {
 		return true, c.yes()
 	case cancel:
 		a.confirm = nil
+		if c.native {
+			// The quit click had sent the menu's zombies away; declining must bring the whole menu back, not
+			// leave the empty swirl with one button.
+			a.menuClick = nil
+			a.menuMotionActive = false
+		}
 	}
 	return true, nil
 }
