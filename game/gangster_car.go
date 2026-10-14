@@ -27,6 +27,8 @@ import (
 // are not ported, so those rolls leave the car without a gun).
 const (
 	zombieKindGangster  = 11
+	zombieKindRobot     = 14  // boss_robot
+	robotRenderAnchor   = .75 // FUN_000bb0e0: the robot boss sprite is lifted 0.75 * its size (plain zombies .35)
 	carStartX           = -192.0
 	carSightSq          = 73000.0
 	carSpeedBase        = .33

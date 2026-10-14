@@ -29,6 +29,9 @@ func (a *app) depthBucket(y float64) int {
 // For the plain zombies +0x30 is the drawn height; the Don Zombie's car keeps its 2 * half size there while its
 // drawn height is 0.6 of its width, so its sprite sits higher than a height-based lift would put it.
 func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
+	if z.native.kind == zombieKindRobot {
+		return robotRenderAnchor * z.native.sizeZ // FUN_000bb0e0: +0x2d4 = 0.75
+	}
 	if z.native.car.active {
 		return carRenderAnchor * z.native.sizeZ
 	}

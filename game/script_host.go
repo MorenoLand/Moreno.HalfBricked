@@ -1066,9 +1066,19 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		}
 		id := h.play.scriptNextEntity
 		h.play.scriptNextEntity++
-		const size, health = 70.0, 40000.0
+		// The spawn record's 70 is a HALF size (FUN_000dc6d0 -> factory case 0xe, shared initialiser FUN_000a0b80
+		// stores +0x28 = +0x2c = +0x30 = 2 * 70). After the rise FUN_0009fb10 sets width = 140 * 0.796875 = 111.5625
+		// and height = 140; the draw passes (+0x28, -(+0x2c)) so the 256x512 cell is stretched to that size, and the
+		// post-init FUN_000bb0e0 lifts the sprite 0.75 * 140 above the position (zombieSpriteLift).
+		// Research/native/robot-boss-2026-10-14.md.
+		const halfSize, health = 70.0, 40000.0
+		sizeZ := halfSize * 2
+		size := formats.Vec2{X: zombieBodyWidth(sizeZ), Y: sizeZ}
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_robot", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "bigboss", speed: -1}
-		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: -1, health: health, size: formats.Vec2{X: size, Y: size}, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", ""), scriptControlled: true})
+		robot := zombieState{x: x, y: y, speed: -1, health: health, size: size, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", ""), scriptControlled: true}
+		robot.native.kind, robot.native.sizeZ = zombieKindRobot, sizeZ
+		robot.collision = zombieBodyScale * size.X
+		h.play.zombies = append(h.play.zombies, robot)
 		return scriptValues(id), nil
 	case "SetRobotRage":
 		rage, err := scriptBool(args, 0)
