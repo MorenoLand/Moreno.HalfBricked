@@ -137,7 +137,7 @@ func (a *app) drawLoading(screen *ebiten.Image) {
 
 	subtitle, tip := "", loadingTips[int(a.menuTime/4)%len(loadingTips)]
 	if levels := a.filteredLevels(); gate.label == "LOADING LEVEL" && a.level >= 0 && a.level < len(levels) {
-		subtitle = strings.ToUpper(levels[a.level].DisplayName)
+		subtitle = strings.ToUpper(levelTextFlat(levels[a.level].DisplayName, " "))
 		if d := strings.ToUpper(strings.NewReplacer("\\n", " ", "\n", " ").Replace(levels[a.level].Description)); d != "" {
 			tip = d
 		}

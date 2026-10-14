@@ -156,5 +156,5 @@ func (a *app) pauseLevelLabel() string {
 	if a.play.isSurvival() {
 		return "Survival"
 	}
-	return a.play.levelInfo.DisplayName
+	return levelTextFlat(a.play.levelInfo.DisplayName, " ")
 }

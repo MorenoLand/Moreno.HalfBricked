@@ -2054,16 +2054,18 @@ func (a *app) drawLevelInfo(screen *ebiten.Image, item formats.LevelInfo) {
 		textX, textY = float64(innerPos.Min.X+16), float64(innerPos.Min.Y+14)
 	}
 	if a.computerFont != nil {
-		a.drawFont(screen, a.computerFont, item.DisplayName, textX, textY, .7)
+		a.drawFont(screen, a.computerFont, levelTextLines(item.DisplayName), textX, textY, .7)
 	} else {
-		a.text(screen, item.DisplayName, textX, textY, .6)
+		a.text(screen, levelTextLines(item.DisplayName), textX, textY, .6)
 	}
 	if item.Description != "" {
 		description := strings.ReplaceAll(item.Description, "\\n", "\n")
 		descriptionY := textY + 32
+		descriptionYExtra := float64(strings.Count(levelTextLines(item.DisplayName), "\n")) * 24 // a two-line title pushes the description down
 		if innerOK {
 			descriptionY = float64(innerPos.Min.Y + 46)
 		}
+		descriptionY += descriptionYExtra
 		if a.computerFont != nil {
 			a.drawFont(screen, a.computerFont, description, textX, descriptionY, .45)
 		} else {
@@ -2388,7 +2390,7 @@ func (a *app) items() []string {
 	}
 	var result []string
 	for _, item := range a.filteredLevels() {
-		result = append(result, strings.ReplaceAll(item.DisplayName, "\n", " / "))
+		result = append(result, levelTextFlat(item.DisplayName, " / "))
 	}
 	return result
 }

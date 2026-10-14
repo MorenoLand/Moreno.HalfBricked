@@ -217,7 +217,7 @@ func (a *app) updateDiscordPresence() {
 		a.discord.Set("In the menus", "")
 		return
 	}
-	name := a.play.levelInfo.DisplayName
+	name := levelTextFlat(a.play.levelInfo.DisplayName, " - ")
 	if name == "" {
 		name = a.play.levelInfo.ID
 	}

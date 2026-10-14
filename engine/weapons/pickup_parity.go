@@ -2,6 +2,7 @@ package weapons
 
 import (
 	"image"
+	"math/rand/v2"
 	"strings"
 )
 
@@ -58,7 +59,18 @@ func pickupParityCell(bounds image.Rectangle, cell int) (image.Rectangle, bool) 
 func pickupParityGeometry(x, y, width, height, elevation float32) (float32, float32, float32, float32) {
 	return x, (y - height*0.375) - elevation, width, -height
 }
+// genericVoices are the loose lines SFX_VO_GENERIC (the buzzsaw and sentry crates) picks from: native FUN_000cad28
+// takes table[hi32(LCG) >> 30] of the five-entry table at 0x5cf474, so only the first four are reachable and
+// VO_Nice never plays. They carry no world prefix (Research/native/pickup-voice-2026-10-14.md).
+var genericVoices = [...]string{"VO_Hell_Yeah", "VO_Holy_Balls", "VO_Jackpot", "VO_Kick_Ass"}
+
+// GenericVoiceIndex picks the GENERIC line; a test replaces it for a fixed answer.
+var GenericVoiceIndex = func() int { return rand.IntN(len(genericVoices)) }
+
 func PickupParityVoice(prefix, symbol string) (string, bool) {
+	if symbol == "SFX_VO_GENERIC" {
+		return "audio/sound/sfx/" + genericVoices[GenericVoiceIndex()%len(genericVoices)] + ".ogg", true
+	}
 	var suffix string
 	switch symbol {
 	case "SFX_VO_SHOTGUN":
