@@ -1,10 +1,12 @@
 package game
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 )
 
 // Local co-op. Native evidence (1.2.5): co-op is offered with two or more attached
@@ -230,6 +232,7 @@ func (p *playState) damagePlayerFrom(index int, amount float64, source *zombieSt
 		p.health = math.Max(0, p.health-amount)
 		p.hurt = hurtFlashDuration
 		p.vitals.noteHit(p.health, p.waveBuild())
+		p.playerHitSound(&p.vitals, p.health)
 		p.vitals.triggerBleed()
 		return
 	}
@@ -241,6 +244,7 @@ func (p *playState) damagePlayerFrom(index int, amount float64, source *zombieSt
 			c.body.health = math.Max(0, c.body.health-amount)
 			c.body.hurt = hurtFlashDuration
 			c.body.vitals.noteHit(c.body.health, p.waveBuild())
+			p.playerHitSound(&c.body.vitals, c.body.health)
 			c.body.vitals.triggerBleed()
 		}
 	}
@@ -423,4 +427,23 @@ func (p *playState) livingPlayersExcluding(index int) []playerTarget {
 		}
 	}
 	return list
+}
+
+// playerHitSound is the sound tail of FUN_00094c6c (v7) / FUN_000f2208 (1.2.5): a hit that has a source and lands
+// while the bleed counter rests (it is called before triggerBleed) plays player_hurt_1 or _2 (0x18 + rnd(2)) when
+// the player survives, and player_death (0x1a) when it kills.
+// Research/native/sound-trigger-audit-2026-10-14.md.
+func (p *playState) playerHitSound(v *playerVitals, healthAfter float64) {
+	if v.bleeding || (v.bleedInit && v.bleedCtr > bleedRest) {
+		return
+	}
+	if healthAfter > 0 {
+		if p.rng == nil {
+			rng := weapons.NewNativeRNG()
+			p.rng = &rng
+		}
+		p.sfxQueue = append(p.sfxQueue, fmt.Sprintf("Player_hurt_%d", 1+int(p.rng.Bounded(2))))
+		return
+	}
+	p.sfxQueue = append(p.sfxQueue, "Player_death")
 }
