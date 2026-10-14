@@ -495,10 +495,10 @@ func (p *playState) samuraiDeathPose(z *zombieState) {
 // samuraiDrawAlpha is the alpha the body is drawn with. Survival only (FUN_000a06e8 for types 10..15): v7 forces the
 // alpha from the fade value even while alive (a = fade < 0.5 ? 2 * fade : 1); 1.2.5 only once the boss is dying.
 func (p *playState) samuraiDrawAlpha(z zombieState) (float64, bool) {
-	if !z.native.samurai.active || !p.isSurvival() {
+	if !(z.native.samurai.active || z.native.robot.active) || !p.isSurvival() {
 		return 0, false
 	}
-	if !z.native.samurai.dead {
+	if !(z.native.samurai.dead || z.native.robot.dead) {
 		if p.waveBuild() == content.WaveBuild125 {
 			return 0, false
 		}
@@ -515,7 +515,7 @@ func (p *playState) samuraiDrawAlpha(z zombieState) (float64, bool) {
 // zombiesBlockExit reports whether a zombie other than the dead samurai's persistent body is still in the list.
 func (p *playState) zombiesBlockExit() bool {
 	for _, z := range p.zombies {
-		if !(z.native.samurai.active && z.native.samurai.dead) {
+		if !(z.native.samurai.active && z.native.samurai.dead) && !(z.native.robot.active && z.native.robot.dead) {
 			return true
 		}
 	}

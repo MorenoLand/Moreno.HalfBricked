@@ -34,7 +34,11 @@ func (a *app) depthBucket(y float64) int {
 // drawn height is 0.6 of its width, so its sprite sits higher than a height-based lift would put it.
 func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 	if z.native.kind == zombieKindRobot {
-		return robotRenderAnchor * z.native.sizeZ // FUN_000bb0e0: +0x2d4 = 0.75
+		// FUN_000bb0e0: +0x2d4 = 0.75; the teleport raises it to 2 * t + 0.75 (FUN_000bb610).
+		if z.native.robot.active && z.native.robot.lift > 0 {
+			return z.native.robot.lift * z.native.sizeZ
+		}
+		return robotRenderAnchor * z.native.sizeZ
 	}
 	if z.native.car.active {
 		return carRenderAnchor * z.native.sizeZ

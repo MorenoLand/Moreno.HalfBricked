@@ -134,7 +134,27 @@ func (r *entityGridRegistration) sharesCell(box entityGridRange) bool {
 // neither pushes nor hurts anyone until the rise ends. Port: script and boss
 // zombies keep kind 0 or a boss kind and are not affected.
 func zombieIsRising(z *zombieState) bool {
-	return ((z.native.kind >= zombieKindPlain && z.native.kind <= zombieKindProspect) || z.native.samurai.active) && z.native.ai.state == 0
+	return ((z.native.kind >= zombieKindPlain && z.native.kind <= zombieKindProspect) || z.native.samurai.active || z.native.robot.active) && z.native.ai.state == 0
+}
+
+// registerGrid lists the zombie in the entity grid at its position. The robot boss lists itself (slot +0x3c
+// FUN_000bad88) over +-0.3 * width and only while its teleport timer is below 0.25 (robotGridExtent).
+func (z *zombieState) registerGrid() {
+	if z.native.robot.active {
+		extent, listed := z.robotGridExtent()
+		if !listed {
+			z.grid = entityGridRegistration{}
+			return
+		}
+		center := entityGridCenter(z.x, z.y)
+		if z.grid.valid && z.grid.center == center {
+			return
+		}
+		z.grid.valid, z.grid.center = true, center
+		z.grid.cells = entityGridBox(z.x, z.y, extent)
+		return
+	}
+	z.grid.register(z.x, z.y)
 }
 
 // refreshEntityGrid registers every zombie at its current position. The native
@@ -146,7 +166,7 @@ func (p *playState) refreshEntityGrid() {
 		if zombieIsRising(zombie) {
 			continue
 		}
-		zombie.grid.register(zombie.x, zombie.y)
+		zombie.registerGrid()
 	}
 }
 
@@ -156,6 +176,6 @@ func (p *playState) zombieGridVisits(zombie *zombieState, x, y float64, extent f
 	if zombieIsRising(zombie) {
 		return 0
 	}
-	zombie.grid.register(zombie.x, zombie.y)
+	zombie.registerGrid()
 	return zombie.grid.visits(entityGridBox(x, y, extent))
 }

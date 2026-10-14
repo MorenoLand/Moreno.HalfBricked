@@ -26,6 +26,12 @@ const (
 // player and zombies, post-init life 0.7 + rnd(0.2) and width 20 + rnd(16) as
 // every flame, starting height lift.
 func NewGibFlame(x, y float64, heading uint16, lift float64, rng *NativeRNG) (NativeWeaponProjectile, bool) {
-	shot := nativeWeaponShot{Direction: heading, WeaponType: GibFlameWeapon, Speed: GibFlameSpeed, Lift: lift}
+	return NewFlameDebris(x, y, heading, lift, GibFlameSpeed, rng)
+}
+
+// NewFlameDebris is the flame of FUN_000bb328 (the robot boss's falling body, v7 0x000bb328): the same flame class
+// and post-init as a gib flame, with the speed 0.1 * the boss's weapon speed and the height 10.
+func NewFlameDebris(x, y float64, heading uint16, lift, speed float64, rng *NativeRNG) (NativeWeaponProjectile, bool) {
+	shot := nativeWeaponShot{Direction: heading, WeaponType: GibFlameWeapon, Speed: speed, Lift: lift}
 	return NewNativeWeaponProjectile(shot, "FLAME", x, y, rng)
 }

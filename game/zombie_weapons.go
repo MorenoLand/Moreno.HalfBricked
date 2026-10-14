@@ -161,6 +161,10 @@ func (p *playState) zombieStateMachine(z *zombieState, dt float64) {
 
 // zombieFire is FUN_0009f7e4.
 func (p *playState) zombieFire(z *zombieState) {
+	if z.native.robot.active {
+		p.robotFire(z) // FUN_0009f7e4 with the robot's post-fire hook FUN_000baf68 (robot_projectiles.go)
+		return
+	}
 	ai := &z.native.ai
 	gun := &ai.gun
 	gun.timer = 0

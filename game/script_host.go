@@ -1071,18 +1071,16 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		}
 		id := h.play.scriptNextEntity
 		h.play.scriptNextEntity++
-		// The spawn record's 70 is a HALF size (FUN_000dc6d0 -> factory case 0xe, shared initialiser FUN_000a0b80
-		// stores +0x28 = +0x2c = +0x30 = 2 * 70). After the rise FUN_0009fb10 sets width = 140 * 0.796875 = 111.5625
-		// and height = 140; the draw passes (+0x28, -(+0x2c)) so the 256x512 cell is stretched to that size, and the
-		// post-init FUN_000bb0e0 lifts the sprite 0.75 * 140 above the position (zombieSpriteLift).
-		// Research/native/robot-boss-2026-10-14.md.
-		const halfSize, health = 70.0, 40000.0
-		sizeZ := halfSize * 2
-		size := formats.Vec2{X: zombieBodyWidth(sizeZ), Y: sizeZ}
-		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_robot", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "bigboss", speed: -1}
-		robot := zombieState{x: x, y: y, speed: -1, health: health, size: size, texture: "bigboss", scriptID: id, alpha: 1, fps: h.play.spriteFPS("bigboss", ""), scriptControlled: true}
-		robot.native.kind, robot.native.sizeZ = zombieKindRobot, sizeZ
-		robot.collision = zombieBodyScale * size.X
+		// FUN_000dc6d0 builds the 11-word spawn record (position, speed -1, half size 70, strength 40000, turn 12,
+		// weave 0xfa / 0x11, alert 0xfa, weapon NONE) and runs the shared initialiser FUN_000a0b80 (newWaveZombie draws
+		// the same random numbers); the post-init FUN_000bb0e0 then replaces the size (+0x30 = 130), the speed (0), the
+		// heading and the health (initRobot). Research/native/robot-boss-2026-10-14.md.
+		record := zombieSpawnRecord{Kind: zombieKindRobot, HalfSize: 70, Speed: -1, Strength: 40000, TurnSpeed: 12, CycleSpeed: 0xfa, Amount: 0x11, AlertRadius: 0xfa, Gun: 13}
+		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_robot", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "bigboss", speed: 0}
+		robot := newWaveZombie(record, h.play.rng, h.play.zombieWeapons, formats.Vec2{X: x, Y: y}, 0, "bigboss", id)
+		robot.fps = h.play.spriteFPS("bigboss", "")
+		robot.scriptControlled = true
+		h.play.initRobot(&robot)
 		h.play.zombies = append(h.play.zombies, robot)
 		return scriptValues(id), nil
 	case "SetRobotRage":

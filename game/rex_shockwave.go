@@ -75,6 +75,17 @@ type rexShockwave struct {
 	shot      int
 	owner     int
 	max       float64 // +0x30; 600 scaled by width/200 (FUN_000b9624 0x000b9bc0), 0 means 600
+	// life is the lifetime passed to the init (+0x5c); 0 means the rex's 1.0. The robot boss's shockwaves live 0.7 s
+	// and credit no kill to the T-Rex (robot_boss.go).
+	life     float64
+	noCredit bool
+}
+
+func (w rexShockwave) lifetime() float64 {
+	if w.life <= 0 {
+		return rexShockwaveLifetime
+	}
+	return w.life
 }
 
 func (w rexShockwave) size() float64 {
@@ -82,7 +93,7 @@ func (w rexShockwave) size() float64 {
 	if max <= 0 {
 		max = rexShockwaveMaxSize
 	}
-	return w.age / rexShockwaveLifetime * max
+	return w.age / w.lifetime() * max
 }
 
 type rexBossState struct {
@@ -338,7 +349,7 @@ func (p *playState) updateRexShockwaves() {
 	live := p.rex.waves[:0]
 	for _, wave := range p.rex.waves {
 		wave.age += dt
-		if wave.age >= rexShockwaveLifetime || p.rexShockwaveInWall(wave.x, wave.y) {
+		if wave.age >= wave.lifetime() || p.rexShockwaveInWall(wave.x, wave.y) {
 			continue
 		}
 		p.rexShockwaveHit(wave)
@@ -350,6 +361,9 @@ func (p *playState) updateRexShockwaves() {
 func (p *playState) rexShockwaveHit(wave rexShockwave) {
 	size := wave.size()
 	origin := killOrigin{gun: "TREX", shot: wave.shot}
+	if wave.noCredit {
+		origin.gun = ""
+	}
 	for _, target := range p.livingPlayers() {
 		if !p.scenePlaying() || !rexShockwaveHitsPlayer(wave.x, wave.y, size, target.x, target.y) {
 			continue
@@ -391,10 +405,10 @@ func rexShockwaveVertices(age, x, y, zoom, frontendX, frontendY float64, texture
 
 func rexShockwaveVerticesSized(wave rexShockwave, x, y, zoom, frontendX, frontendY float64, textureWidth, textureHeight int) ([4]ebiten.Vertex, bool) {
 	age, size := wave.age, wave.size()
-	if !(age >= 0 && age < rexShockwaveLifetime) || size <= 0 || textureWidth <= 0 || textureHeight <= 0 || zoom <= 0 || frontendX <= 0 || frontendY <= 0 {
+	if !(age >= 0 && age < wave.lifetime()) || size <= 0 || textureWidth <= 0 || textureHeight <= 0 || zoom <= 0 || frontendX <= 0 || frontendY <= 0 {
 		return [4]ebiten.Vertex{}, false
 	}
-	alpha := float32(rexShockwaveAlpha(age))
+	alpha := float32(rexShockwaveAlpha(age / wave.lifetime() * rexShockwaveLifetime))
 	centerX, centerY := x*frontendX, y*frontendY
 	halfWidth := size / 2 * zoom * frontendX
 	halfHeight := size * rexShockwaveAspect / 2 * zoom * frontendX

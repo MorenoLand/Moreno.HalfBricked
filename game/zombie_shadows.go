@@ -78,7 +78,7 @@ func (a *app) zombieShadows() []zombieShadow {
 			name = "cavezombie"
 		}
 		animationName := zombie.animation
-		if zombie.bossRage || zombie.rexRageTimer > 0 {
+		if (zombie.bossRage && !zombie.native.robot.active) || zombie.rexRageTimer > 0 {
 			animationName = "Rage"
 		}
 		path := commonSDTexture(name)

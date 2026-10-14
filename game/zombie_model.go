@@ -167,6 +167,8 @@ type zombieNative struct {
 	car gangsterCar
 	// samurai is the Japan boss's state (samurai.go).
 	samurai samuraiBoss
+	// robot is the future boss's state (robot_boss.go).
+	robot robotBoss
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.
@@ -203,7 +205,8 @@ func (p *playState) hurtZombie(z *zombieState, hit zombieHit) bool {
 	z.health -= amount
 	z.hitFlash = flash
 	if z.health > 0 {
-		if hit.kind == 0x10 {
+		if hit.kind == 0x10 && !z.native.robot.active {
+			// FUN_000bae44 (the robot's damage slot) spawns a spark instead of playing the hurt sound.
 			p.queueZombieHurtSound()
 		}
 		return false

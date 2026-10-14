@@ -92,6 +92,10 @@ type zombieBlast struct {
 	// harmless means the blast was created with hit-player = 0 (FUN_000ad8e0 and
 	// friends pass 0, 1: player-fired and sentry blasts never hurt the player).
 	harmless bool
+	// playerRate is the player's damage per second when it is not the mine handler's 3.0 (the robot's rocket uses
+	// the rocket handler FUN_000a50f4: 1.5); noZombies is the hit-entities flag cleared (robot_projectiles.go).
+	playerRate float64
+	noZombies  bool
 }
 
 func (p *playState) isExplodingZombie(z zombieState) bool {
@@ -110,6 +114,9 @@ func (p *playState) isExplodingZombie(z zombieState) bool {
 func (p *playState) zombieDeathDelayFor(z zombieState) float64 {
 	if z.native.samurai.active {
 		return p.samuraiDeathSeconds(z) // the Death clip, then the 251 frame fade (samurai.go)
+	}
+	if z.native.robot.active {
+		return p.robotDeathSeconds(z) // the same persistent body (robot_boss.go)
 	}
 	delay := zombieDeathDelay
 	if z.deathDelay > 0 {
@@ -176,9 +183,16 @@ func (p *playState) applyZombieBlast(b zombieBlast, dt float64) {
 		for _, target := range p.livingPlayers() {
 			reach := zombieBlastBodyHalf + radius*zombieBlastPlayerScale
 			if zombieBlastEllipse(target.x-b.x, target.y-b.y, reach) {
-				p.damagePlayer(target.index, dt*zombieBlastPlayerPerSec)
+				rate := zombieBlastPlayerPerSec
+				if b.playerRate > 0 {
+					rate = b.playerRate
+				}
+				p.damagePlayer(target.index, dt*rate)
 			}
 		}
+	}
+	if b.noZombies {
+		return
 	}
 	origin := b.origin
 	for index := range p.zombies {

@@ -170,6 +170,7 @@ type bullet struct {
 	projectile *weapons.NativeWeaponProjectile
 	origin     killOrigin
 	hostile    bool // also hits the players (gib flames, flame_flight.go)
+	noZombies  bool // hit-entities flag clear: the robot's death flames hurt the player only (robot_boss.go)
 }
 
 type explosionState struct {
@@ -291,6 +292,7 @@ type playState struct {
 	alertNoise                                             float64 // player +0x3e0 (zombie_ai.go)
 	zombieWeapons                                          formats.ZombieWeaponCatalog
 	zombieShots                                            []zombieShot
+	robotShots                                             robotShots // robot_projectiles.go
 	spinners                                               []spinnerBlade // SPINNER blades (samurai_blade.go)
 	sentryLoopHold                                         float64
 	navs                                                   [maxCoopPlayers]navField
@@ -1908,9 +1910,9 @@ type titleBarryPiece struct {
 
 var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},                             // Barry body
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 230, angle: math.Pi/2 - .25}, // shotgun
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 220, angle: math.Pi/2 - .25},   // grip/pump
-	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25},    // arm/hand
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25}, // shotgun
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},   // grip/pump
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: math.Pi/2 + .25},    // arm/hand (1.2.5 title class 0xe7bd8: (85, 265))
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
@@ -3118,13 +3120,14 @@ func collisionLabel(value uint32) string {
 }
 
 func (a *app) drawBullets(screen *ebiten.Image) {
-	if a.play == nil || (len(a.play.bullets) == 0 && len(a.play.zombieShots) == 0 && len(a.play.spinners) == 0) {
+	if a.play == nil || (len(a.play.bullets) == 0 && len(a.play.zombieShots) == 0 && len(a.play.spinners) == 0 && len(a.play.robotShots.flyers)+len(a.play.robotShots.rockets)+len(a.play.robotShots.beams) == 0) {
 		return
 	}
 	for _, shot := range a.play.zombieShots {
 		a.drawWeaponProjectile(screen, shot.projectile)
 	}
 	a.drawSpinners(screen)
+	a.drawRobotShots(screen)
 	zoom := a.play.world.Zoom
 	for _, b := range a.play.bullets {
 		if b.projectile != nil {
@@ -3264,7 +3267,7 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		textureName = "cavezombie"
 	}
 	animation, hasAnimation := a.spriteAnimation(textureName, zombie.animation)
-	if zombie.bossRage || zombie.rexRageTimer > 0 {
+	if (zombie.bossRage && !zombie.native.robot.active) || zombie.rexRageTimer > 0 {
 		animation, hasAnimation = a.spriteAnimation(textureName, "Rage")
 	}
 	gibClip, gibFrame, isGibClip := a.zombieGibClip(zombie)
@@ -3319,12 +3322,18 @@ func (a *app) drawZombie(screen *ebiten.Image, zombie zombieState) {
 		scale = 1
 	}
 	screenX := (zombie.x-a.play.world.CameraX)*scale + a.play.world.ViewportX
+	if zombie.native.robot.active {
+		screenX += zombie.native.robot.shakeX * scale // FUN_000ba898: the falling body slides by +0x528 / +0x52c
+	}
 	renderHeight := zombie.size.Y
 	if renderHeight <= 0 {
 		renderHeight = 48
 	}
 	frontendX, frontendY := a.renderScale()
 	screenY := (zombie.y-a.play.world.CameraY)*scale + a.play.world.ViewportY - zombieSpriteLift(zombie, renderHeight)*scale*frontendX/frontendY - a.play.rexLift(zombie)*scale*frontendX/frontendY
+	if zombie.native.robot.active {
+		screenY += zombie.native.robot.shakeY * scale * frontendX / frontendY
+	}
 	source := texture.SubImage(rect).(*ebiten.Image)
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(rect.Dx())/2, -float64(rect.Dy())/2)
@@ -4211,6 +4220,10 @@ func (p *playState) updateBulletsAndKills() {
 		if b.hostile {
 			p.flameHitPlayers(b)
 		}
+		if b.noZombies {
+			activeBullets = append(activeBullets, b)
+			continue
+		}
 		for index := range p.zombies {
 			if p.zombies[index].health <= 0 {
 				continue
@@ -4274,6 +4287,9 @@ func (p *playState) updateBulletsAndKills() {
 		if zombie.native.samurai.active {
 			p.samuraiDeath(&zombie)
 		}
+		if zombie.native.robot.active {
+			p.robotDeath(&zombie)
+		}
 		if entity := p.scriptEntities[zombie.scriptID]; entity != nil && isBossType(entity.entityType) && zombie.dying {
 			p.onBossDefeated(entity.entityType, zombie.texture)
 		}
@@ -4284,8 +4300,9 @@ func (p *playState) updateBulletsAndKills() {
 			award := (points / 20) * int32(p.multiplier)
 			p.score = int(int32(p.score) + award)
 		}
-		if !zombie.spawnAway && !zombie.native.samurai.active {
-			// (the samurai's death slot FUN_000bcaec replaces the pop and the death sound of the plain class)
+		if !zombie.spawnAway && !zombie.native.samurai.active && !zombie.native.robot.active {
+			// (the samurai's death slot FUN_000bcaec replaces the pop and the death sound of the plain class; the robot's
+			// FUN_000baa28 does too)
 			if zombie.dying && zombie.deathState == zombieDeathGib {
 				// A gib makes no blood pop: the body plays Disintegrate (zombie_gib.go).
 				p.addZombieGibBody(zombie)
@@ -4430,7 +4447,7 @@ func (p *playState) spawnZombieAt(entry formats.SpawnType, point formats.Vec2) {
 // spawnZombieAtTurn is spawnZombieAt. A non-nil turn is the native turnSpeed range of a survival type (survival.go).
 func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec2, turn *turnRange) {
 	native := nativeZombieTypes[entry.Name]
-	waveZombie := (native >= zombieKindPlain && native <= zombieKindProspect) || native == zombieKindSamurai
+	waveZombie := (native >= zombieKindPlain && native <= zombieKindProspect) || native == zombieKindSamurai || native == zombieKindRobot
 	var record zombieSpawnRecord
 	speed := entry.Speed.X
 	if entry.Speed.Y > 0 {
@@ -4492,6 +4509,9 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 		z := newWaveZombie(record, p.rng, p.zombieWeapons, point, speed, texture, id)
 		if native == zombieKindSamurai {
 			p.initSamurai(&z)
+		}
+		if native == zombieKindRobot {
+			p.initRobot(&z)
 		}
 		z.fps = p.spriteFPS(texture, "")
 		p.zombies = append(p.zombies, z)
@@ -4667,6 +4687,7 @@ func (p *playState) updateZombies() {
 	p.stepPickupDrops(dt)
 	p.updateZombieShots(dt)
 	p.updateSpinners(dt)
+	p.updateRobotShots(dt)
 	p.updateSamuraiWaveEnd()
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
@@ -4684,6 +4705,11 @@ func (p *playState) updateZombies() {
 			if zombie.native.samurai.active {
 				p.samuraiDeath(zombie)
 				p.samuraiDeathPose(zombie)
+			}
+			if zombie.native.robot.active {
+				// FUN_000a10fc starts the death (FUN_000baa28) and the boss step keeps running the AI (FUN_000bb610).
+				p.robotDeath(zombie)
+				p.robotAI(zombie, p.nearestPlayer(zombie.x, zombie.y), dt)
 			}
 			continue
 		}
@@ -4735,6 +4761,9 @@ func (p *playState) updateZombies() {
 		case zombie.native.car.active && !scriptWalk:
 			// The Don Zombie's car drives its lane instead of chasing (gangster_car.go).
 			p.stepGangsterCar(zombie, dx, dy, dt, scriptIdle && speed > 0)
+		case zombie.native.robot.active && !scriptWalk:
+			// The future boss runs its own copy of the shared update and never moves (robot_boss.go).
+			p.stepRobot(zombie, prey, dx, dy, dt)
 		case zombie.native.samurai.active && !scriptWalk:
 			// The Japan boss runs its own copy of the shared update (samurai.go).
 			moveX, moveY := p.stepSamurai(zombie, prey, dx, dy, dt)
@@ -4792,13 +4821,15 @@ func (p *playState) updateZombies() {
 		} else {
 			p.zombieUnstickObserve(zombie, distance, 0, 0, 0, dt, unstickAlert)
 		}
-		p.separateZombie(index, dt)
+		if !zombie.native.robot.active {
+			p.separateZombie(index, dt)
+		}
 		if zombie.native.kind == zombieKindSpeedy {
 			stepZombieTrail(zombie)
 		}
 		if !scriptWalk && zombie.native.car.active {
 			p.carContact(zombie, prey, dt)
-		} else if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) {
+		} else if !scriptWalk && (!zombie.scriptControlled || p.scriptCollideZombies) && !p.isRexBoss(zombie) && !zombie.native.robot.active {
 			p.zombieContact(zombie, prey, dt)
 		}
 		if entity != nil {
@@ -4815,6 +4846,10 @@ func (p *playState) updateZombies() {
 				zombie.angle, zombie.flipX = barryDirection(dx, dy)
 			}
 		}
+		if zombie.native.robot.active {
+			// FUN_000bb610: one angle, flipped by the facing hysteresis.
+			zombie.angle, zombie.flipX = 0, zombie.robotBodyFlip()
+		}
 		if zombie.native.car.active {
 			// FUN_000b696c sets the sprite's flip from the drive direction (+0x32c > 0), not from the aim: the car art
 			// faces left and is mirrored while it drives right.
@@ -4824,8 +4859,8 @@ func (p *playState) updateZombies() {
 		if fps <= 0 {
 			fps = p.spriteFPS(zombie.texture, "")
 		}
-		if zombie.native.kind != 0 {
-			fps *= zombie.native.ai.speedFactor
+		if zombie.native.kind != 0 && !zombie.native.robot.active {
+			fps *= zombie.native.ai.speedFactor // (the robot's clock runs at dt: FUN_000ba8f8)
 		}
 		zombie.frame += dt * fps * p.rexAnimationFactor(zombie)
 	}
