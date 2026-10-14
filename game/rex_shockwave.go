@@ -45,6 +45,10 @@ const (
 	rexShockwaveTexture      = "Common0/Textures/blast_radius_SD"
 	rexShockwaveSound        = "SFX_GRENADE_EXPLODE" // native sound id 12
 	rexDeathSound            = "SFX_T_REX_DEATH"     // native sound id 0x2c
+	// 1.2.5 FUN_0011be98: byte +0x361 != 0 plays 0x5d PresidentDeath instead of 0x2c; FUN_0011bf70 plays 0x5e.
+	rexPresidentDeathSound  = "PresidentDeath"
+	rexPresidentVomitSound  = "PresidentVomit"
+	rexPresidentVomitSecs   = 44100.0 / 44100 // PresidentVomit.ogg: 44100 samples at 44100 Hz
 
 	rexRageMillis    = 1000.0
 	rexLeapVelocity  = 3.5
@@ -108,6 +112,7 @@ type rexBossField struct {
 	waves  []rexShockwave
 	venom  []rexVenom
 	dropIn map[int]bool // boss_rex spawned and still to be dropped in (FUN_000ba094)
+	vomitUntil float64 // PresidentVomit (0x5e) channel held until this p.time
 }
 
 // rexShockwaveSize is the quad width, which is also twice the overlap radius.
@@ -196,10 +201,14 @@ func (p *playState) updateRexBoss() {
 			continue
 		}
 		if zombie.dying || zombie.spawnAway || zombie.health <= 0 {
-			if p.rex.bosses[zombie.scriptID] != nil && zombie.dying && !p.isPresidentBoss(zombie) {
-				// FUN_000b9d2c (vtable +0x50, the death hook): sound id 0x2c, T_rex_death.ogg.
-				// (The president's clip for this id is UNRESOLVED.)
-				p.sfxQueue = append(p.sfxQueue, rexDeathSound)
+			if p.rex.bosses[zombie.scriptID] != nil && zombie.dying {
+				// FUN_000b9d2c (v7) / FUN_0011be98 (1.2.5, vtable +0x50, the death hook): sound id 0x2c,
+				// T_rex_death.ogg; 1.2.5 plays 0x5d PresidentDeath instead when +0x361 (PRESIDENTS level) != 0.
+				if p.rexIsPresident() {
+					p.sfxQueue = append(p.sfxQueue, rexPresidentDeathSound)
+				} else {
+					p.sfxQueue = append(p.sfxQueue, rexDeathSound)
+				}
 			}
 			delete(p.rex.bosses, zombie.scriptID)
 			continue

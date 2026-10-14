@@ -42,6 +42,9 @@ const (
 type playerVitals struct {
 	regenDelay float64 // +0x98 while alive
 	speedBoost float64 // +0x3e8
+	// v7 hoverboard sound (FUN_00094258, hover_audio.go): the loop is wanted, the one-shot stop was played since the
+	// last pickup (+0x27e), and the stop clip is waiting for the app to play it.
+	hoverLoop, hoverStopLatch, hoverStopPending bool
 	invulnMS   int     // +0x94
 	// The bleed (v7 +0x9c / +0xa0, 1.2.5 FUN_000f3280 0xf3734-0xf3784). A damaging hit that has a source starts
 	// seven more damage calls of dt each, once the counter has rested at -700 (about 0.93 s since the last
@@ -89,9 +92,13 @@ func (p *playState) stepVitals(dt float64) {
 	}
 	if p.health <= 0 {
 		v.speedBoost = 0
+		v.hoverLoop = false
 		return
 	}
 	v.speedBoost = math.Max(0, v.speedBoost-dt)
+	if p.waveBuild() == content.WaveBuildV7 {
+		v.stepHoverAudio()
+	}
 	if dot := v.stepBleed(dt); dot > 0 && v.invulnMS <= 0 && !p.cheats.god && !p.shielded() {
 		// The damage routine runs again with the frame time and no source (so it cannot re-trigger itself): halved
 		// in 1.2.5 like every hit, and it restarts the regeneration delay.
@@ -157,7 +164,10 @@ func (v *playerVitals) walkSpeedFactor() float64 {
 }
 
 // collectHover is the p_hover pickup.
-func (p *playState) collectHover() { p.vitals.speedBoost = playerSpeedBoostTime }
+func (p *playState) collectHover() {
+	p.vitals.speedBoost = playerSpeedBoostTime
+	p.vitals.hoverStopLatch = false // FUN_0009625c clears +0x27e
+}
 
 // startRespawnGrace is the +0x94 write of FUN_000962f4.
 func (p *playState) startRespawnGrace() {

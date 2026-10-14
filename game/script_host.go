@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/scripting"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
@@ -1730,6 +1731,12 @@ func (p *playState) collectPickup(name string) {
 		}
 	case "P_HOVER":
 		p.collectHover()
+		// 1.2.5 FUN_000ef948 0xefba4 passes id 0 (GENERIC) to FUN_0012dfc0 after FUN_000f2900/FUN_000f28e4; v7 FUN_000928f4 has no voice for the hover crate.
+		if p.waveBuild() != content.WaveBuildV7 {
+			if path, voiced := weapons.PickupParityVoice(p.levelInfo.VoiceoverPrefix, "SFX_VO_GENERIC"); voiced {
+				p.pickupVoices = append(p.pickupVoices, path)
+			}
+		}
 	default:
 		if strings.HasPrefix(name, "P_") {
 			if weapon, ok := p.weapons.Find(catalogWeaponName(strings.TrimPrefix(name, "P_"))); ok {

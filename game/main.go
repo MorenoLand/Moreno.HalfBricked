@@ -562,6 +562,7 @@ func worldMusicTrack(world int) (string, int64, bool) {
 }
 func (a *app) Update() error {
 	defer a.perfTrackUpdate(time.Now())
+	defer a.menuFeedback(a.menuFeedbackSnapshot())
 	if uiKeyJustPressed(ebiten.KeyEnter) && (ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight)) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 		return nil
@@ -592,17 +593,35 @@ func (a *app) Update() error {
 		return err
 	}
 	a.updateStatsClock()
+	a.syncHoverAudio()
 	if a.titleCocking {
 		a.titleSoundElapsed += 1.0 / 60.0
-		if a.titleSoundStage == 1 && a.titleSoundElapsed >= 8.0/60.0 {
+		if a.titleNative() {
+			// 1.2.5 FUN_000e7310 states 3-5: id 0x47 (menu_shotgun_cock_1) at tick 6, id 0x48 (menu_shotgun_cock_2) at
+			// tick 17, then the 35-tick slide-out and the main menu (title_screen.go).
+			tick := a.titleTick()
+			if a.titleSoundStage == 1 && tick >= titleCockSoundTick {
+				a.playSound("audio/sound/sfx/menu_shotgun_cock_1.ogg", .8)
+				a.titleSoundStage = 2
+			}
+			if a.titleSoundStage == 2 && tick >= titleCockUpdates {
+				a.playSound("audio/sound/sfx/menu_shotgun_cock_2.ogg", .8)
+				a.titleSoundStage = 0
+			}
+			if tick >= titleMenuTick {
+				a.titleCocking = false
+				a.titleScreen = false
+				a.menuSpawnTime = 0
+			}
+		} else if a.titleSoundStage == 1 && a.titleSoundElapsed >= 8.0/60.0 {
 			a.playSound("audio/sound/sfx/menu_shotgun_cock_2.ogg", .8)
 			a.titleSoundStage = 2
 		}
-		if a.titleSoundStage == 2 && a.titleSoundElapsed >= 16.0/60.0 {
+		if !a.titleNative() && a.titleSoundStage == 2 && a.titleSoundElapsed >= 16.0/60.0 {
 			a.playSound("audio/sound/sfx/menu_shotgun_cock_1.ogg", .8)
 			a.titleSoundStage = 0
 		}
-		if a.titleSoundElapsed >= 32.0/60.0 {
+		if !a.titleNative() && a.titleSoundElapsed >= 32.0/60.0 {
 			a.titleCocking = false
 			a.titleScreen = false
 			a.menuSpawnTime = 0
@@ -850,16 +869,16 @@ func (a *app) Update() error {
 		}
 		if step := a.levelSelectWheelStep(); step != 0 {
 			a.move(step)
-			a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+			a.levelScrollSound()
 		}
 	}
 	if uiKeyJustPressed(ebiten.KeyDown) {
 		a.move(1)
-		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+		a.levelScrollSound()
 	}
 	if uiKeyJustPressed(ebiten.KeyUp) {
 		a.move(-1)
-		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+		a.levelScrollSound()
 	}
 	if a.page == 2 && uiKeyJustPressed(ebiten.KeyC) {
 		return a.activateCoop()
@@ -874,11 +893,11 @@ func (a *app) Update() error {
 	}
 	if a.page == 2 && (uiKeyJustPressed(ebiten.KeyLeft) || uiKeyJustPressed(ebiten.KeyA)) {
 		a.move(-1)
-		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+		a.levelScrollSound()
 	}
 	if a.page == 2 && (uiKeyJustPressed(ebiten.KeyRight) || uiKeyJustPressed(ebiten.KeyD)) {
 		a.move(1)
-		a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+		a.levelScrollSound()
 	}
 	if uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) {
 		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
@@ -1017,7 +1036,7 @@ func (a *app) updateLevelSelectPointer(x, y int, pressed, down bool) (bool, erro
 	}
 	if a.selectorDragging {
 		if a.carouselCore.Scroll(float64(a.selectorLastX-x) / 150) {
-			a.playSound("audio/sound/sfx/menu_move.ogg", .7)
+			a.levelScrollSound()
 		}
 		if world, level, ok := levels.Selection(a.carouselCore.Selected); ok {
 			a.world, a.level = world, level
@@ -1904,7 +1923,10 @@ func (a *app) drawTitle(screen *ebiten.Image) {
 		options := menuGroupImageOptions(a.titleZombie, .5/resolution, .5/resolution, float64(image.Bounds().Dx())/2, float64(image.Bounds().Dy())/2, 0, 0, 0)
 		a.drawImage(screen, image, options)
 	}
-	a.textCentered(screen, "Touch to Start", 290, .72)
+	// 1.2.5 0xe6d08: the counter cycles -15..16 per draw call and the text shows while it is >= 0.
+	if !a.titleNative() || titleBlinkVisible(int(math.Round(a.menuTime*60))) {
+		a.textCentered(screen, "Touch to Start", 290, .72)
+	}
 }
 
 type titleBarryPiece struct {
@@ -1940,6 +1962,11 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 }
 
 func (a *app) titleCockingOffset(index int) (float64, float64) {
+	if a.titleCocking && a.titleNative() {
+		// FUN_000e7310 state 3 / 4: the grip walks B -> A -> B, then all four pieces slide out by (-285, +70).
+		handX, handY := a.titleHandDelta()
+		return titleCockingOffset125(index, a.titleTick(), handX, handY)
+	}
 	if !a.titleCocking || index != 2 {
 		return 0, 0
 	}

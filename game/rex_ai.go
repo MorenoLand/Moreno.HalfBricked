@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -315,6 +316,7 @@ func (p *playState) fireRexVenom(zombie *zombieState, state *rexBossState, dx, d
 		return
 	}
 	ai.ammo--
+	p.rexPresidentVomit()
 	length := math.Hypot(dx, dy)
 	if length == 0 {
 		dx, dy, length = 0, 1, 1
@@ -345,6 +347,23 @@ func (p *playState) rexRoar(zombie *zombieState) string {
 		return fmt.Sprintf("PresidentRoar%d", pick)
 	}
 	return fmt.Sprintf("SFX_T_REX_ROAR_%d", pick)
+}
+
+// rexIsPresident is the rex class byte +0x361 (1.2.5 FUN_0011cad0 stores bit 11 of the LevelInfo flags word, which
+// FUN_0014fd5c builds from the level XML levelFlags: PRESIDENTS == 0x800). The 1.2.1 build has no such byte.
+func (p *playState) rexIsPresident() bool {
+	return p.waveBuild() != content.WaveBuildV7 && hasLevelFlag(p.levelInfo, "PRESIDENTS")
+}
+
+// rexPresidentVomit is FUN_0011bf70 (rex weapon fire hook, 1.2.5): when FUN_001010a8 fired (ammo taken, target
+// present), +0x361 != 0 and sound 0x5e is not already playing, play 0x5e PresidentVomit. The channel is held for
+// the clip length (PresidentVomit.ogg: 44100 samples at 44100 Hz).
+func (p *playState) rexPresidentVomit() {
+	if !p.rexIsPresident() || p.time < p.rex.vomitUntil {
+		return
+	}
+	p.sfxQueue = append(p.sfxQueue, rexPresidentVomitSound)
+	p.rex.vomitUntil = p.time + rexPresidentVomitSecs
 }
 
 func (p *playState) isPresidentBoss(zombie *zombieState) bool {
