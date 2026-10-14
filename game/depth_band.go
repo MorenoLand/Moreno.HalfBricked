@@ -1,6 +1,10 @@
 package game
 
-import "github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
+import (
+	"math"
+
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/viewer"
+)
 
 // inDepthBand reports whether an entity at raw native position y belongs to the band being drawn (always true
 // outside a banded draw). The band holds y-buckets, not pixels: native submits every entity at its own position y
@@ -36,4 +40,49 @@ func zombieSpriteLift(z zombieState, renderHeight float64) float64 {
 		return carRenderAnchor * z.native.sizeZ
 	}
 	return renderHeight * zombieRenderAnchor
+}
+
+// scriptSpriteDepthY is the key a script sprite registers with. A sprite made with CreateEntity(..., true) keys at
+// y + 0.3 * height (the sprite is drawn centred on y), any other entity at its raw y. The draw position does not
+// change. Research/native/script-sprite-depth-2026-10-14.md (v7 FUN_00099f60, 1.2.5 FUN_000f8488).
+func (a *app) scriptSpriteDepthY(e *scriptEntity) float64 {
+	if e == nil || e.kind != "sprite" || !e.feet {
+		if e == nil {
+			return 0
+		}
+		return e.y
+	}
+	return e.y + .3*a.scriptEntityDrawHeight(e)
+}
+
+// scriptEntityDrawHeight is the drawn height in world pixels, the same arithmetic as drawScriptEntity.
+func (a *app) scriptEntityDrawHeight(e *scriptEntity) float64 {
+	if e.sized {
+		return math.Max(0, e.scaleY)
+	}
+	animation, has := a.spriteAnimationByIndex(e.texture, e.animation)
+	path := commonSDTexture(e.texture)
+	columns, rows := 5, 4
+	if has {
+		path = animation.Texture
+		if animation.Angles > 0 {
+			columns = animation.Angles
+		}
+		if animation.Frames > 0 {
+			rows = animation.Frames
+		}
+	}
+	texture, err := a.Texture(path)
+	if err != nil || rows <= 0 {
+		return 0
+	}
+	cell := float64(texture.Bounds().Dy()) / float64(rows)
+	if has && columns == 1 && rows > 1 && texture.Bounds().Dx() > texture.Bounds().Dy() {
+		cell = float64(texture.Bounds().Dy())
+	}
+	scale := e.scaleY
+	if scale == 0 {
+		scale = 1
+	}
+	return cell * scale / a.pack.TextureSourceScale(path)
 }

@@ -28,8 +28,8 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, barry
 		items = append(items, item{bucket: a.depthBucket(p.y), order: 0, barry: true})
 	}
 	for _, entity := range p.scriptEntities {
-		if entity != nil && entity.kind != "zombie" && a.inDepthBand(entity.y) {
-			items = append(items, item{bucket: a.depthBucket(entity.y), order: 1, entity: entity})
+		if entity != nil && entity.kind != "zombie" && a.inDepthBand(a.scriptSpriteDepthY(entity)) {
+			items = append(items, item{bucket: a.depthBucket(a.scriptSpriteDepthY(entity)), order: 1, entity: entity})
 		}
 	}
 	for index := range p.sentries {

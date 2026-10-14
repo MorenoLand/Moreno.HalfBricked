@@ -28,6 +28,9 @@ func init() {
 }
 
 type scriptEntity struct {
+	// feet is CreateEntity's sixth argument (+0x89 in FUN_00099e14): the sprite registers for depth sorting with
+	// y + 0.3 * height (FUN_00099f60, 0x3E99999A) instead of its centre y. Research/native/script-sprite-depth-2026-10-14.md.
+	feet bool
 	id                      int
 	kind                    string
 	entityType              string
@@ -1225,9 +1228,13 @@ func (h *playScriptHost) createEntity(args []scripting.Value) (scripting.CallRes
 		return scripting.CallResult{}, err
 	}
 	y = h.play.sceneCarY(texture, y)
+	feet := false
+	if len(args) > 5 {
+		feet, _ = scriptBool(args, 5)
+	}
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
-	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: true, angle: scriptEntityDefaultAngle}
+	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: true, angle: scriptEntityDefaultAngle, feet: feet}
 	return scriptValues(id), nil
 }
 
