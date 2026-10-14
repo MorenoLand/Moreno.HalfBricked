@@ -241,7 +241,8 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		if err != nil {
 			return scripting.CallResult{}, err
 		}
-		h.play.cancelScriptCameraPan()
+		// Native SetCamera writes only the clamped centre (FUN_000bf23c); it does not cancel a running pan
+		// (Research/native/script-camera-2026-10-14.md).
 		h.play.setScriptCamera(x, y)
 		return scripting.CallResult{}, nil
 	case "SetZoom":
@@ -252,7 +253,8 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		if zoom <= 0 {
 			return scripting.CallResult{}, fmt.Errorf("zoom must be positive")
 		}
-		h.play.cancelScriptCameraPan()
+		// Native SetZoom writes only the zoom global (v7 FUN_000db3f4); a pan in progress keeps running and
+		// overwrites the zoom on its next step (world4_level2_exit.script calls SetCameraPan then SetZoom).
 		h.play.world.SetZoom(portZoomFromNative(zoom))
 		return scripting.CallResult{}, nil
 	case "GetZoom":
