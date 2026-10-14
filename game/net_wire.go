@@ -74,6 +74,18 @@ func (p *playState) snapshot(seq uint32) *netwire.Snapshot {
 	for _, v := range p.rex.venom {
 		s.RexVenom = append(s.RexVenom, netwire.Venom{X: round(v.x), Y: round(v.y), Heading: v.heading, Height: v.height, Size: v.size, Age: v.age, Life: v.life, State: v.state})
 	}
+	for _, pt := range p.particles {
+		s.Particles = append(s.Particles, netwire.Particle{X: round(float64(pt.x)), Y: round(float64(pt.y)), Z: round(float64(pt.z)), Size: round(float64(pt.size)), Age: float64(pt.age), Kind: pt.kind, Left: pt.dirX < 0})
+	}
+	for _, f := range p.robotShots.flyers {
+		s.RobotFlyers = append(s.RobotFlyers, netwire.RobotShot{X: round(f.x), Y: round(f.y), Lift: round(f.lift), Size: f.size, Heading: int(f.heading), Alpha: f.alpha})
+	}
+	for _, r := range p.robotShots.rockets {
+		s.RobotRockets = append(s.RobotRockets, netwire.RobotShot{X: round(r.x), Y: round(r.y), Lift: round(r.lift), Heading: int(r.heading)})
+	}
+	for _, b := range p.robotShots.beams {
+		s.RobotBeams = append(s.RobotBeams, netwire.RobotShot{X: round(b.x), Y: round(b.y), Lift: round(b.lift), Size: b.size, Heading: int(b.heading), Alpha: int(b.alpha)})
+	}
 	for _, m := range p.mines {
 		s.Mines = append(s.Mines, [3]float64{round(m.x), round(m.y), m.age})
 	}
@@ -210,6 +222,27 @@ func (p *playState) applySnapshot(s *netwire.Snapshot) {
 	if p.world != nil && s.Zoom > 0 && p.world.Zoom != s.Zoom {
 		p.world.SetZoom(s.Zoom)
 	}
+	p.particles = p.particles[:0]
+	for _, pt := range s.Particles {
+		if pt.Kind < 0 || pt.Kind >= len(particleSpecs) {
+			continue
+		}
+		dirX := float32(1)
+		if pt.Left {
+			dirX = -1
+		}
+		p.particles = append(p.particles, particle{x: float32(pt.X), y: float32(pt.Y), z: float32(pt.Z), size: float32(pt.Size), age: float32(pt.Age), kind: pt.Kind, dirX: dirX})
+	}
+	p.robotShots = robotShots{}
+	for _, f := range s.RobotFlyers {
+		p.robotShots.flyers = append(p.robotShots.flyers, robotFlyer{x: f.X, y: f.Y, lift: f.Lift, size: f.Size, heading: uint16(f.Heading), alpha: f.Alpha})
+	}
+	for _, r := range s.RobotRockets {
+		p.robotShots.rockets = append(p.robotShots.rockets, robotRocket{x: r.X, y: r.Y, lift: r.Lift, heading: uint16(r.Heading)})
+	}
+	for _, b := range s.RobotBeams {
+		p.robotShots.beams = append(p.robotShots.beams, robotBeam{x: b.X, y: b.Y, lift: b.Lift, size: b.Size, heading: uint16(b.Heading), alpha: uint8(b.Alpha)})
+	}
 	p.rex.waves, p.rex.venom = nil, nil
 	for _, w := range s.RexWaves {
 		p.rex.waves = append(p.rex.waves, rexShockwave{x: w[0], y: w[1], age: w[2], max: w[3]})
@@ -261,10 +294,30 @@ func ghostsFromWire(ghosts [2]netwire.Ghost) (out [2]zombieGhost) {
 
 // zombieToWire is the snapshot form of one zombie (or gib body).
 func (p *playState) zombieToWire(z zombieState, intern func(string) int) netwire.Zombie {
-	return netwire.Zombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts), DeathState: z.deathState, Gibbed: z.gibbed, PresentAge: z.presentAge}
+	w := netwire.Zombie{X: round(z.x), Y: round(z.y), Frame: z.frame, Alpha: z.alpha, HitFlash: z.hitFlash, DeathAge: z.deathAge, Health: z.health, Fps: z.fps, RexRage: z.rexRageTimer, Lift: p.rexLift(z), W: z.size.X, H: z.size.Y, Tex: intern(z.texture), Anim: intern(z.animation), Angle: z.angle, FlipX: z.flipX, FlipY: z.flipY, Dying: z.dying, BossRage: z.bossRage, AnimTime: z.animTimeMode, Exploding: p.isExplodingZombie(z), Brightness: z.native.brightness, Speedy: z.native.kind == zombieKindSpeedy, Ghosts: ghostsToWire(z.native.trail.ghosts), DeathState: z.deathState, Gibbed: z.gibbed, PresentAge: z.presentAge}
+	w.MaxHealth, w.Boss = z.native.maxHealth, z.native.boss || p.zombieIsBoss(z)
+	if r := &z.native.robot; r.active {
+		body := &netwire.RobotBody{SizeZ: z.native.sizeZ, Lift: r.lift, ShakeX: r.shakeX, ShakeY: r.shakeY, Colour: r.colour}
+		for i, orb := range r.orbs {
+			body.Orbs[i] = [3]float64{round(orb.x), round(orb.y), round(orb.z)}
+		}
+		w.Robot = body
+	}
+	return w
 }
 
 // zombieFromWire rebuilds a zombie from its snapshot form.
 func zombieFromWire(z netwire.Zombie, str func(int) string) zombieState {
-	return zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, deathState: z.DeathState, gibbed: z.Gibbed, presentAge: z.PresentAge, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}}
+	state := zombieState{x: z.X, y: z.Y, frame: z.Frame, alpha: z.Alpha, hitFlash: z.HitFlash, deathAge: z.DeathAge, health: z.Health, fps: z.Fps, rexRageTimer: z.RexRage, lift: z.Lift, size: formats.Vec2{X: z.W, Y: z.H}, texture: str(z.Tex), animation: str(z.Anim), angle: z.Angle, flipX: z.FlipX, flipY: z.FlipY, dying: z.Dying, bossRage: z.BossRage, animTimeMode: z.AnimTime, mirrorExploding: z.Exploding, deathState: z.DeathState, gibbed: z.Gibbed, presentAge: z.PresentAge, native: zombieNative{brightness: z.Brightness, kind: speedyKind(z.Speedy), trail: zombieTrail{ghosts: ghostsFromWire(z.Ghosts)}}}
+	state.native.maxHealth, state.native.boss = z.MaxHealth, z.Boss
+	if z.Robot != nil {
+		// The guest draws the future boss with the host's sprite lift, falling-body offset and orbs.
+		r := &state.native.robot
+		state.native.kind, state.native.sizeZ = zombieKindRobot, z.Robot.SizeZ
+		r.active, r.lift, r.shakeX, r.shakeY, r.colour = true, z.Robot.Lift, z.Robot.ShakeX, z.Robot.ShakeY, z.Robot.Colour
+		for i, orb := range z.Robot.Orbs {
+			r.orbs[i] = robotOrb{x: orb[0], y: orb[1], z: orb[2]}
+		}
+	}
+	return state
 }

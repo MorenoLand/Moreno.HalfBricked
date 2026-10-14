@@ -22,9 +22,7 @@ import (
 // farthest of the level's marker tiles. Each time its health crosses 75%, 50% and 25% it gets angry: three orbs charge
 // and release 1, 2 or 3 bursts of three shockwaves (kind 0x1a).
 //
-// UNRESOLVED / not ported: the particle spawner FUN_000b346c (the muzzle flash of the minigun sweep and the hit sparks
-// of FUN_000bae44, not ported for any class either) and the boss health meter that FUN_000b48c0 eases (no boss HUD
-// meter exists in the port).
+// The boss health meter FUN_000b48c0 writes (hud_progress.go) and the particle spawner are handled outside this file.
 const (
 	robotSizeZ  = 130.0 // FUN_000bb0e0 +0x30 = DAT_000bb318 0x43020000 (the spawn record's 70 is a half size, 140, then replaced)
 	robotHealth = 40000 // DAT_000bb31c 0x9c40
@@ -70,8 +68,10 @@ const (
 	robotShockwaveSize  = 350.0 // DAT_000bbb84 (+0x30 after the init hook)
 	robotShakeDuration  = 2.5   // DAT_000bbb88
 	robotShakeAmpX      = 1.5   // 0x3fc00000
-	robotShakeAmpY      = 1.0
+	robotShakeAmpY      = 1.0   // v7 FUN_000bb610: FUN_000be1fc(pos, 2.5, 1.5, 1.0, 1.0)
 	robotShakeAngleMul  = 1.0
+	robotShakeAmpY125   = 1.5 // 1.2.5 FUN_0011e308: FUN_00095d38(cam, pos, 2.5, 1.5, 1.5, 8.0), once per camera
+	robotShakeAngle125  = 8.0
 
 	robotOrbs         = 3
 	robotOrbRadiusIni = .42      // DAT_000bb308
@@ -83,7 +83,7 @@ const (
 	robotOrbSpinFast  = 131040.0 // DAT_000bbb04
 	robotOrbSpinSlow  = 32760.0  // DAT_000bbb08
 	robotOrbSpinMix   = .5       // DAT_000bbbbc
-	robotOrbSquash    = .667     // DAT_000bbbc0
+	robotOrbSquash    = .666     // DAT_000bbbc0 / 1.2.5 DAT_0011e9f4, both 0x3f2a7efa
 	robotOrbPulseRate = 6354.0   // DAT_000bbb14
 	robotOrbPulseIdle = 4.0      // DAT_000bbb18
 	robotOrbPulseAng  = 8.0      // DAT_000bbb28
@@ -289,10 +289,16 @@ func (p *playState) robotAim(z *zombieState, dx, dy float64) bool {
 			timer := ai.gun.timer
 			if timer < -.7 {
 				ai.desired = bearing
-			} else if timer >= -.2 && r.sweepPrev < -.2 {
-				// (below -0.7 the muzzle flash FUN_000b346c(5, ...) fires when the sweep begins: particle spawner not ported)
-				ai.desired = bearing
-				r.sweepRate = 100 / (math.Hypot(dx, dy) / 500)
+			} else {
+				if r.sweepPrev < -.7 {
+					// The timer climbed through -0.7 this frame: the muzzle flash (a type 5 particle, FUN_000b346c /
+					// 1.2.5 FUN_00114a7c) opens the sweep, 5 px below and 100 px above the boss.
+					p.spawnParticles(particleKindFlash, z.x, z.y+particleFlashRaise, particleFlashLift, 0, 0, 1, 0, 0)
+				}
+				if timer >= -.2 && r.sweepPrev < -.2 {
+					ai.desired = bearing
+					r.sweepRate = 100 / (math.Hypot(dx, dy) / 500)
+				}
 			}
 			r.sweepPrev = timer
 		} else {
@@ -547,7 +553,11 @@ func (p *playState) robotShockwaves(z *zombieState) {
 		p.rex.waves = append(p.rex.waves, rexShockwave{x: r.orbs[i].x, y: r.orbs[i].y, shot: p.newShot(), owner: z.scriptID, max: robotShockwaveSize, life: robotShockwaveLife, noCredit: true})
 		p.sfxQueue = append(p.sfxQueue, rexShockwaveSound)
 	}
-	p.startCameraShake(z.x, z.y, robotShakeDuration, robotShakeAmpX, robotShakeAmpY, robotShakeAngleMul)
+	ampY, angleMul := robotShakeAmpY, robotShakeAngleMul
+	if !cameraIsV7(p.waveBuild()) {
+		ampY, angleMul = robotShakeAmpY125, robotShakeAngle125
+	}
+	p.startCameraShake(z.x, z.y, robotShakeDuration, robotShakeAmpX, ampY, angleMul)
 }
 
 // stepRobot is FUN_0009fb10 for this class: the always-alerted branch (slot +0x74 is the constant 1), the aim /

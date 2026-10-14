@@ -478,6 +478,7 @@ func (a *app) updateNetGuest() error {
 	n.link.Send(false, netwire.Encode(netwire.Msg{T: "in", In: &netwire.Input{MoveX: in.moveX, MoveY: in.moveY, AimX: in.aimX, AimY: in.aimY, Secondary: in.secondary, SecondaryCount: n.secSent}}))
 	p.updateCamera()
 	p.updateProgressOpacity(1.0 / 60.0)
+	p.updateBossMeter()
 	p.banner.advance(1.0 / 60.0)
 	return nil
 }

@@ -434,7 +434,7 @@ func (p *playState) livingPlayersExcluding(index int) []playerTarget {
 // the player survives, and player_death (0x1a) when it kills.
 // Research/native/sound-trigger-audit-2026-10-14.md.
 func (p *playState) playerHitSound(v *playerVitals, healthAfter float64) {
-	if v.bleeding || (v.bleedInit && v.bleedCtr > bleedRest) {
+	if p.quietHit || v.bleeding || (v.bleedInit && v.bleedCtr > bleedRest) {
 		return
 	}
 	if healthAfter > 0 {

@@ -44,8 +44,50 @@ func (p *playState) updateProgressOpacity(dt float64) {
 	}
 	p.progressOpacity = float64(opacity)
 }
+
+// The boss meter. Every boss class (rex, Don Zombie, egyptian, samurai, robot and the western boss, vtable +0x34
+// FUN_000b48c0) stores health / max health at scene +0x114 each frame it is stepped; the HUD (scene +0xec, +0x28 =
+// scene +0x114) draws the meter from that value instead of the kill count as soon as a boss has registered in the
+// boss slot (scene +0x51464, written by each boss's post-init only while the game mode scene +0x514e8 is 0, so never
+// in survival, and never cleared during a level), with the icon frame worldIndex + 1 of bossicons (the current level
+// record's +0x174 plus one), the fill not inverted. FUN_000cfa44 (1.2.5 FUN_00132d9c: the same, per camera, record
+// +0x12c). The value is rewritten (to 0 first) every frame, so it reads 0 once the boss is gone.
+func (p *playState) updateBossMeter() {
+	value, seen := float32(0), false
+	for index := range p.zombies {
+		z := &p.zombies[index]
+		if z.spawnAway {
+			continue
+		}
+		entity := p.scriptEntities[z.scriptID]
+		if !z.native.boss && (entity == nil || !isBossType(entity.entityType)) {
+			continue
+		}
+		seen = true
+		value = 0
+		if z.native.maxHealth > 0 {
+			value = float32(z.health) / float32(z.native.maxHealth)
+		}
+	}
+	if seen && !p.isSurvival() {
+		p.bossMeterOn = true
+	}
+	p.bossMeterValue = float64(value)
+}
+
+// bossMeter reports the boss meter fill and bossicons frame once a boss has registered.
+func (p *playState) bossMeter() (float64, int, bool) {
+	if !p.bossMeterOn {
+		return 0, 0, false
+	}
+	return clampFloat(p.bossMeterValue, 0, 1), p.levelInfo.WorldIndex + 1, true
+}
+
 func (p *playState) levelProgress() (float64, uint8) {
 	alpha := uint8(int(float32(clampFloat(p.progressOpacity, 0, 1)) * 255))
+	if fraction, _, ok := p.bossMeter(); ok {
+		return fraction, alpha
+	}
 	if p.levelZombieTotal <= 0 {
 		// The original has no survival meter (its zombie total is zero there).
 		// The port shows how much of the current wave is left instead.
@@ -104,6 +146,10 @@ func (a *app) drawLevelProgress(screen *ebiten.Image) {
 	if alpha == 0 {
 		return
 	}
+	iconFrame := 0
+	if _, frame, ok := a.play.bossMeter(); ok {
+		iconFrame = frame
+	}
 	scaleX, scaleY := a.renderScale()
 	rotation := float64(0xbffd) * 2 * math.Pi / 65536
 	border, err := a.Texture("Common0/Textures/healthBarBorder_SD")
@@ -136,8 +182,8 @@ func (a *app) drawLevelProgress(screen *ebiten.Image) {
 	if icons, err := a.Texture("Common0/Textures/bossicons_SD"); err == nil {
 		bounds := icons.Bounds()
 		width := bounds.Dx() / 8
-		if width > 0 {
-			part := icons.SubImage(image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Min.X+width, bounds.Max.Y)).(*ebiten.Image)
+		if width > 0 && iconFrame >= 0 && iconFrame < 8 {
+			part := icons.SubImage(image.Rect(bounds.Min.X+iconFrame*width, bounds.Min.Y, bounds.Min.X+(iconFrame+1)*width, bounds.Max.Y)).(*ebiten.Image)
 			op.GeoM.Reset()
 			op.GeoM.Translate(-float64(width)/2, -float64(bounds.Dy())/2)
 			op.GeoM.Scale(31*scaleX/float64(width), 32*scaleX/float64(bounds.Dy()))

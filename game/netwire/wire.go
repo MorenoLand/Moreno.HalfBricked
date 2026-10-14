@@ -61,6 +61,34 @@ type Zombie struct {
 	DeathState int
 	Gibbed     bool
 	PresentAge float64
+	// Optional fields (absent from an older host, ignored by an older guest): the boss meter reads Boss and
+	// MaxHealth; Robot is the future boss's drawn state.
+	MaxHealth float64    `json:",omitempty"`
+	Boss      bool       `json:",omitempty"`
+	Robot     *RobotBody `json:",omitempty"`
+}
+
+// RobotBody is the part of the future boss (robot_boss.go) a guest needs to draw it: the sprite lift factor and
+// the size its lift scales with, the falling body's draw offset, the orbs' colour and their positions.
+type RobotBody struct {
+	SizeZ, Lift, ShakeX, ShakeY float64
+	Colour                      [4]uint8
+	Orbs                        [3][3]float64
+}
+
+// Particle is one live particle (particles.go) as the guests draw it: type, position and height, the age the size,
+// frame and colour follow from, and the sign of its horizontal direction (the quad is mirrored for -1).
+type Particle struct {
+	X, Y, Z, Size, Age float64
+	Kind               int
+	Left               bool
+}
+
+// RobotShot is one live projectile of the future boss (robot_projectiles.go): a flyer (kind 0x19), a rocket (0x13)
+// or a minigun beam (0x11), as the guests draw it.
+type RobotShot struct {
+	X, Y, Lift, Size float64
+	Heading, Alpha   int
 }
 
 type Bullet struct {
@@ -109,6 +137,13 @@ type Snapshot struct {
 	Combo      []Combo
 	HudFlash   float64
 	HudColor   [3]float64
+
+	// Optional fields, absent from an older host and ignored by an older guest: the live particles
+	// (see Particle) and the future boss's projectiles (see RobotShot).
+	Particles    []Particle  `json:",omitempty"`
+	RobotFlyers  []RobotShot `json:",omitempty"`
+	RobotRockets []RobotShot `json:",omitempty"`
+	RobotBeams   []RobotShot `json:",omitempty"`
 }
 
 // Venom is one rex venom projectile (rex_ai.go) as the guest draws it.

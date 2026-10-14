@@ -1114,7 +1114,7 @@ func (h *playScriptHost) call(name string, args []scripting.Value) (scripting.Ca
 		h.play.scriptNextEntity++
 		const size, health = 60.0, 40000.0
 		h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_west", x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: "maddog", speed: 0}
-		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", ""), scriptControlled: true})
+		h.play.zombies = append(h.play.zombies, zombieState{x: x, y: y, speed: 0, health: health, size: formats.Vec2{X: size, Y: size}, texture: "maddog", scriptID: id, alpha: 1, fps: h.play.spriteFPS("maddog", ""), scriptControlled: true, native: zombieNative{maxHealth: health}})
 		return scriptValues(id), nil
 	case "SetWesternBossDead":
 		for index := range h.play.zombies {
@@ -2313,6 +2313,9 @@ func scriptAlpha(args []scripting.Value, index int) (float64, error) {
 var nativeSFXFiles = map[string]string{
 	"sfx_gw_usa_roar_1": "presidentroar1", "sfx_gw_usa_roar_2": "presidentroar2", "sfx_gw_usa_death": "presidentdeath",
 	"sfx_gw_usa_vomit": "presidentvomit", "sfx_gw_usa_sting_1": "presidentsting1", "sfx_gw_usa_sting_2": "presidentsting2",
+	// SFX_SHURIKEN (id 0x14) is the "shuriken_throw" clip; without this the samurai's blades were silent
+	// (Research/native/sound-trigger-audit-2026-10-14.md).
+	"sfx_shuriken": "shuriken_throw",
 }
 
 // scriptSoundPath is the sound file for a script / weapon sound name. The answer is memoized: resolving it walks

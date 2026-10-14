@@ -263,6 +263,7 @@ type playState struct {
 	radius                                                 float64
 	flash                                                  float64
 	stick                                                  int
+	quietHit                                               bool // the current damage call has no source object: no hurt sound
 	aimPointDistance                                       float64 // world px from the player to the aim point (mouse); <= 1.5 = none
 	leftBaseX, leftBaseY, leftDeflectX, leftDeflectY       float64
 	rightBaseX, rightBaseY, rightDeflectX, rightDeflectY   float64
@@ -293,6 +294,7 @@ type playState struct {
 	zombieWeapons                                          formats.ZombieWeaponCatalog
 	zombieShots                                            []zombieShot
 	robotShots                                             robotShots // robot_projectiles.go
+	particles                                              []particle // particles.go
 	spinners                                               []spinnerBlade // SPINNER blades (samurai_blade.go)
 	sentryLoopHold                                         float64
 	navs                                                   [maxCoopPlayers]navField
@@ -397,6 +399,8 @@ type playState struct {
 	progressOpacity                 float64
 	progressMirror                  bool
 	progressValue                   float64
+	bossMeterOn                     bool    // a boss class has registered in the native boss slot (scene +0x51464)
+	bossMeterValue                  float64 // scene +0x114: health / max health the boss step FUN_000b48c0 stores
 	score                           int
 	lives                           int
 	multiplier                      int
@@ -3932,6 +3936,7 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 		return false
 	}
 	p.updateProgressOpacity(1.0 / 60.0)
+	p.updateBossMeter()
 	p.flash = math.Max(0, p.flash-1.0/60.0)
 	p.shootCooldown = math.Max(0, p.shootCooldown-1.0/60.0)
 	p.secondaryShootCooldown = math.Max(0, p.secondaryShootCooldown-1.0/60.0)
@@ -4519,7 +4524,7 @@ func (p *playState) spawnZombieAtTurn(entry formats.SpawnType, point formats.Vec
 	}
 	renderSize := nativeSpawnRenderSize(entry.Size)
 	collision := nativeSpawnCollisionRadius(entry.Size)
-	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, rawPoints: rawPoints, size: formats.Vec2{X: renderSize, Y: renderSize}, collision: collision, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+	p.zombies = append(p.zombies, zombieState{x: point.X, y: point.Y, speed: speed, health: health, rawPoints: rawPoints, size: formats.Vec2{X: renderSize, Y: renderSize}, collision: collision, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, ""), native: zombieNative{maxHealth: health}})
 }
 
 func (p *playState) spawnZombie(spawner formats.Spawner, ordinal int) {
@@ -4688,6 +4693,7 @@ func (p *playState) updateZombies() {
 	p.updateZombieShots(dt)
 	p.updateSpinners(dt)
 	p.updateRobotShots(dt)
+	p.updateParticles(dt)
 	p.updateSamuraiWaveEnd()
 	for index := range p.zombies {
 		zombie := &p.zombies[index]
@@ -4701,6 +4707,7 @@ func (p *playState) updateZombies() {
 				zombie.alpha = 0 // the wreck sprite stands in for the car from now on
 			}
 			p.stepGibFlames(zombie)
+			p.zombieDeathSpurt(zombie)
 			zombie.deathAge += dt
 			if zombie.native.samurai.active {
 				p.samuraiDeath(zombie)

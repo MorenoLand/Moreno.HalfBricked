@@ -22,6 +22,7 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, barry
 		sentry *sentryState
 		pop    *bloodPop
 		orb    *robotOrbDraw // robot_projectiles.go: an orb of the future boss
+		spark  *particleDraw // particles.go
 		barry  bool
 	}
 	var items []item
@@ -57,6 +58,12 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, barry
 	for index := range orbs {
 		if a.inDepthBand(orbs[index].y) {
 			items = append(items, item{bucket: a.depthBucket(orbs[index].y), order: 2, orb: &orbs[index]})
+		}
+	}
+	sparks := p.particleList()
+	for index := range sparks {
+		if a.inDepthBand(sparks[index].y) {
+			items = append(items, item{bucket: a.depthBucket(sparks[index].y), order: 2, spark: &sparks[index]})
 		}
 	}
 	if p.coopActive() {
@@ -97,6 +104,8 @@ func (a *app) drawDepthSorted(target *ebiten.Image, zombies []zombieState, barry
 			a.drawBloodPop(target, *it.pop)
 		case it.orb != nil:
 			a.drawRobotOrb(target, *it.orb)
+		case it.spark != nil:
+			a.drawParticle(target, *it.spark)
 		default:
 			a.drawScriptEntity(target, it.entity)
 		}

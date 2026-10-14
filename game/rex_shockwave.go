@@ -465,7 +465,7 @@ func (a *app) captureRexShockwave() error {
 		id := p.scriptNextEntity
 		p.scriptNextEntity++
 		p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: kind, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: speed}
-		p.zombies = append(p.zombies, zombieState{x: x, y: y, speed: speed, health: health, rawPoints: 100, size: formats.Vec2{X: size, Y: size}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+		p.zombies = append(p.zombies, zombieState{x: x, y: y, speed: speed, health: health, rawPoints: 100, size: formats.Vec2{X: size, Y: size}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, ""), native: zombieNative{maxHealth: health}})
 	}
 	add("boss_rex", "rexwalk_1", p.x+170, p.y, 170, 25000, nativeSpawnRenderSize(formats.Vec2{X: 80, Y: 80}))
 	p.zombies[0].rexRageTimer = rexRageMillis

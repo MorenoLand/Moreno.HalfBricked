@@ -526,6 +526,6 @@ func (a *app) captureRexVenom() error {
 	texture := "rexwalk_1"
 	p.scriptEntities[id] = &scriptEntity{id: id, kind: "zombie", entityType: "boss_rex", x: p.x + 180, y: p.y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, speed: 0}
 	size := nativeSpawnRenderSize(formats.Vec2{X: 80, Y: 80})
-	p.zombies = append(p.zombies, zombieState{x: p.x + 180, y: p.y, speed: 0, health: 25000, rawPoints: 25000, size: formats.Vec2{X: size, Y: size}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, "")})
+	p.zombies = append(p.zombies, zombieState{x: p.x + 180, y: p.y, speed: 0, health: 25000, rawPoints: 25000, size: formats.Vec2{X: size, Y: size}, texture: texture, scriptID: id, alpha: 1, fps: p.spriteFPS(texture, ""), native: zombieNative{maxHealth: 25000}})
 	return nil
 }

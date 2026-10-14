@@ -169,6 +169,8 @@ type zombieNative struct {
 	samurai samuraiBoss
 	// robot is the future boss's state (robot_boss.go).
 	robot robotBoss
+	// boss marks a boss class on a guest, which has no script entities to ask (the host sends it, net_wire.go).
+	boss bool
 }
 
 // zombieBodyWidth is +0x28 once the zombie has risen.
@@ -183,6 +185,11 @@ type zombieHit struct {
 	kind uint8
 	// direction is the projectile's heading (+0x36).
 	direction uint16
+	// located marks a hit from a projectile at (x, y) and height lift (+0x10, +0x14, +0x18): the blood splash of a
+	// kind 0x10 bullet is spawned there (particles.go).
+	located bool
+	x, y    float64
+	lift    float64
 }
 
 // hurtZombie is the zombie damage slot FUN_000a0304 for the plain zombie classes
@@ -197,10 +204,18 @@ func (p *playState) hurtZombie(z *zombieState, hit zombieHit) bool {
 		return true
 	}
 	amount, flash := float64(hit.damage), zombieDamageFlash
+	blocked := false
 	if z.native.kind == zombieKindShield && hit.kind == 0x10 {
 		if absInt(angleDifference(z.native.facing, hit.direction+zombieShieldBulletOffset)) <= zombieShieldArc {
 			amount, flash = float64(hit.damage/zombieShieldDivisor), zombieShieldFlash
+			blocked = true
 		}
+	}
+	if hit.kind == 0x10 && hit.located && !blocked {
+		// FUN_000a0304 (and the boss classes' own damage slots): a kind 0x10 bullet that is not stopped by the shield
+		// splashes two particles of type 0 from its position, back along the line from the zombie to the bullet.
+		heading := weapons.NativeWeaponDirection(hit.x-z.x, hit.y-z.y)
+		p.spawnParticles(particleKindHit, hit.x, hit.y, hit.lift, heading, particleHitSpread, particleHitCount, particleHitSpeed, particleHitLift)
 	}
 	z.health -= amount
 	z.hitFlash = flash
@@ -258,13 +273,14 @@ func (p *playState) damageFromBullet(b bullet, z *zombieState) bool {
 	kind := uint8(0x10)
 	damage := zombieBulletDamage
 	var direction uint16
+	var lift float64
 	if b.projectile != nil {
-		kind, direction = b.projectile.EntityType, b.projectile.Direction
+		kind, direction, lift = b.projectile.EntityType, b.projectile.Direction, b.projectile.Lift
 		if kind == 0x16 {
 			damage = zombieFlameDamage
 		}
 	}
-	lethal := p.hurtZombie(z, zombieHit{damage: damage, kind: kind, direction: direction})
+	lethal := p.hurtZombie(z, zombieHit{damage: damage, kind: kind, direction: direction, located: true, x: b.x, y: b.y, lift: lift})
 	p.comboBulletHit(b, !lethal)
 	return lethal
 }

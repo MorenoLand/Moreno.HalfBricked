@@ -317,12 +317,16 @@ func (p *playState) trainCollide(t *trainHazard) {
 	}
 	damage := trainPlayerBlow * trainPlayerScale
 	if p.health > 0 && !p.playerUnspawned && inTrainBox(t, p.x, p.y) {
+		p.quietHit = true // the train's call passes no source object, so no hurt sound (FUN_00094c6c tail)
 		p.damagePlayer(0, damage)
+		p.quietHit = false
 	}
 	if p.coopActive() {
 		for _, c := range p.coop.players {
 			if c.body.health > 0 && inTrainBox(t, c.body.x, c.body.y) {
+				p.quietHit = true
 				p.damagePlayer(c.index, damage)
+				p.quietHit = false
 			}
 		}
 	}
