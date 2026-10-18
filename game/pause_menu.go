@@ -153,7 +153,11 @@ func (a *app) drawPauseMenu(screen *ebiten.Image) {
 	a.textCentered(screen, title, 78, 1)
 	if label := a.pauseLevelLabel(); label != "" && !a.pauseOnline {
 		if a.pauseFixture() != nil {
-			a.text(screen, label, 8, 8, .5) // the native sound/music fixture sits where the label used to be
+			// The native sound/music fixture sits where the label used to be: the title wraps into the room left of it
+			// (the fixture starts at x ~ 163) instead of running underneath.
+			for i, line := range a.wrapToWidth(label, 148, .42) {
+				a.text(screen, line, 8, 6+float64(i)*12, .42)
+			}
 		} else {
 			a.textCentered(screen, label, 56, .5)
 		}

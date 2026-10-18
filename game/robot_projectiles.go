@@ -386,7 +386,8 @@ func (a *app) drawRobotShots(screen *ebiten.Image) {
 	if zoom <= 0 {
 		zoom = 1
 	}
-	sx, sy := a.renderScale()
+	// Logical coordinates throughout: drawImage applies the window scale (applying it here as well drew the
+	// shots and orbs at the square of the scale, off to the side of the boss).
 	place := func(textureName string, x, y, lift, width, height, degrees float64, tint [3]float32, alpha float64) {
 		texture, err := a.Texture(textureName)
 		if err != nil {
@@ -398,9 +399,9 @@ func (a *app) drawRobotShots(screen *ebiten.Image) {
 		}
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-tw/2, -th/2)
-		options.GeoM.Scale(width*zoom/tw*sx, height*zoom/th*sx)
+		options.GeoM.Scale(width*zoom/tw, height*zoom/th)
 		options.GeoM.Rotate(degrees * math.Pi / 180)
-		options.GeoM.Translate(((x-world.CameraX)*zoom+world.ViewportX)*sx, ((y-lift-world.CameraY)*zoom+world.ViewportY)*sy)
+		options.GeoM.Translate((x-world.CameraX)*zoom+world.ViewportX, (y-lift-world.CameraY)*zoom+world.ViewportY)
 		options.ColorScale.Scale(tint[0], tint[1], tint[2], 1)
 		options.ColorScale.ScaleAlpha(float32(alpha))
 		a.drawImage(screen, texture, options)
@@ -461,11 +462,10 @@ func (a *app) drawRobotOrb(screen *ebiten.Image, orb robotOrbDraw) {
 	if zoom <= 0 {
 		zoom = 1
 	}
-	sx, sy := a.renderScale()
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-tw/2, -th/2)
-	options.GeoM.Scale(robotOrbSize*zoom/tw*sx, robotOrbSize*zoom/th*sx)
-	options.GeoM.Translate(((orb.x-world.CameraX)*zoom+world.ViewportX)*sx, ((orb.y-orb.z-world.CameraY)*zoom+world.ViewportY)*sy)
+	options.GeoM.Scale(robotOrbSize*zoom/tw, robotOrbSize*zoom/th)
+	options.GeoM.Translate((orb.x-world.CameraX)*zoom+world.ViewportX, (orb.y-orb.z-world.CameraY)*zoom+world.ViewportY)
 	options.ColorScale.Scale(float32(orb.colour[0])/255, float32(orb.colour[1])/255, float32(orb.colour[2])/255, 1)
 	options.ColorScale.ScaleAlpha(float32(orb.colour[3]) / 255)
 	a.drawImage(screen, texture, options)

@@ -182,7 +182,6 @@ func (a *app) drawSpinners(screen *ebiten.Image) {
 	if zoom <= 0 {
 		zoom = 1
 	}
-	sx, sy := a.renderScale()
 	size := float64(spinnerBaseW * spinnerSizeScale * spinnerDrawScale)
 	for _, b := range a.play.spinners {
 		x := (float64(b.x)-world.CameraX)*zoom + world.ViewportX
@@ -201,9 +200,9 @@ func (a *app) drawSpinners(screen *ebiten.Image) {
 			if !(b.omega > 0) {
 				scaleX = -scaleX
 			}
-			options.GeoM.Scale(scaleX*sx, scaleY*sx)
+			options.GeoM.Scale(scaleX, scaleY) // logical coordinates: drawImage applies the window scale
 			options.GeoM.Rotate(float64(b.heading) / spinnerHeadingUnits * math.Pi / 180)
-			options.GeoM.Translate(x*sx, y*sy)
+			options.GeoM.Translate(x, y)
 			if pass == 0 {
 				options.ColorScale.Scale(0, 0, 0, spinnerShadowAlpha)
 			}
