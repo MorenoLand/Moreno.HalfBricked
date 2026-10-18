@@ -119,6 +119,9 @@ func (a *app) optionsHitNative(l *optionsLayout, x, y float64) optionsAction {
 // optionsExtraRect is the click region of the port's EXTRA link.
 func (a *app) optionsExtraRect() (x0, y0, x1, y1 float64) {
 	if a.optionsLayout() != nil {
+		if a.extraNative() {
+			return extraLinkRectNative()
+		}
 		return 318, 305, 418, 320
 	}
 	return extraButtonRect()

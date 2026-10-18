@@ -732,6 +732,13 @@ func (a *app) drawCreditsNative(screen *ebiten.Image, ui *formats.UIScreen, c *c
 				return nativeOverride{custom: func(target *ebiten.Image, off formats.Vec2) { a.drawCreditsRollNative(target, ui, node, off, c) }}
 			case rootName == "Screen" && node.Name == "ComponentText" && node.Class == "ComponentText":
 				return nativeHeading(node)
+			case node.Name == "Back" || node.Name == "PrevTrack" || node.Name == "NextTrack":
+				// Hover: the button lights under the pointer (once the screen has slid in).
+				px, py := a.pointer()
+				if c.inputEnabled() && image.Pt(px, py).In(a.creditsButtonRect(ui, c, node.Name)) {
+					return nativeOverride{brighten: .25}
+				}
+				return nativeOverride{}
 			case node.Name == "NowPlayingTrackName":
 				return nativeOverride{text: nativeText(creditsTrackNames[c.track])}
 			case node.Name == "VersionString":

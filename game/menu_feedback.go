@@ -34,8 +34,8 @@ func (a *app) menuFeedbackSnapshot() menuFeedbackState {
 		return menuFeedbackState{}
 	}
 	s := menuFeedbackState{
-		levelSelect:  a.page == 2 && a.play == nil && !a.titleScreen,
-		options:      a.page == 3 && !a.titleScreen && a.view == nil,
+		levelSelect:  a.page == 2 && a.play == nil && !a.titleScreen && a.native.closeKey != "levelselect",
+		options:      a.page == 3 && !a.titleScreen && a.view == nil && a.native.closeKey != "options",
 		stats:        a.page == 4 && a.statsScreen != nil && !a.titleScreen && a.native.closeKey != "stats",
 		achievements: a.page == 6 && !a.titleScreen && a.native.closeKey != "achievements",
 		play:         a.play,
@@ -51,7 +51,11 @@ func (a *app) menuFeedback(before menuFeedbackState) {
 	if a == nil || !a.titleNative() {
 		return
 	}
-	for _, sound := range menuFeedbackSounds(before, a.menuFeedbackSnapshot(), a.page) {
+	page := a.page
+	if a.native.closeKey == "levelselect" {
+		page = 0 // a level select that is sliding out has left for the main menu: its sound belongs to the press
+	}
+	for _, sound := range menuFeedbackSounds(before, a.menuFeedbackSnapshot(), page) {
 		a.playSound(sound.path, sound.volume)
 	}
 }
@@ -77,6 +81,9 @@ func menuFeedbackSounds(before, now menuFeedbackState, page int) []menuFeedbackS
 	}
 	if !before.options && now.options {
 		sounds = append(sounds, menuFeedbackSound{in, .7})
+	}
+	if before.options && !now.options {
+		sounds = append(sounds, menuFeedbackSound{out, .7}) // PORT ADDITION: the binary has no sound for leaving options
 	}
 	// PORT ADDITION: the 1.2.5 binary plays nothing when Statistics or Achievements open (FUN_000c9244 and the
 	// StatsScreen init have no play call; the board press only plays the shot, main_menu_hd.go); the slide-in gets the

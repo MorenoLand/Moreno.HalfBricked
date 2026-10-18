@@ -32,6 +32,10 @@ type scriptEntity struct {
 	// feet is CreateEntity's sixth argument (+0x89 in FUN_00099e14): the sprite registers for depth sorting with
 	// y + 0.3 * height (FUN_00099f60, 0x3E99999A) instead of its centre y. Research/native/script-sprite-depth-2026-10-14.md.
 	feet bool
+	// screen is CreateEntity's seventh argument (+0x88 in FUN_00099e14): the sprite is drawn in screen space
+	// (FUN_000f1e50, the 480x320 layout, no camera or zoom) instead of at world coordinates: the letterbox bars and
+	// the "Yeah!" banner of the Egypt exit scene. Research/native/script-sprite-depth-2026-10-14.md.
+	screen                  bool
 	id                      int
 	kind                    string
 	entityType              string
@@ -1240,13 +1244,16 @@ func (h *playScriptHost) createEntity(args []scripting.Value) (scripting.CallRes
 		return scripting.CallResult{}, err
 	}
 	y = h.play.sceneCarY(texture, y)
-	feet := false
+	feet, screenSpace := false, false
 	if len(args) > 5 {
 		feet, _ = scriptBool(args, 5)
 	}
+	if len(args) > 6 {
+		screenSpace, _ = scriptBool(args, 6)
+	}
 	id := h.play.scriptNextEntity
 	h.play.scriptNextEntity++
-	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: true, angle: scriptEntityDefaultAngle, feet: feet}
+	h.play.scriptEntities[id] = &scriptEntity{id: id, kind: "sprite", entityType: texture, x: x, y: y, scaleX: 1, scaleY: 1, alpha: 1, texture: texture, playing: true, angle: scriptEntityDefaultAngle, feet: feet, screen: screenSpace}
 	return scriptValues(id), nil
 }
 
@@ -2046,6 +2053,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	screenX := (entity.x-a.play.world.CameraX)*zoom + a.play.world.ViewportX
 	screenY := (entity.y-a.play.world.CameraY)*zoom + a.play.world.ViewportY
+	if entity.screen {
+		zoom, screenX, screenY = 1, entity.x, entity.y // screen space: no camera, no zoom
+	}
 	if entity.kind == "pickup" {
 		a.drawPickupShadow(screen, entity, screenX, screenY, zoom) // v7 FUN_000930c8 else branch
 		screenY -= entity.lift * zoom // FUN_000930c8: y - size * 0.375 - height (+0x1c)

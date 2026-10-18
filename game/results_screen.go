@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"path/filepath"
 	"strings"
@@ -157,7 +158,27 @@ func (a *app) drawResultsBox(screen *ebiten.Image, texture *ebiten.Image, name s
 			style = 2
 		}
 		a.drawOptionsBoxStyle(screen, texture, position, size, style)
+		if part == "INNER" && (name == "MENU" || name == "REPLAY") && a.resultsButtonHover(name) {
+			// Hover: the button lights under the pointer (the original's button art has no lit frame in this cache).
+			a.drawRect(screen, position.X-size.X/2+2, position.Y-size.Y/2+2, size.X-4, size.Y-4, color.RGBA{46, 46, 46, 46})
+		}
 	}
+}
+
+// resultsButtonHover reports whether the pointer is over the MENU or REPLAY button of the ready results screen.
+func (a *app) resultsButtonHover(name string) bool {
+	menu := a.resultsScreen
+	if menu == nil || !menu.Visible || !menu.ready || menu.closing || menu.delivered || a.confirm != nil {
+		return false
+	}
+	position, posOK := a.variables.Vec2Value("ENDSCREEN_" + name + "_BOX_INNER_POS_VAR")
+	size, sizeOK := a.variables.Vec2Value("ENDSCREEN_" + name + "_BOX_INNER_SIZE_VAR")
+	if !posOK || !sizeOK {
+		return false
+	}
+	px, py := a.pointer()
+	x, y := float64(px), float64(py)
+	return x >= position.X-size.X/2 && x <= position.X+size.X/2 && y >= position.Y-size.Y/2 && y <= position.Y+size.Y/2
 }
 
 func (a *app) drawResultsUIGroup(screen *ebiten.Image, boxes *ebiten.Image, group *formats.UIComponent, box string, offset formats.Vec2, elapsed float64) {

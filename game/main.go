@@ -158,6 +158,8 @@ type app struct {
 	menuAchLabel                                 *ebiten.Image // cached "ACHIEVEMENTS" label of the main menu group (main_menu_achievements.go)
 	menuLangLabel                                *ebiten.Image // cached "LANGUAGES" label (main_menu_hd.go)
 	languages                                    *languagesState // languages.go
+	menuLit, menuKeyNav                          bool            // main menu: a board shows as selected only under the pointer or after key / pad navigation
+	menuPtrX, menuPtrY                           int
 	language                                     string          // chosen language (profile key "language")
 	debugPanelVisible                            bool
 	debugPanelDragging                           bool
@@ -597,6 +599,9 @@ func (a *app) Update() error {
 	a.netHostResults()
 	if a.net != nil && a.net.lobby {
 		a.menuTime += 1.0 / 60.0 // the swirl behind the host / join page keeps turning
+		if a.native.closeKey != "" {
+			return a.stepMenuClose()
+		}
 		return a.updateNetLobby()
 	}
 	a.menuTime += 1.0 / 60.0
@@ -701,12 +706,14 @@ func (a *app) Update() error {
 			a.options.dragPad(float64(x), float64(y), center.X, center.Y, action == optionsPad, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
 		}
 		if a.options.activate(action, musicEnabled) {
-			a.page = 0
-			if a.play != nil {
-				a.page = 2
-				a.play.configureControls(a.options.controls, a.outputWidth, a.outputHeight)
-			}
-			return a.savePlayerProfile()
+			return a.closeMenuAnimated("options", func() error {
+				a.page = 0
+				if a.play != nil {
+					a.page = 2
+					a.play.configureControls(a.options.controls, a.outputWidth, a.outputHeight)
+				}
+				return a.savePlayerProfile()
+			})
 		}
 		return nil
 	}
@@ -860,6 +867,7 @@ func (a *app) Update() error {
 	if a.page == 0 {
 		if dir := mainMenuNavKey(); dir != "" {
 			if target := a.mainMenuNavigate(a.mainMenuIndex(), dir); target >= 0 {
+				a.menuKeyNav, a.menuLit = true, true
 				a.menuSelection = target
 				a.playSound("audio/sound/sfx/menu_move.ogg", .7)
 				return nil
@@ -941,8 +949,15 @@ func (a *app) Update() error {
 	}
 	if a.page == 0 {
 		px, py := a.pointer()
+		if px != a.menuPtrX || py != a.menuPtrY {
+			a.menuKeyNav = false // the pointer moved: it decides what is lit
+		}
+		a.menuPtrX, a.menuPtrY = px, py
 		if index := a.mainMenuHit(px, py); index >= 0 {
 			a.menuSelection = index
+			a.menuLit = true
+		} else {
+			a.menuLit = a.menuKeyNav
 		}
 	} else if a.page < 3 && a.page != 2 {
 		_, y := a.pointer()
@@ -954,7 +969,10 @@ func (a *app) Update() error {
 	return nil
 }
 func (a *app) leaveLevelSelect() {
-	a.page, a.level, a.carouselReady, a.selectorPointerDown, a.selectorDragging = 0, 0, false, false, false
+	_ = a.closeMenuAnimated("levelselect", func() error {
+		a.page, a.level, a.carouselReady, a.selectorPointerDown, a.selectorDragging = 0, 0, false, false, false
+		return nil
+	})
 }
 func (a *app) syncLevelCarousel() carousel.LevelCarousel {
 	defer a.prefetchSelectedLevel()
@@ -1329,6 +1347,9 @@ func (a *app) setCaptureState(state string) error {
 	case "stats":
 		a.titleScreen, a.page = false, 4
 		a.statsScreen = newStatsMenuBuild(&a.statistics, a.statsWestern())
+	case "extras":
+		a.titleScreen = false
+		a.page, a.extraRow = extraPage, 0
 	case "languages":
 		a.titleScreen = false
 		a.openLanguages()
@@ -1870,7 +1891,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 				a.drawMenuClick(screen, button, *a.menuClick)
 				continue
 			}
-			a.drawMarqueeButton(screen, button, a.menuZombies[index], index == a.menuSelection)
+			a.drawMarqueeButton(screen, button, a.menuZombies[index], index == a.menuSelection && (a.menuLit || !a.titleNative()))
 		}
 		a.drawCreditsButton(screen)
 		a.drawQuitCorner(screen)
@@ -2641,6 +2662,7 @@ func (a *app) move(delta int) {
 			return
 		}
 		a.menuSelection = index
+		a.menuKeyNav, a.menuLit = true, true
 		return
 	}
 	if a.page == 2 {

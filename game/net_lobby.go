@@ -106,7 +106,7 @@ func (a *app) updateLobbyMouse() error {
 		case "add":
 			a.requestHostCode()
 		case "back":
-			a.leaveNet("cancelled")
+			a.leaveLobbyAnimated()
 		}
 		return nil
 	}

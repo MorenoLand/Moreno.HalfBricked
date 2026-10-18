@@ -104,6 +104,14 @@ func (a *app) startNetJoin() {
 	a.net = &netSession{lobby: true}
 }
 
+// leaveLobbyAnimated leaves the host / join page after its slide-out (the HD lobby; the legacy one leaves at once).
+func (a *app) leaveLobbyAnimated() {
+	_ = a.closeMenuAnimated("netlobby", func() error {
+		a.leaveNet("cancelled")
+		return nil
+	})
+}
+
 func (a *app) leaveNet(message string) {
 	if a.net != nil {
 		a.net.close()
@@ -119,7 +127,7 @@ func (a *app) leaveNet(message string) {
 func (a *app) updateNetLobby() error {
 	n := a.net
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		a.leaveNet("cancelled")
+		a.leaveLobbyAnimated()
 		return nil
 	}
 	if text, ok := platform.ClipboardTake(); ok {

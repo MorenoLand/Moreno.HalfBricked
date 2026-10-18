@@ -27,10 +27,22 @@ var mainMenuButtonsHD = []menuButton{
 	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 186, cy: 75, width: 128, height: 64},
 }
 
+// mainMenuButtonsHDNoLanguages is the list while languagesEnabled is off: Achievements takes the slot the Languages
+// board would hold (top-left), so the menu has no gap; turning languagesEnabled on brings the two-board layout back.
+var mainMenuButtonsHDNoLanguages = []menuButton{
+	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
+	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
+	{zombie: 3, labelRow: 8, action: 2, cx: 80, cy: 244, width: 128, height: 64, angle: -0.16},
+	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
+}
+
 // menuButtons is the main menu's board list for the loaded pack.
 func (a *app) menuButtons() []menuButton {
 	if a != nil && a.pack != nil && a.titleNative() && a.mainMenuLayout(menuActionLanguages) != nil {
-		return mainMenuButtonsHD
+		if languagesEnabled {
+			return mainMenuButtonsHD
+		}
+		return mainMenuButtonsHDNoLanguages
 	}
 	return mainMenuButtons
 }
@@ -44,7 +56,7 @@ func (a *app) quitCornerAvailable() bool {
 		return false
 	}
 	boards := a.menuButtons()
-	return len(boards) > 0 && &boards[0] == &mainMenuButtonsHD[0]
+	return len(boards) > 0 && (&boards[0] == &mainMenuButtonsHD[0] || &boards[0] == &mainMenuButtonsHDNoLanguages[0])
 }
 
 func (a *app) drawQuitCorner(screen *ebiten.Image) {

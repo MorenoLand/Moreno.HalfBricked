@@ -110,7 +110,25 @@ func (a *app) levelTabAtNative(l *levelSelectLayout, x, y int) int {
 }
 
 func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) {
-	a.drawBackdrop(screen)
+	if n := &a.native; n.closeKey == "levelselect" && n.slideDur["levelselect"] > 0 {
+		// Closing: the boxes slide out (nativeSlide runs backwards) while the strip, tabs and arrow fade with them.
+		fade := math.Max(0, math.Min(1, 1-(a.menuTime-n.closeStart)/n.slideDur["levelselect"]))
+		a.drawBackdrop(screen)
+		layer := ebiten.NewImage(screen.Bounds().Dx(), screen.Bounds().Dy())
+		a.drawLevelSelectNativeBody(layer, l, false)
+		options := &ebiten.DrawImageOptions{}
+		options.ColorScale.ScaleAlpha(float32(fade))
+		screen.DrawImage(layer, options)
+		layer.Deallocate()
+		return
+	}
+	a.drawLevelSelectNativeBody(screen, l, true)
+}
+
+func (a *app) drawLevelSelectNativeBody(screen *ebiten.Image, l *levelSelectLayout, backdrop bool) {
+	if backdrop {
+		a.drawBackdrop(screen)
+	}
 	// The dark band is thinner than the uiscreen's 73 units (the iPad shows about 48) and lies behind the cards.
 	a.drawRect(screen, 0, levelCardY-levelBandHeight/2, logicalWidth, levelBandHeight, color.RGBA{0, 0, 0, 100})
 	levels := a.syncLevelCarousel()

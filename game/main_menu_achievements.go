@@ -79,6 +79,9 @@ func (a *app) drawCreditsButton(screen *ebiten.Image) {
 	frame := texture.SubImage(image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)).(*ebiten.Image)
 	rect := creditsIconRect()
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	if px, py := a.pointer(); image.Pt(px, py).In(rect) {
+		options.ColorScale.Scale(1.3, 1.3, 1.3, 1) // hover
+	}
 	options.GeoM.Scale(float64(rect.Dx())/float64(frame.Bounds().Dx()), float64(rect.Dy())/float64(frame.Bounds().Dy()))
 	options.GeoM.Translate(float64(rect.Min.X), float64(rect.Min.Y))
 	a.drawImage(screen, frame, options)

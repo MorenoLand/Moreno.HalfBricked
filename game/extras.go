@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"strings"
 
@@ -78,6 +79,10 @@ func extraRowY(row int) float64 {
 func extraButtonRect() (x0, y0, x1, y1 float64) { return 318, 280, 418, 304 }
 
 func (a *app) drawExtraButton(screen *ebiten.Image) {
+	if a.optionsLayout() != nil && a.extraNative() {
+		a.drawExtraLinkNative(screen)
+		return
+	}
 	x0, y0, x1, _ := a.optionsExtraRect()
 	if l := a.optionsLayout(); l != nil {
 		// beside the native layout the link is a grey panel button with a bold black label
@@ -102,9 +107,11 @@ func (a *app) applyExtras() {
 }
 
 func (a *app) leaveExtras() error {
-	a.page = 3
-	a.applyExtras()
-	return a.savePlayerProfile()
+	return a.closeMenuAnimated("extras", func() error {
+		a.page = 3
+		a.applyExtras()
+		return a.savePlayerProfile()
+	})
 }
 
 func (a *app) setFOV(value int) {
@@ -149,13 +156,17 @@ func (a *app) updateExtras() error {
 	px, py := a.pointer()
 	x, y := float64(px), float64(py)
 	pressed := inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+	trackX0, trackX1 := a.extraTrack()
+	if pressed && a.extraNative() && image.Pt(px, py).In(extraNatBackRect()) {
+		return a.leaveExtras()
+	}
 	if pressed {
 		for row := 0; row < extraRows; row++ {
-			if y >= extraRowY(row)-4 && y <= extraRowY(row)+extraRowHeight-4 {
+			if y >= a.extraRowTop(row)-4 && y <= a.extraRowTop(row)+extraRowHeight-4 {
 				a.extraRow = row
 				switch row {
 				case extraRowFOV:
-					a.extraDrag = x >= extraTrackX0-10 && x <= extraTrackX1+10
+					a.extraDrag = x >= trackX0-10 && x <= trackX1+10
 				case extraRowDiscord:
 					a.extras.DiscordRPC = !a.extras.DiscordRPC
 				case extraRowBack:
@@ -168,7 +179,7 @@ func (a *app) updateExtras() error {
 		a.extraDrag = false
 	}
 	if a.extraDrag {
-		t := (x - extraTrackX0) / (extraTrackX1 - extraTrackX0)
+		t := (x - trackX0) / (trackX1 - trackX0)
 		if t < 0 {
 			t = 0
 		}
@@ -182,6 +193,10 @@ func (a *app) updateExtras() error {
 
 // drawExtras draws the page.
 func (a *app) drawExtras(screen *ebiten.Image) {
+	if a.extraNative() {
+		a.drawExtrasNative(screen)
+		return
+	}
 	title := "EXTRA"
 	a.text(screen, title, 240-a.fontTextWidth(title, .9)/2, 22, .9)
 	row := func(index int, label string) {
