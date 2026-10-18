@@ -30,7 +30,7 @@ type UIComponent struct {
 var uiClassPattern = regexp.MustCompile(`(Component[A-Za-z]+|UIModifier[A-Za-z]+)\x00`)
 
 // Property names decoded from component records.
-var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch", "colour", "textColour", "visible"}
+var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch", "colour", "textColour", "visible", "frequency", "minAmplitude", "maxAmplitude", "axis"}
 
 func ParseUIScreen(data []byte) (*UIScreen, error) {
 	if len(data) < 64 || string(data[:4]) != "FSIU" {
@@ -155,6 +155,9 @@ func (c *UIComponent) float(name string, index int) (float64, bool) {
 	}
 	return float64(value), true
 }
+
+// Float is the index-th float32 of a decoded property (port addition for the SplashScreen sine-wave modifiers).
+func (c *UIComponent) Float(name string, index int) (float64, bool) { return c.float(name, index) }
 
 func (c *UIComponent) Position() (x, y float64) {
 	x, _ = c.float("position", 0)

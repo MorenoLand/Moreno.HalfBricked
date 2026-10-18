@@ -1930,8 +1930,14 @@ func (a *app) drawMenuClick(screen *ebiten.Image, button menuButton, click menuC
 
 func (a *app) drawTitle(screen *ebiten.Image) {
 	a.drawBackdrop(screen)
-	a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
+	splashUI := a.nativeScreen(titleSplashScreenName) != nil && a.titleNative() // 1.2.5 HD: logo + Abe come from SplashScreen.uiscreen (title_splash_ui.go)
+	if !splashUI {
+		a.drawBanner(screen, "SPLASHSCREENS_AOZ_BANNER_POS_VAR", "SPLASHSCREENS_AOZ_BANNER_SIZE_VAR", .4)
+	}
 	a.drawTitleBarry(screen)
+	if splashUI {
+		a.drawTitleSplashUI(screen)
+	}
 	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil && a.titleZombieActive {
 		resolution := a.pack.TextureSourceScale("Frontend0/Textures/menu_zombie_2_SD")
 		options := menuGroupImageOptions(a.titleZombie, .5/resolution, .5/resolution, float64(image.Bounds().Dx())/2, float64(image.Bounds().Dy())/2, 0, 0, 0)
@@ -1950,8 +1956,8 @@ type titleBarryPiece struct {
 
 var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},                             // Barry body
-	{source: image.Rect(342, 152, 512, 512), x: 164, y: 230, angle: math.Pi/2 - .25}, // shotgun
-	{source: image.Rect(342, 0, 409, 152), x: 206, y: 220, angle: math.Pi/2 - .25},   // grip/pump
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25}, // shotgun
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},   // grip/pump
 	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25},    // arm/hand (the native 1.2.5 positions use the native rotations, whose sign and pivot are unproven: with these angles the arm only joins the body at this placement)
 }
 
