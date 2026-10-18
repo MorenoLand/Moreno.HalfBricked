@@ -90,6 +90,11 @@ func NewSource(root string) AssetSource {
 	if root == "" {
 		root = "data"
 	}
+	if strings.HasPrefix(root, "/") {
+		// An absolute path is the in-memory file system (web/memfs.js) holding the cache the page built from the
+		// player's own APK; everything else is a URL below the page (the hosted data).
+		return fileSource{root: root}
+	}
 	source := webSource{base: strings.TrimRight(root, "/") + "/", pf: &prefetcher{data: map[string][]byte{}, pending: map[string]chan struct{}{}}, sizes: &sizeTable{}}
 	go func() {
 		// Optional: without sizes.json the loading screen counts files only.

@@ -25,6 +25,20 @@ import (
 //
 // --choose-apk forces the question again.
 func resolveAssets(value string, explicit, choose, capture bool) (string, error) {
+	// A first import takes a few seconds: say so (a Windows GUI program has no console to show it in).
+	var closeNotice func()
+	content.ImportStarted = func() {
+		if platform.HasConsole() {
+			log.Print("Preparing the game files from your APK (first time, or a new APK)...")
+			return
+		}
+		closeNotice = platform.ShowNotice("HalfBricked", "Preparing the game files from your APK. This takes a few seconds and only happens the first time (or after a new APK).")
+	}
+	content.ImportFinished = func() {
+		if closeNotice != nil {
+			closeNotice()
+		}
+	}
 	if explicit && !choose {
 		return value, nil
 	}

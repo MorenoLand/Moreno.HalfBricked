@@ -16,6 +16,16 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
 )
 
+// ImportProgress, when set, is told how far the import is (stage name, items done, items in the stage). The browser
+// build uses it to show progress and to give the page a turn between files.
+var ImportProgress func(stage string, done, total int)
+
+func progress(stage string, done, total int) {
+	if ImportProgress != nil {
+		ImportProgress(stage, done, total)
+	}
+}
+
 func Import(referenceRoot, outputRoot string) error {
 	if _, err := os.Stat(filepath.Join(referenceRoot, "assets")); err != nil {
 		return fmt.Errorf("reference assets: %w", err)
@@ -35,7 +45,8 @@ func Import(referenceRoot, outputRoot string) error {
 		return err
 	}
 	manifest := PackManifest{SchemaVersion: 1, SourceVersion: "reference", Levels: levels, ScriptLevels: map[string]string{}, TileSets: tilesets, Textures: map[string]string{}, Files: map[string]string{}}
-	for _, info := range levels {
+	for index, info := range levels {
+		progress("Reading levels", index, len(levels))
 		level, err := formats.ParseLevel(referenceRoot, info)
 		if err != nil {
 			return err
@@ -129,7 +140,8 @@ func importAssets(root, out string, manifest *PackManifest) error {
 		return err
 	}
 	sort.Strings(paths)
-	for _, path := range paths {
+	for index, path := range paths {
+		progress("Converting game files", index, len(paths))
 		rel, _ := filepath.Rel(filepath.Join(root, "assets"), path)
 		rel = filepath.ToSlash(rel)
 		ext := strings.ToLower(filepath.Ext(path))

@@ -1,5 +1,3 @@
-//go:build !js
-
 package content
 
 import (
@@ -16,6 +14,10 @@ import (
 // so an up-to-date APK hash alone does not keep an incomplete cache.
 const importerVersion = "2-uiscreens"
 
+// ImportStarted and ImportFinished, when set, are called around an import that is really going to happen (not when the
+// cache is already up to date), so the desktop program can show that it is busy.
+var ImportStarted, ImportFinished func()
+
 func prepareAPK(apkPath string) (string, error) {
 	return PrepareAPK(apkPath, filepath.Join("bin", "data-cache"))
 }
@@ -29,6 +31,12 @@ func PrepareAPK(apkPath, output string) (string, error) {
 		if data, readErr := os.ReadFile(marker); readErr == nil && strings.TrimSpace(string(data)) == hash+" "+importerVersion && hasScriptLevelCache(output) {
 			return output, nil
 		}
+	}
+	if ImportStarted != nil {
+		ImportStarted()
+	}
+	if ImportFinished != nil {
+		defer ImportFinished()
 	}
 	stage := filepath.Join(filepath.Dir(output), ".apk-assets")
 	if err := os.MkdirAll(filepath.Dir(stage), 0755); err != nil {
@@ -66,7 +74,8 @@ func extractAPKAssets(apkPath, stage string) error {
 	if err != nil {
 		return err
 	}
-	for _, entry := range archive.File {
+	for index, entry := range archive.File {
+		progress("Unpacking the APK", index, len(archive.File))
 		name := strings.TrimPrefix(strings.ReplaceAll(entry.Name, "\\", "/"), "./")
 		clean := path.Clean(name)
 		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {

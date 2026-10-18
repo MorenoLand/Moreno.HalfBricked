@@ -47,3 +47,6 @@ func RememberAPK(apk string) error {
 	}
 	return os.WriteFile(path, []byte(apk+"\n"), 0o600)
 }
+
+// NotifyReady tells the host page the game is about to draw (browser only).
+func NotifyReady() {}

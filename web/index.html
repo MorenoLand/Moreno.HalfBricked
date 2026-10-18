@@ -95,11 +95,192 @@ canvas{position:fixed;inset:0;display:block;width:100vw!important;height:100vh!i
   render();
 })();
 </script>
-<script src="./wasm_exec.js"></script>
 <script>
+// Two ways to run, chosen by config.json next to this page (written by the export):
+//   hosted  (no config.json, or {"mode":"hosted"}): the page ships the game's data below ./data and the game fetches it.
+//   apk     ({"mode":"apk"}): the page ships no game data. The player picks their own Age of Zombies APK; the game
+//           unpacks and converts it in the browser (memfs.js is its file system), and the result is kept in this
+//           browser's IndexedDB so the next visit starts at once. Nothing is uploaded anywhere.
 const status = document.getElementById("status");
-const go = new Go();
-WebAssembly.instantiateStreaming(fetch("./aoz.wasm"), go.importObject).then(result => { status.remove(); go.run(result.instance); }).catch(async () => { const response = await fetch("./aoz.wasm"); const bytes = await response.arrayBuffer(); const result = await WebAssembly.instantiate(bytes, go.importObject); status.remove(); go.run(result.instance); });
+const loadScript = src => new Promise((resolve, reject) => {
+	const tag = document.createElement("script");
+	tag.src = src;
+	tag.onload = resolve;
+	tag.onerror = () => reject(new Error("could not load " + src));
+	document.head.appendChild(tag);
+});
+
+async function instantiate(go) {
+	try {
+		return await WebAssembly.instantiateStreaming(fetch("./aoz.wasm"), go.importObject);
+	} catch (e) {
+		const response = await fetch("./aoz.wasm");
+		return await WebAssembly.instantiate(await response.arrayBuffer(), go.importObject);
+	}
+}
+
+async function startGame() {
+	const go = new Go();
+	const result = await instantiate(go);
+	status.remove();
+	go.run(result.instance);
+}
+
+// ---- bring-your-own-APK mode ----------------------------------------------------------------------------------
+const DB_NAME = "halfbricked-web";
+function openDB() {
+	return new Promise((resolve, reject) => {
+		const request = indexedDB.open(DB_NAME, 1);
+		request.onupgradeneeded = () => {
+			request.result.createObjectStore("files");
+			request.result.createObjectStore("meta");
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+	});
+}
+const idb = (db, store, mode, fn) => new Promise((resolve, reject) => {
+	const tx = db.transaction(store, mode);
+	const request = fn(tx.objectStore(store));
+	tx.oncomplete = () => resolve(request && request.result);
+	tx.onerror = () => reject(tx.error);
+	tx.onabort = () => reject(tx.error);
+});
+
+function panel() {
+	const box = document.createElement("div");
+	box.style.cssText = "position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;" +
+		"background:#0b0e16;color:#d8dbe5;font:16px system-ui,sans-serif;z-index:100000;text-align:center;padding:24px";
+	document.body.appendChild(box);
+	return box;
+}
+
+function heading() {
+	const title = document.createElement("h1");
+	title.textContent = "Age of Zombies";
+	title.style.cssText = "margin:0;font-size:28px";
+	return title;
+}
+
+function askForAPK(box) {
+	return new Promise(resolve => {
+		box.innerHTML = "";
+		const text = document.createElement("p");
+		text.style.cssText = "margin:0;max-width:34em;line-height:1.5";
+		text.textContent = "HalfBricked does not include the game's files. Choose your own Age of Zombies APK (version 1.2.5 or 1.2.1) and the game builds itself from it, here in your browser. The file never leaves your device.";
+		const label = document.createElement("label");
+		label.textContent = "Choose the APK";
+		label.style.cssText = "background:#c53d2b;color:#fff;padding:12px 22px;border-radius:6px;cursor:pointer;font-weight:600";
+		const input = document.createElement("input");
+		input.type = "file";
+		input.accept = ".apk,application/vnd.android.package-archive,application/zip";
+		input.style.display = "none";
+		label.appendChild(input);
+		const hint = document.createElement("p");
+		hint.style.cssText = "margin:0;color:#8d94a8;font-size:14px";
+		hint.textContent = "or drop the file on this page";
+		box.append(heading(), text, label, hint);
+		const take = file => { if (file) resolve(file); };
+		input.onchange = () => take(input.files[0]);
+		box.ondragover = e => e.preventDefault();
+		box.ondrop = e => { e.preventDefault(); take(e.dataTransfer.files[0]); };
+	});
+}
+
+function showProgress(box, message) {
+	box.innerHTML = "";
+	const line = document.createElement("p");
+	line.style.cssText = "margin:0";
+	line.id = "aoz-stage";
+	line.textContent = message;
+	const bar = document.createElement("div");
+	bar.style.cssText = "width:min(420px,80vw);height:10px;background:#1f2433;border-radius:5px;overflow:hidden";
+	const fill = document.createElement("div");
+	fill.id = "aoz-fill";
+	fill.style.cssText = "height:100%;width:0;background:#c53d2b;transition:width .15s";
+	bar.appendChild(fill);
+	const note = document.createElement("p");
+	note.style.cssText = "margin:0;color:#8d94a8;font-size:14px";
+	note.textContent = "This happens once. The next visit starts straight away.";
+	box.append(heading(), line, bar, note);
+}
+
+async function persistCache(db, config, haveAPK) {
+	const files = aozFS.list("/cache");
+	await idb(db, "files", "readwrite", store => {
+		for (const [path, bytes] of files) store.put(bytes.slice(), "cache:" + path);
+	});
+	await idb(db, "meta", "readwrite", store => store.put({ cacheVersion: config.cacheVersion || "", files: files.length, hasAPK: haveAPK }, "meta"));
+	if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+}
+
+function forgetEverything() {
+	const request = indexedDB.deleteDatabase(DB_NAME);
+	request.onsuccess = request.onerror = request.onblocked = () => location.reload();
+}
+
+async function startWithOwnAPK(config) {
+	await loadScript("./memfs.js");
+	await loadScript("./wasm_exec.js");
+	const db = await openDB();
+	const box = panel();
+	status.remove();
+	const meta = await idb(db, "meta", "readonly", store => store.get("meta"));
+	let argv;
+	if (meta && meta.files && meta.cacheVersion === (config.cacheVersion || "")) {
+		// The cache built on an earlier visit.
+		showProgress(box, "Loading your game files...");
+		const keys = await idb(db, "files", "readonly", store => store.getAllKeys());
+		const values = await idb(db, "files", "readonly", store => store.getAll());
+		keys.forEach((key, i) => { if (String(key).startsWith("cache:")) aozFS.writeFile(String(key).slice(6), new Uint8Array(values[i])); });
+		argv = ["aoz", "-assets", "/cache"];
+	} else {
+		let bytes = await idb(db, "files", "readonly", store => store.get("apk"));
+		if (bytes) {
+			bytes = new Uint8Array(bytes);
+		} else {
+			const file = await askForAPK(box);
+			bytes = new Uint8Array(await file.arrayBuffer());
+			await idb(db, "files", "readwrite", store => store.put(bytes.slice(), "apk"));
+		}
+		aozFS.writeFile("/game.apk", bytes);
+		showProgress(box, "Reading the APK...");
+		argv = ["aoz", "-assets", "/game.apk"];
+		window.aozStatus = (stage, done, total) => {
+			const line = document.getElementById("aoz-stage");
+			const fill = document.getElementById("aoz-fill");
+			if (line) line.textContent = stage + " (" + done + " of " + total + ")";
+			if (fill && total) fill.style.width = Math.round(100 * done / total) + "%";
+		};
+		window.aozImportDone = () => { persistCache(db, config, true).catch(e => console.warn("could not keep the game files:", e)); };
+	}
+	const change = document.createElement("button");
+	change.textContent = "Change APK";
+	change.title = "Forget the stored APK and game files and choose another APK";
+	change.style.cssText = "position:fixed;left:6px;bottom:6px;z-index:100001;font:11px system-ui;opacity:.35;background:#000;color:#fff;border:1px solid #444;border-radius:4px;padding:2px 6px;cursor:pointer";
+	change.onclick = () => { if (confirm("Forget the stored APK and game files and choose another APK?")) forgetEverything(); };
+	document.body.appendChild(change);
+	// The game's canvas exists from the start, so the game says when it is ready to draw (platform.NotifyReady).
+	window.aozReady = () => box.remove();
+	const go = new Go();
+	go.argv = argv;
+	const result = await instantiate(go);
+	go.run(result.instance);
+}
+
+(async () => {
+	let config = {};
+	try {
+		const response = await fetch("./config.json", { cache: "no-store" });
+		if (response.ok) config = await response.json();
+	} catch (e) {}
+	if (config.mode === "apk") {
+		await startWithOwnAPK(config);
+	} else {
+		await loadScript("./wasm_exec.js");
+		await startGame();
+	}
+})().catch(e => { status.textContent = "Could not start: " + e.message; console.error(e); });
 </script>
 </main>
 </body>

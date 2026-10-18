@@ -5842,6 +5842,7 @@ func loadAppIcons() []image.Image {
 
 // Run starts the game.
 func Run() {
+	setupLogging()
 	assets := flag.String("assets", "data", "generated cache, content directory, or APK")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
@@ -5874,7 +5875,7 @@ func Run() {
 		}
 	})
 	if resolved, err := resolveAssets(*assets, explicitAssets, *chooseAPK, *captureDir != ""); err != nil {
-		log.Fatal(err)
+		fatal(err)
 	} else {
 		*assets = resolved
 	}
@@ -5895,15 +5896,15 @@ func Run() {
 	case "native":
 		waveEndRule = waveEndNative
 	default:
-		log.Fatalf("-wave-end must be all-dead or native, not %q", *waveEnd)
+		fatal(fmt.Errorf("-wave-end must be all-dead or native, not %q", *waveEnd))
 	}
 	game, err := newApp(*assets, *debug, *mobile, *silent)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	game.capture, err = engine.NewCapture(*captureDir, *captureEvery)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	game.captureLimit = *captureFrames
 	if *captureDir != "" {
@@ -5912,7 +5913,7 @@ func Run() {
 	game.captureAutoDialogue = *captureAutoDialogue
 	if *captureState != "" {
 		if err := game.setCaptureState(*captureState); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 		if game.debug {
 			game.debugPanelVisible = true
@@ -5920,6 +5921,7 @@ func Run() {
 	}
 	if *captureSelection >= 0 && *captureSelection < len(game.menuButtons()) {
 		game.menuSelection = *captureSelection
+		game.menuKeyNav, game.menuLit = true, true // show it lit, as if reached with the keyboard
 	}
 	defer game.sound.Close()
 	defer func() {
@@ -5937,7 +5939,8 @@ func Run() {
 	if icons := loadAppIcons(); len(icons) > 0 {
 		ebiten.SetWindowIcon(icons)
 	}
+	platform.NotifyReady() // the browser page hides its loading panel now
 	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {
-		log.Fatal(err)
+		fatal(err)
 	}
 }
