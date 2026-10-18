@@ -1311,6 +1311,12 @@ func (a *app) setCaptureState(state string) error {
 	case "stats":
 		a.titleScreen, a.page = false, 4
 		a.statsScreen = newStatsMenuBuild(&a.statistics, a.statsWestern())
+	case "lobby-join":
+		a.titleScreen = false
+		a.startNetJoin()
+	case "lobby-host":
+		a.titleScreen = false
+		a.net = &netSession{lobby: true, isHost: true, note: "Waiting for your friend..."}
 	case "credits":
 		a.titleScreen = false
 		return a.openCreditsFromMenu()

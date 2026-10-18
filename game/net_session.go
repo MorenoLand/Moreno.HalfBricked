@@ -45,6 +45,7 @@ type netSession struct {
 	reply   string // the guest's reply code
 	pasted  string // last text pasted, shown in the paste box
 	copied  int    // frames left on the "Copied!" flash
+	native  bool   // the HD lobby layout (net_lobby_native.go)
 
 	// host
 	peers   []*netPeer

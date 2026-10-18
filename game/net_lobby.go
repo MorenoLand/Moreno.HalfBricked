@@ -52,6 +52,9 @@ func (n *netSession) ownCode() string {
 }
 
 func (n *netSession) lobbyButtons() []lobbyButton {
+	if n.native {
+		return n.lobbyButtonsNative()
+	}
 	row := func(y int) image.Rectangle { return image.Rect(lobbyButtonL, y, lobbyButtonR, y+lobbyButtonH) }
 	copyRow, pasteRow := 92, 150
 	if !n.isHost {
@@ -80,6 +83,7 @@ func (n *netSession) lobbyButtons() []lobbyButton {
 
 func (a *app) updateLobbyMouse() error {
 	n := a.net
+	n.native = a.titleNative()
 	if n.copied > 0 {
 		n.copied--
 	}
@@ -176,7 +180,12 @@ func (a *app) drawLobbyButton(screen *ebiten.Image, button lobbyButton, hover bo
 
 func (a *app) drawNetLobby(screen *ebiten.Image) {
 	n := a.net
+	n.native = a.titleNative()
 	screen.Fill(colorDark)
+	if n.native {
+		a.drawNetLobbyNative(screen)
+		return
+	}
 	a.drawBackdrop(screen)
 	if boxes, err := a.Texture("Common0/Textures/TutorialBoxes"); err == nil {
 		a.drawOptionsBoxStyle(screen, boxes, formats.Vec2{X: 240, Y: 160}, formats.Vec2{X: 440, Y: 292}, 0)
