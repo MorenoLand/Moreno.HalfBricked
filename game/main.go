@@ -1958,7 +1958,7 @@ var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190},                             // Barry body
 	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: math.Pi/2 - .25}, // shotgun
 	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: math.Pi/2 - .25},   // grip/pump
-	{source: image.Rect(409, 0, 512, 152), x: 80, y: 250, angle: math.Pi/2 + .25},    // arm/hand (the native 1.2.5 positions use the native rotations, whose sign and pivot are unproven: with these angles the arm only joins the body at this placement)
+	{source: image.Rect(409, 0, 512, 152), x: 80, y: 258, angle: math.Pi/2 + .25},    // arm/hand (the native 1.2.5 positions use the native rotations, whose sign and pivot are unproven: with these angles the arm only joins the body at this placement)
 }
 
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
