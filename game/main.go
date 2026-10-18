@@ -2490,9 +2490,6 @@ func (a *app) levelHit(x, y int) int {
 	return -1
 }
 func (a *app) levelTabAt(x, y int) int {
-	if l := a.levelSelectLayout(); l != nil {
-		return a.levelTabAtNative(l, x, y)
-	}
 	position, positionOK := a.variables.Vec2Value("SHOPFRONT_TOPBUTTONS_POS_VAR")
 	size, sizeOK := a.variables.Vec2Value("SHOPFRONT_TOPBUTTONS_SIZE")
 	if !positionOK || !sizeOK || float64(x) < position.X-size.X/2 || float64(x) > position.X+size.X/2 || float64(y) < position.Y-size.Y/2 || float64(y) > position.Y+size.Y/2 {

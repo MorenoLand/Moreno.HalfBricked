@@ -154,7 +154,10 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 		}
 		return nativeOverride{}
 	}
-	for _, root := range []*formats.UIComponent{l.mode, l.bottomBox, l.buttonsBox} {
+	// The STORY / SURVIVAL tabs keep the port's crop of AOZ_StoreButtons: the native ModeToggle window drew both
+	// rows of the texture at once, so the tabs are drawn as before (one 256x64 row per mode).
+	a.drawLevelTabs(screen)
+	for _, root := range []*formats.UIComponent{l.bottomBox, l.buttonsBox} {
 		progress := a.nativeSlide("levelselect", nativeAnimateInDuration(root))
 		a.drawNativeTree(screen, root, nativeSlideOffset(root, progress), a.menuTime, override)
 	}
