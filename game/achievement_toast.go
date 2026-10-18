@@ -93,8 +93,60 @@ func (a *app) drawAchievementToasts(screen *ebiten.Image) {
 	options.GeoM.Translate(x, y)
 	a.drawImage(screen, banner.SubImage(source).(*ebiten.Image), options)
 	// The art already carries the trophy; the name and the unlocked text sit right of it.
-	a.text(screen, toast.entry.Name, x+50, y+9, .42)
-	a.text(screen, toast.entry.DisplayDescription(true), x+50, y+31, .3)
+	// The text must stay on the plate: the name shrinks to fit, the description wraps to the plate's width
+	// (two lines at most, shrinking for a longer one) instead of running off the screen.
+	textWidth := width - 50 - 12
+	nameScale := .42
+	for nameScale > .26 && a.fontTextWidth(toast.entry.Name, nameScale) > textWidth {
+		nameScale -= .02
+	}
+	a.text(screen, toast.entry.Name, x+50, y+9, nameScale)
+	scale, lines := .3, []string(nil)
+	for {
+		lines = a.wrapToWidth(toast.entry.DisplayDescription(true), textWidth, scale)
+		if len(lines) <= 2 || scale <= .2 {
+			break
+		}
+		scale -= .02
+	}
+	for i, line := range lines {
+		if i == 2 {
+			break
+		}
+		a.text(screen, line, x+50, y+31+float64(i)*12, scale)
+	}
+}
+
+// wrapToWidth breaks text at spaces into lines no wider than width at the given text scale (a single word
+// longer than a line stays whole).
+func (a *app) wrapToWidth(text string, width, scale float64) []string {
+	var lines []string
+	current := ""
+	start := 0
+	for i := 0; i <= len(text); i++ {
+		if i < len(text) && text[i] != ' ' {
+			continue
+		}
+		word := text[start:i]
+		start = i + 1
+		if word == "" {
+			continue
+		}
+		candidate := word
+		if current != "" {
+			candidate = current + " " + word
+		}
+		if current != "" && a.fontTextWidth(candidate, scale) > width {
+			lines = append(lines, current)
+			current = word
+		} else {
+			current = candidate
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
 }
 
 // drawAchievementToastPlate is the fallback when the banner texture is missing.

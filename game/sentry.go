@@ -193,7 +193,9 @@ func (p *playState) updateSentries() {
 	const dt = 1.0 / 60.0
 	p.sentryLoopHold = math.Max(0, p.sentryLoopHold-dt)
 	p.ensureRNG()
-	alive := len(p.livingPlayers()) > 0
+	// PORT ADDITION: once the level's exit scene has started the sentries stand down. They used to keep shooting
+	// the friendly characters (scripted zombie-class actors) that talk to Barry in the closing scene.
+	alive := len(p.livingPlayers()) > 0 && !p.exitScriptStarted
 	kept := p.sentries[:0]
 	for _, s := range p.sentries {
 		s.age += dt

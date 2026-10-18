@@ -267,6 +267,8 @@ type playState struct {
 	radius                                                 float64
 	flash                                                  float64
 	stick                                                  int
+	cactusWorld                                            *viewer.Viewer // cactus_hurt.go
+	cactusList                                             []cactusPoint
 	quietHit                                               bool // the current damage call has no source object: no hurt sound
 	hitFrom                                                hitOrigin // position of the damage source for a call without a zombie (player_hit_feedback.go)
 	aimPointDistance                                       float64 // world px from the player to the aim point (mouse); <= 1.5 = none
@@ -4168,6 +4170,9 @@ func (p *playState) Update(pointerX, pointerY int, pointerDown, pointerJustPress
 func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary bool) {
 	p.hurt = math.Max(0, p.hurt-1.0/60.0)
 	p.stepVitals(1.0 / 60.0)
+	if primary {
+		p.updateCactusHurt(1.0 / 60.0)
+	}
 	if p.cheats.infiniteAmmo {
 		p.restockAmmo()
 	}
@@ -5754,6 +5759,7 @@ func Run() {
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
 	storyHUD := flag.Bool("story-wave-hud", true, "show the wave counter and banners in story levels too (port addition; native shows them in survival only)")
 	regenScale := flag.Float64("regen-scale", 1, "multiplier on health regeneration (port tweak; 1 is the native rate)")
+	cactusHurt := flag.Bool("cactus-hurt", true, "cacti hurt the player on contact (port addition; native cacti are harmless scenery)")
 	aimAtCursor := flag.Bool("aim-at-cursor", true, "mouse shots aim at the cursor's distance instead of a point 96 px out (port addition)")
 	survivalGate := flag.Bool("survival-gate", true, "keep a world's survival maps locked until that world is reached in story mode (port addition)")
 	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
@@ -5770,6 +5776,7 @@ func Run() {
 	portWaveBreather = math.Max(0, *waveGap)
 	survivalStoryGate = *survivalGate
 	portAimAtCursor = *aimAtCursor
+	portCactusHurt = *cactusHurt
 	portRegenScale = math.Max(0, *regenScale)
 	storyWaveHUD = *storyHUD
 	discord.SetAppID(*discordID)
