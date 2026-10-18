@@ -1,6 +1,7 @@
 package game
 
 import (
+	"image"
 	"image/color"
 	"log"
 	"math"
@@ -114,6 +115,7 @@ func (a *app) leaveLobbyAnimated() {
 }
 
 func (a *app) leaveNet(message string) {
+	platform.ClipboardArm(false, false)
 	if a.net != nil {
 		a.net.close()
 		a.net = nil
@@ -134,6 +136,14 @@ func (a *app) updateNetLobby() error {
 	if text, ok := platform.ClipboardTake(); ok {
 		a.netPasted(strings.TrimSpace(text))
 	}
+	over := false
+	x, y := a.pointer()
+	for _, button := range n.lobbyButtons() {
+		if button.action == "paste" && button.enabled && image.Pt(x, y).In(button.rect) {
+			over = true
+		}
+	}
+	platform.ClipboardArm(over, true) // the browser reads the clipboard inside the press itself (platform/clipboard_wasm.go)
 	if inpututil.IsKeyJustPressed(ebiten.KeyV) || (inpututil.IsKeyJustPressed(ebiten.KeyInsert) && ebiten.IsKeyPressed(ebiten.KeyShift)) {
 		platform.ClipboardRequest()
 	}

@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
@@ -179,6 +180,9 @@ func (a *app) drawNetLobbyNative(screen *ebiten.Image) {
 		case n.pending != nil && n.pasted == "":
 			status = "Your code is copied to the clipboard. Send it, then paste the reply."
 		}
+	}
+	if platform.ClipboardDenied() {
+		status = "The browser blocked pasting. Click the page, then press Ctrl+V."
 	}
 	if status != "" {
 		a.drawNativeSans(screen, status, px+lobbyNatPanelW/2, 188+dy, lobbyNatPanelW-20, "", 10, 255, 255, 255, lobbyNatStepStyle)

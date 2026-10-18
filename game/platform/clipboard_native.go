@@ -14,3 +14,9 @@ func ClipboardRequest() {
 		clipboardResult.set(text)
 	}
 }
+
+// ClipboardArm is the browser build's hook for reading inside a user event; the desktop build reads at once.
+func ClipboardArm(overPasteButton, keys bool) {}
+
+// ClipboardDenied is always false on the desktop.
+func ClipboardDenied() bool { return false }
