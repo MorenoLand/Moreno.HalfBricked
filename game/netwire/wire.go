@@ -138,12 +138,21 @@ type Snapshot struct {
 	HudFlash   float64
 	HudColor   [3]float64
 
+	// Played are the one-shot sounds the host started since the last snapshot (so the guest hears the same game).
+	Played []Play `json:",omitempty"`
+
 	// Optional fields, absent from an older host and ignored by an older guest: the live particles
 	// (see Particle) and the future boss's projectiles (see RobotShot).
 	Particles    []Particle  `json:",omitempty"`
 	RobotFlyers  []RobotShot `json:",omitempty"`
 	RobotRockets []RobotShot `json:",omitempty"`
 	RobotBeams   []RobotShot `json:",omitempty"`
+}
+
+// Play is one sound the host started.
+type Play struct {
+	P string
+	V float64 `json:",omitempty"`
 }
 
 // Venom is one rex venom projectile (rex_ai.go) as the guest draws it.

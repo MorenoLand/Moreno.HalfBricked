@@ -159,6 +159,7 @@ type app struct {
 	menuAchLabel                                 *ebiten.Image // cached "ACHIEVEMENTS" label of the main menu group (main_menu_achievements.go)
 	menuLangLabel                                *ebiten.Image // cached "LANGUAGES" label (main_menu_hd.go)
 	languages                                    *languagesState // languages.go
+	preload                                      levelPreload    // level_preload.go
 	menuLit, menuKeyNav                          bool            // main menu: a board shows as selected only under the pointer or after key / pad navigation
 	menuPtrX, menuPtrY                           int
 	language                                     string          // chosen language (profile key "language")
@@ -504,6 +505,9 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 		sound = engine.NewSoundSystem(pack)
 	}
 	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, options: newOptionsMenu(!silent, !silent), weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	if sound != nil {
+		sound.OnPlay = game.forwardSoundToGuests
+	}
 	game.font, _ = loadFont(pack)
 	game.computerFont, _ = loadNamedFont(pack, "Common0/Fonts/ComputerScreen.fnt", "Common0/Fonts/ComputerScreen_0")
 	game.statistics = stats.NewStatsData()
@@ -981,6 +985,7 @@ func (a *app) leaveLevelSelect() {
 }
 func (a *app) syncLevelCarousel() carousel.LevelCarousel {
 	defer a.prefetchSelectedLevel()
+	defer a.preloadSelectedLevel()
 	levels := carousel.CatalogLevelCarousel(a.levels, a.mode)
 	index := levels.Index(a.world, a.level)
 	if !a.carouselReady || a.carouselMode != a.mode || a.carouselCore.Count != len(levels) {
@@ -2724,10 +2729,15 @@ func (a *app) activate() error {
 			return a.openViewer()
 		}
 		a.coopPlayers = 0
-		if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), func() error { a.coopPlayers = 0; return a.openPlay() }) {
-			return nil
-		}
-		return a.openPlay()
+		// Pressing Play first lets the level screen slide out (menu_transition_out plays at the press), while the
+		// level's textures and sounds finish loading in the background (level_preload.go); then the level starts.
+		return a.closeMenuAnimated("levelselect", func() error {
+			a.coopPlayers = 0
+			if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), func() error { a.coopPlayers = 0; return a.openPlay() }) {
+				return nil
+			}
+			return a.openPlay()
+		})
 	}
 	return nil
 }
@@ -2748,10 +2758,12 @@ func (a *app) activateCoop() error {
 		}
 		return nil
 	}
-	if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), start) {
-		return nil
-	}
-	return start()
+	return a.closeMenuAnimated("levelselect", func() error {
+		if a.beginLoading("LOADING LEVEL", a.levelLoadPaths(), start) {
+			return nil
+		}
+		return start()
+	})
 }
 func (a *app) drawDetails(screen *ebiten.Image) {
 	if a.page == 0 {
@@ -2905,6 +2917,9 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	a.drawDialogue(screen)
 	if a.play.paused {
 		a.drawPauseMenu(screen)
+	}
+	if a.netGuest() && a.net.menuOpen {
+		a.drawGuestMenu(screen)
 	}
 	a.drawSandbox(screen)
 	a.drawDebugPanel(screen)
@@ -5695,20 +5710,23 @@ func (a *app) Texture(name string) (*ebiten.Image, error) {
 		a.rememberTextureName(name, image)
 		return image, nil
 	}
-	reader, err := a.pack.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	data, err := ioReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	decodeStart := time.Now()
-	source, err := png.Decode(bytes.NewReader(data))
-	perfmark.Since("png decode "+name, decodeStart)
-	if err != nil {
-		return nil, err
+	source := a.takePredecoded(path) // decoded early by the level preloader (level_preload.go), desktop only
+	if source == nil {
+		reader, err := a.pack.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer reader.Close()
+		data, err := ioReadAll(reader)
+		if err != nil {
+			return nil, err
+		}
+		decodeStart := time.Now()
+		source, err = png.Decode(bytes.NewReader(data))
+		perfmark.Since("png decode "+name, decodeStart)
+		if err != nil {
+			return nil, err
+		}
 	}
 	uploadStart := time.Now()
 	image := ebiten.NewImageFromImage(source)
@@ -5760,6 +5778,7 @@ func (a *app) warmTextures(info formats.LevelInfo) {
 		a.pack.Prefetch(append(textures, sounds...))
 		return
 	}
+	a.stepPreload(0) // store any sounds the preloader has finished
 	if a.sound != nil {
 		for _, path := range a.pack.SFXPaths() {
 			a.sound.Warm(path)

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"log"
@@ -48,6 +49,12 @@ type netSession struct {
 	pasted  string // last text pasted, shown in the paste box
 	copied  int    // frames left on the "Copied!" flash
 	native  bool   // the HD lobby layout (net_lobby_native.go)
+
+	played    []netwire.Play // host: sounds started since the last snapshot, passed on to the guests
+	menuOpen  bool           // guest: the Esc menu is open (net_guest_menu.go)
+	menuRow   int
+	lastInput netwire.Input // guest: the last controls sent, and when
+	lastSent  int
 
 	// host
 	peers   []*netPeer
@@ -399,14 +406,17 @@ func (a *app) dropCoopPeer(peer *netPeer) {
 // netHostSend ships a snapshot to every guest (30 per second).
 func (a *app) netHostSend() {
 	n := a.net
-	n.sfx = append(n.sfx, a.play.sfxQueue...)
 	n.tick++
 	if n.tick%2 != 0 {
 		return
 	}
 	n.seq++
 	snap := a.play.snapshot(n.seq)
-	snap.Sfx = n.sfx
+	// Every sound the host starts is passed on as it was played (Played), including the boss sounds the queue names, so
+	// the names are not sent as well.
+	snap.Sfx = nil
+	snap.Played = n.played
+	n.played = nil
 	n.sfx = nil
 	raw := netwire.Encode(netwire.Msg{T: "snap", Snap: snap})
 	for _, peer := range n.peers {
@@ -474,12 +484,29 @@ func (a *app) updateNetGuest() error {
 		return nil
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		a.leaveNet("left the game")
-		a.play = nil
-		a.setMenuMusic()
-		return nil
+		n.menuOpen, n.menuRow = !n.menuOpen, 0 // Esc opens a menu (net_guest_menu.go); leaving is a choice in it
 	}
-	for _, raw := range n.link.Receive() {
+	if n.menuOpen {
+		if leave := a.updateGuestMenu(); leave {
+			a.leaveNet("left the game")
+			a.play = nil
+			a.setMenuMusic()
+			return nil
+		}
+	}
+	// Only the newest snapshot of the ones that arrived together is worth decoding: a late frame used to decode every
+	// queued snapshot in turn, which made the next frame later still.
+	received := n.link.Receive()
+	newestSnap := -1
+	for i, raw := range received {
+		if bytes.HasPrefix(raw, []byte(`{"t":"snap"`)) {
+			newestSnap = i
+		}
+	}
+	for i, raw := range received {
+		if newestSnap >= 0 && i < newestSnap && bytes.HasPrefix(raw, []byte(`{"t":"snap"`)) {
+			continue
+		}
 		msg, ok := netwire.Decode(raw)
 		if !ok {
 			continue
@@ -489,6 +516,9 @@ func (a *app) updateNetGuest() error {
 			if msg.Snap != nil && msg.Snap.Seq > n.gotSnap {
 				n.gotSnap = msg.Snap.Seq
 				p.applySnapshot(msg.Snap)
+				for _, played := range msg.Snap.Played {
+					a.playSound(played.P, played.V)
+				}
 			}
 		case "results":
 			if msg.Res != nil {
@@ -507,10 +537,19 @@ func (a *app) updateNetGuest() error {
 		}
 	}
 	in, hit := a.guestInput()
+	if n.menuOpen {
+		in, hit = playerInput{}, false // the menu is up: no shooting through it
+	}
 	if hit {
 		n.secSent++
 	}
-	n.link.Send(false, netwire.Encode(netwire.Msg{T: "in", In: &netwire.Input{MoveX: in.moveX, MoveY: in.moveY, AimX: in.aimX, AimY: in.aimY, Secondary: in.secondary, SecondaryCount: n.secSent}}))
+	// Controls go out when they change, and at least every few frames so the host never acts on stale ones.
+	wire := netwire.Input{MoveX: in.moveX, MoveY: in.moveY, AimX: in.aimX, AimY: in.aimY, Secondary: in.secondary, SecondaryCount: n.secSent}
+	n.lastSent++
+	if wire != n.lastInput || n.lastSent >= 4 {
+		n.link.Send(false, netwire.Encode(netwire.Msg{T: "in", In: &wire}))
+		n.lastInput, n.lastSent = wire, 0
+	}
 	p.updateCamera()
 	p.updateProgressOpacity(1.0 / 60.0)
 	p.updateBossMeter()

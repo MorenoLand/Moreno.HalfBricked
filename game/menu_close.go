@@ -1,5 +1,7 @@
 package game
 
+import "time"
+
 // Port addition (HD native screens): a screen that is closed slides out before the page changes, instead of
 // vanishing at once. The slide is the screen's own AnimateIn played backwards over the same time (nativeSlide);
 // the uiscreens also hold AnimateOut tracks (the 1.2.5 Back callbacks start them), which are not decoded here, so the
@@ -20,6 +22,9 @@ func (a *app) closeMenuAnimated(key string, next func() error) error {
 // stepMenuClose finishes a slide-out once its time is up.
 func (a *app) stepMenuClose() error {
 	n := &a.native
+	if n.closeKey == "levelselect" {
+		a.stepPreload(8 * time.Millisecond) // the slide-out is time the level's files can finish loading in
+	}
 	if a.menuTime-n.closeStart < n.slideDur[n.closeKey] {
 		return nil
 	}

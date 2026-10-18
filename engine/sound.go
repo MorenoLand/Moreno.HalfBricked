@@ -22,6 +22,9 @@ type SoundSystem struct {
 	cache        map[string][]byte
 	pcm          map[string][]byte // decoded short sounds
 	pcmBytes     int64
+	// OnPlay, when set, is told about every one-shot sound that starts (not music or looping sounds): the online host
+	// uses it to pass the sounds on to its guests.
+	OnPlay func(path string, volume float64)
 }
 
 const (
@@ -85,6 +88,9 @@ func (s *SoundSystem) Play(path string, volume float64) {
 func (s *SoundSystem) PlayTracked(path string, volume float64, loopPointSamples int64) (*audio.Player, error) {
 	if s == nil || s.context == nil {
 		return nil, io.ErrClosedPipe
+	}
+	if s.OnPlay != nil && loopPointSamples < 0 {
+		s.OnPlay(path, volume)
 	}
 	// Short sounds are decoded once and replayed from PCM: decoding the whole Ogg for every shot of a fast weapon
 	// was a frame-time spike each time (long music streams are still decoded per play, they are rare).
@@ -166,6 +172,62 @@ func (s *SoundSystem) Warm(path string) {
 	}
 	s.pcm[path] = pcm
 	s.pcmBytes += length
+}
+
+// DecodeShort decodes a short sound to PCM without touching any cache, so it can run on a worker goroutine while the
+// game loop keeps going (the data source only has to be safe to read from several goroutines, as the pack is). It
+// reports false when the sound is too long to cache or does not decode.
+func (s *SoundSystem) DecodeShort(path string) ([]byte, bool) {
+	if s == nil || s.source == nil {
+		return nil, false
+	}
+	reader, err := s.source.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	data, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil {
+		return nil, false
+	}
+	decoded, err := vorbis.DecodeF32(bytes.NewReader(data))
+	if err != nil {
+		return nil, false
+	}
+	length := decoded.Length()
+	if length <= 0 || length > maxCachedPCMBytes {
+		return nil, false
+	}
+	pcm, err := io.ReadAll(decoded)
+	if err != nil || int64(len(pcm)) != length {
+		return nil, false
+	}
+	return pcm, true
+}
+
+// HasShort reports whether a short sound is already in the PCM cache.
+func (s *SoundSystem) HasShort(path string) bool {
+	if s == nil {
+		return false
+	}
+	_, ok := s.pcm[path]
+	return ok
+}
+
+// StoreShort puts a sound decoded by DecodeShort into the PCM cache. Call it from the game loop's goroutine (the cache
+// is not locked), like Warm.
+func (s *SoundSystem) StoreShort(path string, pcm []byte) {
+	if s == nil || s.context == nil {
+		return
+	}
+	if _, ok := s.pcm[path]; ok || s.pcmBytes+int64(len(pcm)) > maxCachedPCMTotal {
+		return
+	}
+	if s.pcm == nil {
+		s.pcm = map[string][]byte{}
+	}
+	s.pcm[path] = pcm
+	s.pcmBytes += int64(len(pcm))
 }
 
 func (s *SoundSystem) MusicEnabled(enabled bool) {
