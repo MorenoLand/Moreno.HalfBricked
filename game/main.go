@@ -21,6 +21,7 @@ import (
 	"image/png"
 	"log"
 	"math"
+	"math/rand"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -894,10 +895,11 @@ func (a *app) Update() error {
 		a.levelScrollSound()
 	}
 	if uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) {
-		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 		if a.page == 0 {
+			a.mainMenuClickSound()
 			return a.beginMenuClick(a.menuSelection)
 		}
+		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 		return a.activate()
 	}
 	if a.page != 2 && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -905,11 +907,11 @@ func (a *app) Update() error {
 		if a.page == 0 {
 			if index := a.mainMenuHit(px, py); index >= 0 {
 				a.menuSelection = index
-				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+				a.mainMenuClickSound()
 				return a.beginMenuClick(index)
 			}
 			if a.creditsButtonAvailable() && image.Pt(px, py).In(creditsIconRect()) {
-				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+				a.mainMenuClickSound()
 				return a.openCreditsFromMenu()
 			}
 		} else {
@@ -1857,6 +1859,18 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	} else {
 		a.drawLevelSelect(screen)
 	}
+}
+
+// mainMenuClickSound is the sound of pressing a main-menu board button. 1.2.5 FUN_000dbb90 (reached from every board
+// handler through FUN_000dbbf0, and from Credits FUN_000dbd34) plays sfx id 1 (shotgun_1) and then a random id of
+// 0x26..0x28 (zombie_death_01..03, FUN_0012d794 range 0x26-0x29); the older build keeps menu_select.
+func (a *app) mainMenuClickSound() {
+	if !a.titleNative() {
+		a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+		return
+	}
+	a.playSound("audio/sound/sfx/shotgun_1.ogg", .8)
+	a.playSound(fmt.Sprintf("audio/sound/sfx/zombie_death_%02d.ogg", 1+rand.Intn(3)), .8)
 }
 
 func (a *app) beginMenuClick(index int) error {
