@@ -123,3 +123,20 @@ func extractAPKAssets(apkPath, stage string) error {
 	}
 	return nil
 }
+
+// ValidateAPK reports whether path is a package holding the game's assets (a zip with an assets/ tree and the
+// level catalogue), so a wrong file is refused before anything is imported.
+func ValidateAPK(apkPath string) error {
+	archive, err := zip.OpenReader(apkPath)
+	if err != nil {
+		return fmt.Errorf("%q is not an APK: %w", apkPath, err)
+	}
+	defer archive.Close()
+	for _, entry := range archive.File {
+		name := strings.ToLower(strings.ReplaceAll(entry.Name, "\\", "/"))
+		if strings.HasPrefix(name, "assets/world0/levels/") {
+			return nil
+		}
+	}
+	return fmt.Errorf("%q does not hold the Age of Zombies assets", apkPath)
+}

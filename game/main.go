@@ -5865,7 +5865,19 @@ func Run() {
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	discordID := flag.String("discord-app-id", discord.DefaultAppID, "Discord application id for Rich Presence (port addition)")
 	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (default: every spawner done and no zombie alive) or native (FUN_000bf120 as recovered: timer, and fewer than end_wave_zombies alive, so the next wave can start with some left)")
+	chooseAPK := flag.Bool("choose-apk", false, "ask for the Age of Zombies APK again and remember the new location")
 	flag.Parse()
+	explicitAssets := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "assets" {
+			explicitAssets = true
+		}
+	})
+	if resolved, err := resolveAssets(*assets, explicitAssets, *chooseAPK, *captureDir != ""); err != nil {
+		log.Fatal(err)
+	} else {
+		*assets = resolved
+	}
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
