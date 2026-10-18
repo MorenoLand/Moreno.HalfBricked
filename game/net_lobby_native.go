@@ -178,11 +178,11 @@ func (a *app) drawNetLobbyNative(screen *ebiten.Image) {
 				status = fmt.Sprintf("%d players connected - press START when everyone is in", ready)
 			}
 		case n.pending != nil && n.pasted == "":
-			status = "Your code is copied to the clipboard. Send it, then paste the reply."
+			status = "Press COPY and send the code, then paste the reply."
 		}
 	}
 	if platform.ClipboardDenied() {
-		status = "The browser blocked pasting. Click the page, then press Ctrl+V."
+		status = "This browser gives no way to paste here."
 	}
 	if status != "" {
 		a.drawNativeSans(screen, status, px+lobbyNatPanelW/2, 188+dy, lobbyNatPanelW-20, "", 10, 255, 255, 255, lobbyNatStepStyle)
