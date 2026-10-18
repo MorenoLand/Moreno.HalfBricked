@@ -2983,7 +2983,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	a.text(screen, livesText, 410, 20, 22.0/32.0)
 	a.drawLifePopups(screen)
 	a.drawShieldHUD(screen)
-	if a.play.coopActive() {
+	if a.play.coopHUDActive() {
 		a.drawCoopHUD(screen)
 	} else {
 		a.drawHealthHearts(screen, a.play.health)

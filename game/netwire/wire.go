@@ -11,11 +11,11 @@ import (
 )
 
 type Msg struct {
-	T       string        `json:"t"`
-	Level   string        `json:"level,omitempty"`
-	Mode    int           `json:"mode,omitempty"`
-	Self    int           `json:"self,omitempty"`
-	Players int           `json:"players,omitempty"`
+	T       string    `json:"t"`
+	Level   string    `json:"level,omitempty"`
+	Mode    int       `json:"mode,omitempty"`
+	Self    int       `json:"self,omitempty"`
+	Players int       `json:"players,omitempty"`
 	In      *Input    `json:"in,omitempty"`
 	Snap    *Snapshot `json:"snap,omitempty"`
 	Res     *Results  `json:"res,omitempty"`
@@ -47,20 +47,20 @@ type Player struct {
 }
 
 type Zombie struct {
-	X, Y, Frame, Alpha, HitFlash, DeathAge, Health, Fps, RexRage float64
-	Lift                                                         float64 // rex leap lift (rex_shockwave.go)
-	W, H                                                         float64
-	Tex, Anim                                                    int // indexes into the snapshot's string table
-	Angle                                                        int
-	FlipX, FlipY, Dying, BossRage, AnimTime                      bool
-	Exploding                                                    bool
-	Brightness                                                   float64 // +0x2b8 tint (zombie_model.go)
-	Speedy                                                       bool    // afterimage trail
-	Ghosts                                                       [2]Ghost
+	X, Y, Frame, Alpha, HitFlash, DeathAge, Health, Fps, RexRage float64  `json:",omitempty"`
+	Lift                                                         float64  `json:",omitempty"` // rex leap lift (rex_shockwave.go)
+	W, H                                                         float64  `json:",omitempty"`
+	Tex, Anim                                                    int      `json:",omitempty"` // indexes into the snapshot's string table
+	Angle                                                        int      `json:",omitempty"`
+	FlipX, FlipY, Dying, BossRage, AnimTime                      bool     `json:",omitempty"`
+	Exploding                                                    bool     `json:",omitempty"`
+	Brightness                                                   float64  `json:",omitempty"` // +0x2b8 tint (zombie_model.go)
+	Speedy                                                       bool     `json:",omitempty"` // afterimage trail
+	Ghosts                                                       [2]Ghost `json:",omitempty"`
 	// Gib state (zombie_gib.go): native death state 1/2, the Disintegrate body flag and its age.
-	DeathState int
-	Gibbed     bool
-	PresentAge float64
+	DeathState int     `json:",omitempty"`
+	Gibbed     bool    `json:",omitempty"`
+	PresentAge float64 `json:",omitempty"`
 	// Optional fields (absent from an older host, ignored by an older guest): the boss meter reads Boss and
 	// MaxHealth; Robot is the future boss's drawn state.
 	MaxHealth float64    `json:",omitempty"`
@@ -190,9 +190,9 @@ type Train struct {
 
 // Ghost is a speedy zombie afterimage as it travels in a snapshot.
 type Ghost struct {
-	X, Y, W, H, Frame float64
-	Angle, Alpha      int
-	FlipX             bool
+	X, Y, W, H, Frame float64 `json:",omitempty"`
+	Angle, Alpha      int     `json:",omitempty"`
+	FlipX             bool    `json:",omitempty"`
 }
 
 // Combo is one tracker popup in the online snapshot (screen space).

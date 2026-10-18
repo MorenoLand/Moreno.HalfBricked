@@ -100,6 +100,20 @@ type coopState struct {
 
 func (p *playState) coopActive() bool { return p.coop != nil && len(p.coop.players) > 0 }
 
+// coopHUDActive reports whether the co-op HUD (P1/P2 tags, corner hearts) applies: some other player is still in the
+// game. After every guest has left the HUD is the single-player one again.
+func (p *playState) coopHUDActive() bool {
+	if !p.coopActive() {
+		return false
+	}
+	for _, c := range p.coop.players {
+		if !c.gone {
+			return true
+		}
+	}
+	return false
+}
+
 // startCoop adds players 1..count-1. They wait (hidden) until the entry script
 // has finished, then appear beside player 0.
 func (p *playState) startCoop(count int, split bool) {
