@@ -1961,6 +1961,24 @@ var titleBarryPieces = []titleBarryPiece{
 	{source: image.Rect(409, 0, 512, 152), x: 80, y: 258, angle: math.Pi/2 + .25},    // arm/hand (the native 1.2.5 positions use the native rotations, whose sign and pivot are unproven: with these angles the arm only joins the body at this placement)
 }
 
+// titleBarryPiecesNative is the 1.2.5 title pose: the native positions with the native rotation table (body -23,
+// shotgun / grip / hand 77.5 degrees; title class 0xe7bd8, rotation table 0x8605a4). Compared with the owner's iPad
+// screenshot of that build it gives the leaning body, the steeper shotgun and a forearm that joins the sleeve at
+// the elbow; the older placement above (angles from the 1.2.1 art) only approximated it.
+var titleBarryPiecesNative = []titleBarryPiece{
+	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190, angle: -23 * math.Pi / 180},
+	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: 77.5 * math.Pi / 180},
+	{source: image.Rect(342, 0, 409, 152), x: 206, y: 222, angle: 77.5 * math.Pi / 180},
+	{source: image.Rect(409, 0, 512, 152), x: 85, y: 265, angle: 77.5 * math.Pi / 180},
+}
+
+func (a *app) titlePieces() []titleBarryPiece {
+	if a.titleNative() {
+		return titleBarryPiecesNative
+	}
+	return titleBarryPieces
+}
+
 func (a *app) drawTitleBarry(screen *ebiten.Image) {
 	texture, err := a.Texture("Frontend0/Textures/Barry")
 	if err != nil {
@@ -1969,7 +1987,7 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 	phase := 2 * math.Pi * (a.menuTime * 28000 / 65536)
 	xOffset := math.Sin(phase+2*math.Pi*.5*28000/65536) * 1.5
 	yOffset := math.Sin(phase) * 1.5
-	for index, piece := range titleBarryPieces {
+	for index, piece := range a.titlePieces() {
 		part := texture.SubImage(piece.source).(*ebiten.Image)
 		cockX, cockY := a.titleCockingOffset(index)
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
