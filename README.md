@@ -36,6 +36,6 @@ For a bounded background probe of a specific state, add `--capture-state=title`,
 
 Run `.\scripts\build.ps1` to build the Windows executable and browser host bundle; use `-Target wasm` for only the WASM bundle. Serve `bin\web` over HTTP. `-WebMode apk` builds `bin\web-apk` instead: a bundle with no game data whose visitors pick their own APK (see `web/README.md`).
 
-On the first launch without `--assets`, the desktop build asks for your Age of Zombies APK with a file dialog and remembers where it is (a small file in your user config directory); `--choose-apk` asks again. Capture runs (`--capture-dir`) are never asked, and `--assets` skips the question.
+On the first launch without `--assets`, the desktop build asks for your Age of Zombies APK with a file dialog and remembers where it is (a small file in your user config directory); `--choose-apk` asks again, and F2 in the program chooses another APK. The window opens first and shows the files being prepared. They are made into a `data` folder next to the program (the working directory under `go run`, whose program lives in a temporary folder); an existing `data` folder that is not a game cache is never overwritten. Capture runs (`--capture-dir`) are never asked, and `--assets` skips the question.
 
 Original content, native libraries, and generated private caches are not part of this source tree. See `LEGAL_NOTICE.md` for the project boundary.
