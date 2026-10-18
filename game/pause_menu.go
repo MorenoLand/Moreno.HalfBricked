@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"image/color"
@@ -57,7 +58,7 @@ func (a *app) activatePauseOnline(index int) {
 func (a *app) activatePauseMenu(index int) error {
 	switch index {
 	case 0:
-		a.play.paused = false
+		return a.closeMenuAnimated("pause", func() error { a.play.paused = false; return nil })
 	case 1:
 		a.page = 3
 	case 2:
@@ -134,6 +135,21 @@ func (a *app) updatePauseMenu() error {
 	return nil
 }
 func (a *app) drawPauseMenu(screen *ebiten.Image) {
+	if n := &a.native; n.closeKey == "pause" && n.slideDur["pause"] > 0 {
+		// Closing: the fixture slides out (nativeSlide runs backwards) while the dim, title and rows fade with it.
+		fade := math.Max(0, math.Min(1, 1-(a.menuTime-n.closeStart)/n.slideDur["pause"]))
+		layer := ebiten.NewImage(screen.Bounds().Dx(), screen.Bounds().Dy())
+		a.drawPauseMenuBody(layer)
+		options := &ebiten.DrawImageOptions{}
+		options.ColorScale.ScaleAlpha(float32(fade))
+		screen.DrawImage(layer, options)
+		layer.Deallocate()
+		return
+	}
+	a.drawPauseMenuBody(screen)
+}
+
+func (a *app) drawPauseMenuBody(screen *ebiten.Image) {
 	a.drawRect(screen, 0, 0, logicalWidth, logicalHeight, color.RGBA{0, 0, 0, 160})
 	var labels []string
 	title := "PAUSED"

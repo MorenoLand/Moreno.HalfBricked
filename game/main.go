@@ -648,6 +648,9 @@ func (a *app) Update() error {
 	if a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
 	}
+	if a.native.closeKey != "" {
+		return a.stepMenuClose() // a screen is sliding out: no input until it is gone
+	}
 	if a.menuClick != nil {
 		return a.updateMenuClick()
 	}
@@ -755,8 +758,7 @@ func (a *app) Update() error {
 		a.play.secondaryPointerDown = a.play.secondaryButtonContains(float64(pointerX), float64(pointerY)) && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 		if uiKeyJustPressed(ebiten.KeyEscape) {
 			if a.play.paused {
-				a.play.paused = false
-				return nil
+				return a.closeMenuAnimated("pause", func() error { a.play.paused = false; return nil })
 			}
 			a.play.paused = true
 			return nil

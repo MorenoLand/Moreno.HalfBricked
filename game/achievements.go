@@ -74,8 +74,10 @@ func (a *app) awardLocalAchievements(info *formats.LevelInfo) bool {
 }
 func (a *app) openAchievements() { a.achievementsBackPage, a.achievementOffset, a.page = a.page, 0, 6 }
 func (a *app) closeAchievements() error {
-	a.page = a.achievementsBackPage
-	return a.savePlayerProfile()
+	return a.closeMenuAnimated("achievements", func() error {
+		a.page = a.achievementsBackPage
+		return a.savePlayerProfile()
+	})
 }
 func (a *app) updateAchievements() error {
 	if l := a.achievementsLayout(); l != nil {

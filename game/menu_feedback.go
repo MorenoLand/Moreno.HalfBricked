@@ -36,12 +36,12 @@ func (a *app) menuFeedbackSnapshot() menuFeedbackState {
 	s := menuFeedbackState{
 		levelSelect:  a.page == 2 && a.play == nil && !a.titleScreen,
 		options:      a.page == 3 && !a.titleScreen && a.view == nil,
-		stats:        a.page == 4 && a.statsScreen != nil && !a.titleScreen,
-		achievements: a.page == 6 && !a.titleScreen,
+		stats:        a.page == 4 && a.statsScreen != nil && !a.titleScreen && a.native.closeKey != "stats",
+		achievements: a.page == 6 && !a.titleScreen && a.native.closeKey != "achievements",
 		play:         a.play,
 	}
 	if a.play != nil {
-		s.paused = a.play.paused
+		s.paused = a.play.paused && a.native.closeKey != "pause" // the sound belongs to the press, not the end of the slide-out
 	}
 	return s
 }

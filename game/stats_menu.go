@@ -165,12 +165,14 @@ func (menu *statsMenu) valueText(record statsRecord) string {
 // main menu, or the level select when a level is active, once it has closed.
 func (a *app) stepStatsMenu(back bool) error {
 	if a.statsScreen.update(1.0/60.0, back, false, false) == statsMainMenu {
-		a.statsScreen = nil
-		a.page = 0
-		if a.play != nil {
-			a.page = 2
-		}
-		return a.savePlayerProfile()
+		return a.closeMenuAnimated("stats", func() error {
+			a.statsScreen = nil
+			a.page = 0
+			if a.play != nil {
+				a.page = 2
+			}
+			return a.savePlayerProfile()
+		})
 	}
 	return nil
 }

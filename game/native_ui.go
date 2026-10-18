@@ -32,6 +32,12 @@ type nativeUIState struct {
 	listDrag   bool // a pointer drag scrolling a native list (achievements, stats)
 	listDragY  float64
 	listBase   int
+
+	// Closing a screen (menu_close.go): the key of the screen playing its slide-out, when it began and what follows.
+	slideDur   map[string]float64
+	closeKey   string
+	closeStart float64
+	closeNext  func() error
 }
 
 // nativeScreen loads (once) a shipped screen by name, nil when the pack has none.
@@ -65,6 +71,16 @@ func (a *app) nativeScreen(name string) *formats.UIScreen {
 // identified by key was first drawn (or drawn again after a gap).
 func (a *app) nativeSlide(key string, duration float64) float64 {
 	n := &a.native
+	if n.slideDur == nil {
+		n.slideDur = map[string]float64{}
+	}
+	n.slideDur[key] = duration
+	if n.closeKey == key {
+		if duration <= 0 {
+			return 0
+		}
+		return math.Max(0, math.Min(1, 1-(a.menuTime-n.closeStart)/duration)) // the slide-in played backwards
+	}
 	if n.slideKey != key || a.menuTime-n.slideSeen > .1 {
 		n.slideKey, n.slideStart = key, a.menuTime
 	}

@@ -53,10 +53,12 @@ func (a *app) openLanguages() {
 }
 
 func (a *app) closeLanguages() error {
-	a.languages, a.page = nil, 0
 	a.playSound("audio/sound/sfx/menu_back.ogg", .8)
 	a.playSound("audio/sound/sfx/menu_transition_out.ogg", .7)
-	return a.savePlayerProfile()
+	return a.closeMenuAnimated("languages", func() error {
+		a.languages, a.page = nil, 0
+		return a.savePlayerProfile()
+	})
 }
 
 // languageRect is the click rectangle of entry i at rest.
