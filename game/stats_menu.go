@@ -4,7 +4,6 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
 	"github.com/hajimehoshi/ebiten/v2"
 	"image"
-	"image/color"
 )
 
 type statsRecord struct {
@@ -229,6 +228,4 @@ func (a *app) drawStatsMenu(screen *ebiten.Image, menu *statsMenu, gameTime floa
 			}
 		}
 	}
-	a.drawRect(screen, 300, 0, 180, 28, color.RGBA{0, 0, 0, 160})
-	a.text(screen, "ACHIEVEMENTS", 310, 8, .4)
 }

@@ -656,17 +656,6 @@ func (a *app) Update() error {
 		if l := a.statsLayout(); l != nil {
 			return a.updateStatsNative(l)
 		}
-		if uiKeyJustPressed(ebiten.KeyA) {
-			a.openAchievements()
-			return nil
-		}
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			x, y := a.pointer()
-			if x >= 300 && y <= 28 {
-				a.openAchievements()
-				return nil
-			}
-		}
 		back := uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 		return a.stepStatsMenu(back)
 	}

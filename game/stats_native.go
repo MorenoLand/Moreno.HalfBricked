@@ -51,27 +51,14 @@ func (a *app) statsLayout() *statsLayout {
 	return l
 }
 
-// statsAchievementsRect is the port's shortcut to the achievements page, kept in the free corner
-// below-left of the window (it used to sit top right, where the native connector now is).
-func statsAchievementsRect() (x0, y0, x1, y1 float64) { return 0, 288, 150, logicalHeight }
-
 func (a *app) updateStatsNative(l *statsLayout) error {
-	if uiKeyJustPressed(ebiten.KeyA) {
-		a.openAchievements()
-		return nil
-	}
 	x, y := a.pointer()
 	fx, fy := float64(x), float64(y)
 	back := uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyEnter)
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		bx0, by0, bx1, by1 := nativeRect(l.back, l.backBox)
-		ax0, ay0, ax1, ay1 := statsAchievementsRect()
-		switch {
-		case fx >= bx0 && fx < bx1 && fy >= by0 && fy < by1:
+		if fx >= bx0 && fx < bx1 && fy >= by0 && fy < by1 {
 			back = true
-		case fx >= ax0 && fx < ax1 && fy >= ay0 && fy < ay1:
-			a.openAchievements()
-			return nil
 		}
 	}
 	return a.stepStatsMenu(back)
@@ -99,8 +86,6 @@ func (a *app) drawStatsNative(screen *ebiten.Image, l *statsLayout) {
 	}
 	a.drawNativeTree(screen, l.screen, screenOffset, a.menuTime, override)
 	a.drawNativeTree(screen, l.backBox, backOffset, a.menuTime, override)
-	ax0, ay0, _, _ := statsAchievementsRect()
-	a.drawNativeSans(screen, "ACHIEVEMENTS", ax0+8+50, ay0+13, 100, "CenterLeft", 9, 255, 255, 255, nativeTextStyle{spacing: .08, em: 1.25})
 }
 
 // statsRowTop is the window-relative top of the page of row k after age seconds.

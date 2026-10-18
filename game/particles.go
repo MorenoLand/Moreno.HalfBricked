@@ -245,15 +245,16 @@ func (a *app) drawParticle(screen *ebiten.Image, pt particleDraw) {
 	if zoom <= 0 {
 		zoom = 1
 	}
-	sx, sy := a.renderScale()
+	// Logical coordinates: drawImage applies the window scale itself (applying it here too put the splatters at
+	// the square of the scale, far to the right of the zombie).
 	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 	options.GeoM.Translate(-float64(cell)/2, -float64(bounds.Dy())/2)
-	scaleX := pt.size * zoom / float64(cell) * sx
+	scaleX := pt.size * zoom / float64(cell)
 	if pt.flip {
 		scaleX = -scaleX
 	}
-	options.GeoM.Scale(scaleX, pt.size*zoom/float64(bounds.Dy())*sx)
-	options.GeoM.Translate(((pt.x-world.CameraX)*zoom+world.ViewportX)*sx, ((pt.y-pt.z-world.CameraY)*zoom+world.ViewportY)*sy)
+	options.GeoM.Scale(scaleX, pt.size*zoom/float64(bounds.Dy()))
+	options.GeoM.Translate((pt.x-world.CameraX)*zoom+world.ViewportX, (pt.y-pt.z-world.CameraY)*zoom+world.ViewportY)
 	options.ColorScale.Scale(float32(pt.colour[0])/255, float32(pt.colour[1])/255, float32(pt.colour[2])/255, 1)
 	options.ColorScale.ScaleAlpha(float32(pt.colour[3]) / 255)
 	a.drawImage(screen, source, options)
