@@ -1979,6 +1979,8 @@ var titleBarryPieces = []titleBarryPiece{
 // shotgun / grip / hand 77.5 degrees; title class 0xe7bd8, rotation table 0x8605a4). Compared with the owner's iPad
 // screenshot of that build it gives the leaning body, the steeper shotgun and a forearm that joins the sleeve at
 // the elbow; the older placement above (angles from the 1.2.1 art) only approximated it.
+const titleNativeScale = .6
+
 var titleBarryPiecesNative = []titleBarryPiece{
 	{source: image.Rect(0, 0, 342, 512), x: 110, y: 190, angle: -23 * math.Pi / 180},
 	{source: image.Rect(342, 152, 512, 512), x: 164, y: 232, angle: 77.5 * math.Pi / 180},
@@ -2006,7 +2008,11 @@ func (a *app) drawTitleBarry(screen *ebiten.Image) {
 		cockX, cockY := a.titleCockingOffset(index)
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
 		options.GeoM.Translate(-float64(piece.source.Dx())/2, -float64(piece.source.Dy())/2)
-		options.GeoM.Scale(.5, .66)
+		if a.titleNative() {
+			options.GeoM.Scale(titleNativeScale, titleNativeScale) // 1.2.5: uniform 0.6 of the atlas (obj+0x34, 0xe77b4)
+		} else {
+			options.GeoM.Scale(.5, .66)
+		}
 		options.GeoM.Rotate(piece.angle)
 		options.GeoM.Translate(piece.x+xOffset+cockX, piece.y+yOffset+cockY)
 		a.drawImage(screen, part, options)
