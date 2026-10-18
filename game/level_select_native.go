@@ -60,8 +60,13 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 	fx, fy := float64(x), float64(y)
 	in := func(c *formats.UIComponent) bool {
 		x0, y0, x1, y1 := nativeRect(c, l.buttonsBox)
-		if c == l.play {
-			x0, y0, x1, y1 = levelPlayRect(l)
+		if c == l.play || c == l.coop {
+			play, co, _, _ := levelButtonStack(l, a.currentCoopLaunch().available)
+			r := play
+			if c == l.coop {
+				r = co
+			}
+			x0, y0, x1, y1 = r[0], r[1], r[2], r[3]
 		}
 		return fx >= x0 && fx < x1 && fy >= y0 && fy < y1
 	}
@@ -86,13 +91,8 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 // ButtonsBox between Play and Back: two half-width buttons side by side, above the native Co-op
 // slot when local co-op is available (the box's decor sits above and right of that space).
 func (a *app) levelOnlineRects(l *levelSelectLayout) (host, join [4]float64) {
-	// HD: Back moved to the corner arrow, so HOST and JOIN take its slot (the bottom of the buttons box), side by side.
-	px0, _, px1, _ := nativeRect(l.play, l.buttonsBox)
-	_, by0, _, by1 := nativeRect(l.back, l.buttonsBox)
-	gap := 3.0
-	width := (px1 - px0 - gap) / 2
-	host = [4]float64{px0, by0, px0 + width, by1}
-	join = [4]float64{px1 - width, by0, px1, by1}
+	// HD: the buttons are one column, Play, (Co-op), Host, Join, each as wide as Play.
+	_, _, host, join = levelButtonStack(l, a.currentCoopLaunch().available)
 	return
 }
 
@@ -180,14 +180,14 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 			if !coop {
 				return nativeOverride{skip: true}
 			}
-			ov := nativeOverride{}
+			glow := float32(0)
 			switch {
 			case !unlocked:
-				ov.brighten = -.5
+				glow = -.5
 			case hoverAction == "coop":
-				ov.brighten = .2
+				glow = .2
 			}
-			return ov
+			return nativeOverride{custom: func(target *ebiten.Image, offset formats.Vec2) { a.drawLevelCoop(target, l, offset, glow) }}
 		case l.back:
 			return nativeOverride{skip: true} // the corner arrow replaces it
 		}
@@ -245,11 +245,16 @@ func (a *app) drawLevelGlyphs(screen *ebiten.Image, l *levelSelectLayout, hover 
 	a.drawArrowGlyph(screen, (r[0]+r[2])/2, (r[1]+r[3])/2, 26, 25, false, brighten)
 }
 
-// levelPlayRect is the enlarged Play plate at rest: 84x50 centred 12 units below the native 80x32 slot.
-func levelPlayRect(l *levelSelectLayout) (x0, y0, x1, y1 float64) {
-	nx0, ny0, nx1, ny1 := nativeRect(l.play, l.buttonsBox)
-	cx, cy := (nx0+nx1)/2, (ny0+ny1)/2+12
-	return cx - 42, cy - 25, cx + 42, cy + 25
+// levelButtonStack lays the buttons box out as one column at rest: Play (larger), Co-op when local co-op exists, then
+// Host and Join. Each is as wide as the native Play slot (80).
+func levelButtonStack(l *levelSelectLayout, coop bool) (play, co, host, join [4]float64) {
+	nx0, _, nx1, _ := nativeRect(l.play, l.buttonsBox)
+	x0, x1 := nx0, nx1
+	row := func(top, height float64) [4]float64 { return [4]float64{x0, top, x1, top + height} }
+	if coop {
+		return row(164, 32), row(201, 28), row(234, 28), row(267, 28)
+	}
+	return row(164, 46), [4]float64{}, row(222, 30), row(258, 30)
 }
 
 // levelPlayLights reports whether c is one of the lights or line decor under the Play slot.
@@ -261,12 +266,23 @@ func levelPlayLights(c *formats.UIComponent) bool {
 	return y >= 192 && y <= 204 && x >= 370 && x <= 470
 }
 
+// drawLevelCoop draws the Co-op plate in its stacked slot with the component's own label.
+func (a *app) drawLevelCoop(screen *ebiten.Image, l *levelSelectLayout, offset formats.Vec2, glow float32) {
+	_, co, _, _ := levelButtonStack(l, true)
+	x0, y0, x1, y1 := co[0]+offset.X, co[1]+offset.Y, co[2]+offset.X, co[3]+offset.Y
+	a.drawNativeNinePatchRect(screen, creditsCleanTexture(l.coop.Texture()), x0, y0, x1-x0, y1-y0, glow)
+	size, _ := l.coop.FontSize()
+	r, g, b := nativeTextColour(l.coop, nativeOverride{})
+	a.drawNativeSans(screen, l.coop.String("text"), (x0+x1)/2, (y0+y1)/2, x1-x0-4, "", size*.75, r, g, b, nativeTextStyle{bold: true, em: 1.25})
+}
+
 // drawLevelPlay draws the Play plate with its triangle.
 func (a *app) drawLevelPlay(screen *ebiten.Image, l *levelSelectLayout, offset formats.Vec2, glow float32) {
-	x0, y0, x1, y1 := levelPlayRect(l)
-	x0, y0, x1, y1 = x0+offset.X, y0+offset.Y, x1+offset.X, y1+offset.Y
+	play, _, _, _ := levelButtonStack(l, a.currentCoopLaunch().available)
+	x0, y0, x1, y1 := play[0]+offset.X, play[1]+offset.Y, play[2]+offset.X, play[3]+offset.Y
 	a.drawNativeNinePatchRect(screen, creditsCleanTexture(l.play.Texture()), x0, y0, x1-x0, y1-y0, glow)
-	a.drawArrowGlyph(screen, (x0+x1)/2, (y0+y1)/2, 38, 36, true, glow)
+	size := math.Min(38, (y1-y0)*.78)
+	a.drawArrowGlyph(screen, (x0+x1)/2, (y0+y1)/2, size, size*.95, true, glow)
 }
 
 // drawLevelCardNative draws one level card opaque, with a soft shadow behind it and a size that falls from the

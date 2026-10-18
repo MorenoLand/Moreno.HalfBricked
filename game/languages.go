@@ -49,11 +49,13 @@ func (a *app) openLanguages() {
 	}
 	a.languages = &languagesState{cursor: cursor}
 	a.page = languagesPage
+	a.playSound("audio/sound/sfx/menu_transition_in.ogg", .7)
 }
 
 func (a *app) closeLanguages() error {
 	a.languages, a.page = nil, 0
 	a.playSound("audio/sound/sfx/menu_back.ogg", .8)
+	a.playSound("audio/sound/sfx/menu_transition_out.ogg", .7)
 	return a.savePlayerProfile()
 }
 

@@ -86,6 +86,8 @@ func menuFeedbackSounds(before, now menuFeedbackState, page int) []menuFeedbackS
 	}
 	if (before.stats && !now.stats && !now.achievements) || (before.achievements && !now.achievements) {
 		sounds = append(sounds, menuFeedbackSound{back, .8})
+		// PORT ADDITION: the slide-out sound the other screens have; the binary plays menu_back alone here.
+		sounds = append(sounds, menuFeedbackSound{out, .7})
 	}
 	if before.play != nil && before.paused {
 		if now.play == nil || (now.play == before.play && !now.paused) {
