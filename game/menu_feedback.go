@@ -78,6 +78,12 @@ func menuFeedbackSounds(before, now menuFeedbackState, page int) []menuFeedbackS
 	if !before.options && now.options {
 		sounds = append(sounds, menuFeedbackSound{in, .7})
 	}
+	// PORT ADDITION: the 1.2.5 binary plays nothing when Statistics or Achievements open (FUN_000c9244 and the
+	// StatsScreen init have no play call; the board press only plays the shot, main_menu_hd.go); the slide-in gets the
+	// same menu_transition_in as the other screens.
+	if (!before.stats && now.stats) || (!before.achievements && now.achievements) {
+		sounds = append(sounds, menuFeedbackSound{in, .7})
+	}
 	if (before.stats && !now.stats && !now.achievements) || (before.achievements && !now.achievements) {
 		sounds = append(sounds, menuFeedbackSound{back, .8})
 	}

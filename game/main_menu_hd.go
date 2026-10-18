@@ -17,7 +17,7 @@ const menuActionLanguages = 6
 var mainMenuButtonsHD = []menuButton{
 	{zombie: 4, labelRow: -1, action: menuActionLanguages, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
 	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
-	{zombie: 3, labelRow: 8, action: 2, cx: 76, cy: 274, width: 128, height: 64, angle: -0.16},
+	{zombie: 3, labelRow: 8, action: 2, cx: 80, cy: 244, width: 128, height: 64, angle: -0.16},
 	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
 	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 186, cy: 75, width: 128, height: 64},
 }

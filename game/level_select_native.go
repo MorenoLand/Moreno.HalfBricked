@@ -60,6 +60,9 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 	fx, fy := float64(x), float64(y)
 	in := func(c *formats.UIComponent) bool {
 		x0, y0, x1, y1 := nativeRect(c, l.buttonsBox)
+		if c == l.play {
+			x0, y0, x1, y1 = levelPlayRect(l)
+		}
 		return fx >= x0 && fx < x1 && fy >= y0 && fy < y1
 	}
 	host, join := a.levelOnlineRects(l)
@@ -135,6 +138,11 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 		switch c {
 		case l.loading, l.newSurvival, l.highscores:
 			return nativeOverride{skip: true}
+		}
+		if levelPlayLights(c) {
+			return nativeOverride{skip: true} // the enlarged Play plate covers the lights row (the iPad box has none)
+		}
+		switch c {
 		case l.mode:
 			row := 0.0
 			if a.mode == 1 {
@@ -160,14 +168,14 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 				a.drawLevelDetails(target, l, info, selected >= 0, offset)
 			}}
 		case l.play:
-			ov := nativeOverride{text: nativeText("")} // the arrow glyph replaces the word
+			glow := float32(0)
 			switch {
 			case !unlocked:
-				ov.brighten = -.5
+				glow = -.5
 			case hoverAction == "play":
-				ov.brighten = .2
+				glow = .2
 			}
-			return ov
+			return nativeOverride{custom: func(target *ebiten.Image, offset formats.Vec2) { a.drawLevelPlay(target, l, offset, glow) }}
 		case l.coop:
 			if !coop {
 				return nativeOverride{skip: true}
@@ -235,18 +243,30 @@ func (a *app) drawLevelGlyphs(screen *ebiten.Image, l *levelSelectLayout, hover 
 	r := levelBackRect
 	a.drawNativeNinePatchRect(screen, creditsCleanTexture(l.play.Texture()), r[0], r[1], r[2]-r[0], r[3]-r[1], brighten)
 	a.drawArrowGlyph(screen, (r[0]+r[2])/2, (r[1]+r[3])/2, 26, 25, false, brighten)
+}
 
-	progress := a.nativeSlide("levelselect", nativeAnimateInDuration(l.buttonsBox))
-	offset := nativeSlideOffset(l.buttonsBox, progress)
-	x0, y0, x1, y1 := nativeRect(l.play, l.buttonsBox)
-	glow := float32(0)
-	switch {
-	case !unlocked:
-		glow = -.5
-	case hover == "play":
-		glow = .2
+// levelPlayRect is the enlarged Play plate at rest: 84x50 centred 12 units below the native 80x32 slot.
+func levelPlayRect(l *levelSelectLayout) (x0, y0, x1, y1 float64) {
+	nx0, ny0, nx1, ny1 := nativeRect(l.play, l.buttonsBox)
+	cx, cy := (nx0+nx1)/2, (ny0+ny1)/2+12
+	return cx - 42, cy - 25, cx + 42, cy + 25
+}
+
+// levelPlayLights reports whether c is one of the lights or line decor under the Play slot.
+func levelPlayLights(c *formats.UIComponent) bool {
+	if c.Class != "ComponentAnimatedHudDecor" {
+		return false
 	}
-	a.drawArrowGlyph(screen, (x0+x1)/2+offset.X, (y0+y1)/2+offset.Y, 32, 30, true, glow)
+	x, y := c.Anchor()
+	return y >= 192 && y <= 204 && x >= 370 && x <= 470
+}
+
+// drawLevelPlay draws the Play plate with its triangle.
+func (a *app) drawLevelPlay(screen *ebiten.Image, l *levelSelectLayout, offset formats.Vec2, glow float32) {
+	x0, y0, x1, y1 := levelPlayRect(l)
+	x0, y0, x1, y1 = x0+offset.X, y0+offset.Y, x1+offset.X, y1+offset.Y
+	a.drawNativeNinePatchRect(screen, creditsCleanTexture(l.play.Texture()), x0, y0, x1-x0, y1-y0, glow)
+	a.drawArrowGlyph(screen, (x0+x1)/2, (y0+y1)/2, 38, 36, true, glow)
 }
 
 // drawLevelCardNative draws one level card opaque, with a soft shadow behind it and a size that falls from the
