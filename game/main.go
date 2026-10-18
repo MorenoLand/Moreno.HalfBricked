@@ -1938,7 +1938,7 @@ func (a *app) drawTitle(screen *ebiten.Image) {
 	if splashUI {
 		a.drawTitleSplashUI(screen)
 	}
-	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil && a.titleZombieActive {
+	if image, err := a.Texture("Frontend0/Textures/menu_zombie_2_SD"); err == nil && a.titleZombieActive && !a.titleNative() { // the 1.2.5 title class draws no zombie (Research/native/title-screen-125-2026-10-14.md)
 		resolution := a.pack.TextureSourceScale("Frontend0/Textures/menu_zombie_2_SD")
 		options := menuGroupImageOptions(a.titleZombie, .5/resolution, .5/resolution, float64(image.Bounds().Dx())/2, float64(image.Bounds().Dy())/2, 0, 0, 0)
 		a.drawImage(screen, image, options)
