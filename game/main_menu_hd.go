@@ -14,6 +14,11 @@ import (
 // Achievements one, and the screen is languages.go.
 const menuActionLanguages = 6
 
+// languagesEnabled shows the LANGUAGES board. It is off: the build holds no translated game text (the BrickNet string
+// tables are store and account dialogs the game never shows), so the board would open a list that changes nothing.
+// The board, label and screen (languages.go) stay in place; set this to true when translations exist.
+const languagesEnabled = false
+
 var mainMenuButtonsHD = []menuButton{
 	{zombie: 4, labelRow: -1, action: menuActionLanguages, cx: 76, cy: 105, width: 128, height: 64, angle: -0.10},
 	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},

@@ -40,6 +40,9 @@ func (a *app) mainMenuButtonAvailable(index int) bool {
 		return false
 	}
 	if action := a.menuButtons()[index].action; action == menuActionAchievements || action == menuActionLanguages {
+		if action == menuActionLanguages && !languagesEnabled {
+			return false
+		}
 		return a.mainMenuLayout(action) != nil
 	}
 	return true
