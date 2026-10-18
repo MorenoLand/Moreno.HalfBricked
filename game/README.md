@@ -34,6 +34,7 @@ Reusable engine code stays in `../engine/*` (formats, content, scripting, weapon
 - `menu_hover.go` - hover easing of menu text.
 - `options_menu.go`, `options_control.go` - options page and control-layout settings.
 - `pause_menu.go`, `confirm_dialog.go` - pause screen and the "are you sure" box.
+- `native_ui.go` - shared drawing of the 1.2.5 (HD) `.uiscreen` front-end screens (tree walker, nine-patch, mirrored/rotated textures, AnimateIn slides); `pause_fixture.go` (pause sound/music fixture), `achievements_native.go`, `stats_native.go`, `options_native.go`, `level_select_native.go` use it and fall back to the older layouts when the pack has no such screen (SD cache).
 - `extras.go` - the port's EXTRA page (FOV, Discord toggle).
 - `stats_menu.go` - statistics page.
 - `credits.go` - credits roll.

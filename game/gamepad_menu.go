@@ -189,6 +189,7 @@ type padMenuFocus struct {
 	active   bool
 	row      int
 	lastTick int64
+	toggle   int // pause_fixture.go: 1 music button, 2 sound button, 0 the rows
 }
 
 // touch drops a stale focus: the menu was not updated on the previous tick, so it was closed

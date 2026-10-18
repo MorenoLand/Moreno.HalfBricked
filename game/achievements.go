@@ -78,6 +78,9 @@ func (a *app) closeAchievements() error {
 	return a.savePlayerProfile()
 }
 func (a *app) updateAchievements() error {
+	if l := a.achievementsLayout(); l != nil {
+		return a.updateAchievementsNative(l)
+	}
 	if uiKeyJustPressed(ebiten.KeyEscape) {
 		return a.closeAchievements()
 	}
@@ -107,6 +110,10 @@ func (a *app) updateAchievements() error {
 	return nil
 }
 func (a *app) drawAchievements(screen *ebiten.Image) {
+	if l := a.achievementsLayout(); l != nil {
+		a.drawAchievementsNative(screen, l)
+		return
+	}
 	a.drawBackdrop(screen)
 	a.textCentered(screen, "ACHIEVEMENTS", 14, .75)
 	a.textCentered(screen, a.achievementProgressLine(), 37, .3)

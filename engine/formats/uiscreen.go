@@ -24,12 +24,13 @@ type UIComponent struct {
 	Children   []*UIComponent
 	parent     *UIComponent
 	props      map[string][]byte
+	anim       []byte
 }
 
 var uiClassPattern = regexp.MustCompile(`(Component[A-Za-z]+|UIModifier[A-Za-z]+)\x00`)
 
 // Property names decoded from component records.
-var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch", "colour", "textColour"}
+var uiPropertyNames = []string{"originFromCenter", "position", "rotation", "width", "height", "texture", "text", "currentValue", "texCoordPos", "texCoordSize", "alignment", "fontSize", "enabled", "drawninepatch", "colour", "textColour", "visible"}
 
 func ParseUIScreen(data []byte) (*UIScreen, error) {
 	if len(data) < 64 || string(data[:4]) != "FSIU" {
@@ -39,9 +40,11 @@ func ParseUIScreen(data []byte) (*UIScreen, error) {
 	if len(head) > 400 {
 		head = head[:400]
 	}
-	var classes []string
-	for _, match := range uiClassPattern.FindAllSubmatch(head, -1) {
-		classes = append(classes, string(match[1]))
+	classes := uiClassTable(data)
+	if classes == nil {
+		for _, match := range uiClassPattern.FindAllSubmatch(head, -1) {
+			classes = append(classes, string(match[1]))
+		}
 	}
 	var starts []int
 	for offset := 0; ; {
@@ -78,6 +81,7 @@ func ParseUIScreen(data []byte) (*UIScreen, error) {
 		}
 		body := data[nameEnd+8 : end]
 		if limit := bytes.Index(body, []byte("MAIU")); limit >= 0 {
+			component.anim = body[limit:]
 			body = body[:limit]
 		}
 		for _, name := range uiPropertyNames {
@@ -262,4 +266,104 @@ func (c *UIComponent) Colour(name string) (r, g, b, a float64, ok bool) {
 		values[index] = float64(value)
 	}
 	return values[0], values[1], values[2], values[3], true
+}
+
+// uiClassTable reads the screen's component class table: after the "~PC" tag come
+// a count and that many length-prefixed names, closed by "PMOC". It is nil when the
+// table is not laid out that way (the caller then scans for class names). Screens
+// such as AchievementsScreen list a bare "Component" class that a name scan misses,
+// which would shift every later class index.
+func uiClassTable(data []byte) []string {
+	at := bytes.Index(data, []byte("~PC\x00"))
+	if at < 0 {
+		return nil
+	}
+	// Some screens (1.4.0 LevelSelectScreen) put a "~default" name before the count.
+	if classes := uiReadClassTable(data, at+4); classes != nil {
+		return classes
+	}
+	if at+8 <= len(data) {
+		skip := int(binary.LittleEndian.Uint32(data[at+4:]))
+		if skip > 0 && skip < 32 {
+			return uiReadClassTable(data, at+8+skip)
+		}
+	}
+	return nil
+}
+
+func uiReadClassTable(data []byte, position int) []string {
+	if position+4 > len(data) {
+		return nil
+	}
+	count := int(binary.LittleEndian.Uint32(data[position:]))
+	position += 4
+	if count <= 0 || count > 64 {
+		return nil
+	}
+	classes := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		if position+4 > len(data) {
+			return nil
+		}
+		length := int(binary.LittleEndian.Uint32(data[position:]))
+		position += 4
+		if length <= 0 || length > 64 || position+length > len(data) {
+			return nil
+		}
+		classes = append(classes, string(bytes.TrimRight(data[position:position+length], "\x00")))
+		position += length
+	}
+	if position+8 > len(data) || !bytes.Contains(data[position:position+8], []byte("PMOC")) {
+		return nil
+	}
+	return classes
+}
+
+// Visible is the component's visible flag (true when the screen does not set it).
+func (c *UIComponent) Visible() bool {
+	raw, ok := c.props["visible"]
+	return !ok || len(raw) == 0 || raw[0] != 0
+}
+
+// UIKeyframe is one key of an animation track: time in seconds, the interpolation
+// mode id the screen stores, and the vector value.
+type UIKeyframe struct {
+	Time    float64
+	Ease    int
+	X, Y, Z float64
+}
+
+// AnimationPosition returns the position track of the named animation (AnimateIn,
+// AnimateOut, ...) of this component, nil when it has none. Each key is
+// "FKIU", time in milliseconds, mode, then three float32 (24 bytes in all).
+func (c *UIComponent) AnimationPosition(animation string) []UIKeyframe {
+	named := func(prefix string, name string) []byte {
+		out := append([]byte(prefix), binary.LittleEndian.AppendUint32(nil, uint32(len(name)+1))...)
+		return append(append(out, name...), 0)
+	}
+	start := bytes.Index(c.anim, named("MASU", animation))
+	if start < 0 {
+		return nil
+	}
+	segment := c.anim[start+len(named("MASU", animation)):]
+	if next := bytes.Index(segment, []byte("MASU")); next >= 0 {
+		segment = segment[:next]
+	}
+	track := named("TAIU", "position")
+	at := bytes.Index(segment, track)
+	if at < 0 || at+len(track)+4 > len(segment) {
+		return nil
+	}
+	position := at + len(track)
+	count := int(binary.LittleEndian.Uint32(segment[position:]))
+	position += 4
+	var keys []UIKeyframe
+	for i := 0; i < count && position+24 <= len(segment) && string(segment[position:position+4]) == "FKIU"; i++ {
+		f := func(offset int) float64 {
+			return float64(math.Float32frombits(binary.LittleEndian.Uint32(segment[position+offset:])))
+		}
+		keys = append(keys, UIKeyframe{Time: float64(binary.LittleEndian.Uint32(segment[position+4:])) / 1000, Ease: int(binary.LittleEndian.Uint32(segment[position+8:])), X: f(12), Y: f(16), Z: f(20)})
+		position += 24
+	}
+	return keys
 }

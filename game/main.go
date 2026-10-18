@@ -127,6 +127,7 @@ type app struct {
 	creditsUI                                    *formats.UIScreen
 	creditsUILoaded                              bool
 	creditsMargins                               map[string]int
+	native                                       nativeUIState // native_ui.go
 	highscores                                   map[string]int32
 	coopPlayers                                  int
 	net                                          *netSession
@@ -650,6 +651,9 @@ func (a *app) Update() error {
 		return a.updateAchievements()
 	}
 	if a.page == 4 && a.statsScreen != nil {
+		if l := a.statsLayout(); l != nil {
+			return a.updateStatsNative(l)
+		}
 		if uiKeyJustPressed(ebiten.KeyA) {
 			a.openAchievements()
 			return nil
@@ -662,15 +666,7 @@ func (a *app) Update() error {
 			}
 		}
 		back := uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyEnter) || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
-		if a.statsScreen.update(1.0/60.0, back, false, false) == statsMainMenu {
-			a.statsScreen = nil
-			a.page = 0
-			if a.play != nil {
-				a.page = 2
-			}
-			return a.savePlayerProfile()
-		}
-		return nil
+		return a.stepStatsMenu(back)
 	}
 	if a.page == 5 && a.resultsScreen != nil {
 		if a.netGuest() && !a.net.lobby {
@@ -688,18 +684,18 @@ func (a *app) Update() error {
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := a.pointer()
-			if x0, y0, x1, y1 := extraButtonRect(); float64(x) >= x0 && float64(x) <= x1 && float64(y) >= y0 && float64(y) <= y1 {
+			if x0, y0, x1, y1 := a.optionsExtraRect(); float64(x) >= x0 && float64(x) <= x1 && float64(y) >= y0 && float64(y) <= y1 {
 				a.page, a.extraRow = extraPage, 0
 				return nil
 			}
-			action = optionsHit(a.variables, float64(x), float64(y))
+			action = a.optionsActionAt(float64(x), float64(y))
 		}
 		var musicEnabled func(bool)
 		if a.sound != nil {
 			musicEnabled = func(enabled bool) { a.sound.MusicEnabled(enabled && !a.silent) }
 		}
 		x, y := a.pointer()
-		if center, ok := a.variables.Vec2Value("OPTIONS_SIZE_CENTER_POS_VAR"); ok {
+		if center, ok := a.optionsPadCenter(); ok {
 			a.options.dragPad(float64(x), float64(y), center.X, center.Y, action == optionsPad, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft))
 		}
 		if a.options.activate(action, musicEnabled) {
@@ -1851,7 +1847,11 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 		a.drawBackdrop(screen)
 		a.drawExtras(screen)
 	} else if a.page == 4 && a.statsScreen != nil {
-		a.drawStatsMenu(screen, a.statsScreen, a.menuTime)
+		if l := a.statsLayout(); l != nil {
+			a.drawStatsNative(screen, l)
+		} else {
+			a.drawStatsMenu(screen, a.statsScreen, a.menuTime)
+		}
 	} else {
 		a.drawLevelSelect(screen)
 	}
@@ -2019,6 +2019,10 @@ func (a *app) drawBanner(screen *ebiten.Image, positionName, scaleName string, a
 }
 
 func (a *app) drawLevelSelect(screen *ebiten.Image) {
+	if l := a.levelSelectLayout(); l != nil {
+		a.drawLevelSelectNative(screen, l)
+		return
+	}
 	a.drawBackdrop(screen)
 	a.drawLevelTabs(screen)
 	levels := a.syncLevelCarousel()
@@ -2486,6 +2490,9 @@ func (a *app) levelHit(x, y int) int {
 	return -1
 }
 func (a *app) levelTabAt(x, y int) int {
+	if l := a.levelSelectLayout(); l != nil {
+		return a.levelTabAtNative(l, x, y)
+	}
 	position, positionOK := a.variables.Vec2Value("SHOPFRONT_TOPBUTTONS_POS_VAR")
 	size, sizeOK := a.variables.Vec2Value("SHOPFRONT_TOPBUTTONS_SIZE")
 	if !positionOK || !sizeOK || float64(x) < position.X-size.X/2 || float64(x) > position.X+size.X/2 || float64(y) < position.Y-size.Y/2 || float64(y) > position.Y+size.Y/2 {
@@ -2497,6 +2504,9 @@ func (a *app) levelTabAt(x, y int) int {
 	return 1
 }
 func (a *app) levelActionAt(x, y int) string {
+	if l := a.levelSelectLayout(); l != nil {
+		return a.levelActionAtNative(l, x, y)
+	}
 	if shopActionHit(a.variables, "SHOPFRONT_PLAY_ICON_POS_VAR", "SHOPFRONT_PLAY_ICON_WIDTH_VAR", "SHOPFRONT_PLAY_ICON_HEIGHT_VAR", x, y) {
 		return "play"
 	}

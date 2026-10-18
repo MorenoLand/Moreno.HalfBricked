@@ -78,7 +78,7 @@ func extraRowY(row int) float64 {
 func extraButtonRect() (x0, y0, x1, y1 float64) { return 318, 280, 418, 304 }
 
 func (a *app) drawExtraButton(screen *ebiten.Image) {
-	x0, y0, x1, _ := extraButtonRect()
+	x0, y0, x1, _ := a.optionsExtraRect()
 	label := "EXTRA"
 	scale := .42
 	a.text(screen, label, (x0+x1)/2-a.fontTextWidth(label, scale)/2, y0+2, scale)

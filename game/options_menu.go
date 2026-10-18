@@ -97,6 +97,10 @@ func optionsSoundRect(music, enabled bool) image.Rectangle {
 	return image.Rect(x, y, x+64, y+64)
 }
 func (a *app) drawOptionsMenu(screen *ebiten.Image, menu *optionsMenu) {
+	if l := a.optionsLayout(); l != nil {
+		a.drawOptionsNative(screen, menu, l)
+		return
+	}
 	if texture, err := a.Texture("Common0/Textures/TutorialBoxes"); err == nil {
 		for _, name := range []string{"CONTROL", "SOUND", "EXIT"} {
 			position, positionOK := a.variables.Vec2Value("OPTIONS_" + name + "_BOX_OUTER_POS_VAR")

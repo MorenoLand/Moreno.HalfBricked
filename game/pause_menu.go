@@ -84,6 +84,12 @@ func (a *app) quitToMenu() error {
 func (a *app) updatePauseMenu() error {
 	pausePadFocus.touch(padBackend.Tick())
 	if a.pauseOnline {
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && a.pauseFixture() != nil {
+			x, y := a.pointer()
+			if which := a.pauseToggleAt(float64(x), float64(y)); which != 0 {
+				return a.togglePauseAudio(which)
+			}
+		}
 		if uiKeyJustPressed(ebiten.KeyEscape) || uiKeyJustPressed(ebiten.KeyP) {
 			a.pauseOnline = false
 			pausePadFocus.reset()
@@ -104,6 +110,9 @@ func (a *app) updatePauseMenu() error {
 	}
 	if uiKeyJustPressed(ebiten.KeyP) {
 		return a.activatePauseMenu(0)
+	}
+	if handled, err := a.updatePauseToggles(); handled || err != nil {
+		return err
 	}
 	// Controller focus (PauseScreen.txt: the resume node is the default, Up/Down walk the rows).
 	if move := menuFocusMove(); move != 0 {
@@ -135,11 +144,20 @@ func (a *app) drawPauseMenu(screen *ebiten.Image) {
 			labels = append(labels, pauseMenuLabels[action])
 		}
 	}
+	pointerX, pointerY := a.pointer()
+	hoveredToggle := 0
+	if a.confirm == nil {
+		hoveredToggle = a.pauseToggleAt(float64(pointerX), float64(pointerY))
+	}
+	a.drawPauseFixture(screen, hoveredToggle, pausePadFocus.toggle)
 	a.textCentered(screen, title, 78, 1)
 	if label := a.pauseLevelLabel(); label != "" && !a.pauseOnline {
-		a.textCentered(screen, label, 56, .5)
+		if a.pauseFixture() != nil {
+			a.text(screen, label, 8, 8, .5) // the native sound/music fixture sits where the label used to be
+		} else {
+			a.textCentered(screen, label, 56, .5)
+		}
 	}
-	pointerX, pointerY := a.pointer()
 	hoveredRow := pauseRowHit(pointerX, pointerY, len(labels))
 	for index, label := range labels {
 		focused := pausePadFocus.active && index == pausePadFocus.row

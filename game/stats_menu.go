@@ -34,6 +34,7 @@ type statsMenu struct {
 	Waiting, Closing bool
 	Alpha            uint8
 	Data             *stats.StatsData
+	Age              float32 // seconds since the page opened (the native list scrolls with it)
 }
 
 func statsRecords(d *stats.StatsData) []statsRecord {
@@ -93,6 +94,7 @@ func newStatsMenuBuild(data *stats.StatsData, western bool) *statsMenu {
 	return &statsMenu{Records: statsRecordsBuild(data, western), Alpha: 255, Data: data}
 }
 func (menu *statsMenu) update(dt float32, back, levelActive, animationActive bool) statsDestination {
+	menu.Age += dt
 	nodes := menu.Nodes[:0]
 	for _, node := range menu.Nodes {
 		node.Y -= dt * 75
@@ -137,23 +139,41 @@ func (menu *statsMenu) update(dt float32, back, levelActive, animationActive boo
 	node := statsNode{Label: record.Label, X: 10, Y: 320}
 	if record.Kind >= 1 && record.Kind <= 3 {
 		node.X, node.Numeric = 25, true
-		if record.Kind == 3 {
-			total := menu.Data.BossTotal()
-			if total == 0 {
-				node.Value = "Not Set"
-			} else {
-				node.Value = stats.StatsTime(total)
-			}
-		} else if !menu.Data.Available[record.Label] {
-			node.Value = "-"
-		} else if record.Kind == 2 {
-			node.Value = stats.StatsTime(*record.Value)
-		} else {
-			node.Value = stats.StatsInteger(*record.Value)
-		}
+		node.Value = menu.valueText(record)
 	}
 	menu.Nodes = append(menu.Nodes, node)
 	return statsStay
+}
+
+// valueText is the right-hand text of a statistic row.
+func (menu *statsMenu) valueText(record statsRecord) string {
+	if record.Kind == 3 {
+		if total := menu.Data.BossTotal(); total != 0 {
+			return stats.StatsTime(total)
+		}
+		return "Not Set"
+	}
+	if !menu.Data.Available[record.Label] {
+		return "-"
+	}
+	if record.Kind == 2 {
+		return stats.StatsTime(*record.Value)
+	}
+	return stats.StatsInteger(*record.Value)
+}
+
+// stepStatsMenu advances the page by one tick (back asks it to close) and leaves it for the
+// main menu, or the level select when a level is active, once it has closed.
+func (a *app) stepStatsMenu(back bool) error {
+	if a.statsScreen.update(1.0/60.0, back, false, false) == statsMainMenu {
+		a.statsScreen = nil
+		a.page = 0
+		if a.play != nil {
+			a.page = 2
+		}
+		return a.savePlayerProfile()
+	}
+	return nil
 }
 func (a *app) drawStatsMenu(screen *ebiten.Image, menu *statsMenu, gameTime float64) {
 	if texture, err := a.Texture("Common0/Textures/portal_menu_SD"); err == nil {
