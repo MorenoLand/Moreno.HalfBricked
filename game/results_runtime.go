@@ -48,6 +48,7 @@ func (a *app) recordHighscore(levelID string, data resultsData) int32 {
 		a.highscores[levelID] = best
 		_ = a.savePlayerProfile()
 	}
+	a.recordLevelBests(levelID, data)
 	return best
 }
 

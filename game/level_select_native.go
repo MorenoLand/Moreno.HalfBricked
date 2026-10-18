@@ -2,6 +2,8 @@ package game
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"math"
 	"strings"
 
@@ -65,7 +67,7 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 	switch {
 	case in(l.play):
 		return "play"
-	case in(l.back):
+	case fx >= levelBackRect[0] && fx < levelBackRect[2] && fy >= levelBackRect[1] && fy < levelBackRect[3]:
 		return "back"
 	case inRect(host):
 		return "host"
@@ -81,22 +83,13 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 // ButtonsBox between Play and Back: two half-width buttons side by side, above the native Co-op
 // slot when local co-op is available (the box's decor sits above and right of that space).
 func (a *app) levelOnlineRects(l *levelSelectLayout) (host, join [4]float64) {
-	px0, _, px1, py1 := nativeRect(l.play, l.buttonsBox)
-	_, cy0, _, _ := nativeRect(l.coop, l.buttonsBox)
-	_, by0, _, _ := nativeRect(l.back, l.buttonsBox)
+	// HD: Back moved to the corner arrow, so HOST and JOIN take its slot (the bottom of the buttons box), side by side.
+	px0, _, px1, _ := nativeRect(l.play, l.buttonsBox)
+	_, by0, _, by1 := nativeRect(l.back, l.buttonsBox)
 	gap := 3.0
 	width := (px1 - px0 - gap) / 2
-	top, bottom := py1+10, cy0-3 // below the Play row's lights, above Co-op
-	if !a.currentCoopLaunch().available {
-		bottom = by0 - 6
-		top = py1 + 14
-	}
-	if bottom-top > 26 {
-		top = (top+bottom)/2 - 13
-		bottom = top + 26
-	}
-	host = [4]float64{px0, top, px0 + width, bottom}
-	join = [4]float64{px1 - width, top, px1, bottom}
+	host = [4]float64{px0, by0, px0 + width, by1}
+	join = [4]float64{px1 - width, by0, px1, by1}
 	return
 }
 
@@ -115,14 +108,16 @@ func (a *app) levelTabAtNative(l *levelSelectLayout, x, y int) int {
 
 func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) {
 	a.drawBackdrop(screen)
-	a.drawNativeTree(screen, l.band, formats.Vec2{}, a.menuTime, nil)
+	// The dark band is thinner than the uiscreen's 73 units (the iPad shows about 48) and lies behind the cards.
+	a.drawRect(screen, 0, levelCardY-levelBandHeight/2, logicalWidth, levelBandHeight, color.RGBA{0, 0, 0, 100})
 	levels := a.syncLevelCarousel()
+	focusX := a.levelCardX(max(0, a.carouselCore.Selected))
 	for index, entry := range levels {
 		x := a.levelCardX(index)
-		if x < -64 || x > logicalWidth+64 {
+		if x < -80 || x > logicalWidth+80 {
 			continue
 		}
-		a.drawLevelCardAt(screen, entry.Info, x, 100, index == a.carouselCore.Selected, a.levelUnlocked(entry.Info))
+		a.drawLevelCardNative(screen, entry.Info, x, levelCardY, math.Abs(x-focusX)/150, a.levelUnlocked(entry.Info))
 	}
 	selected := -1
 	var info formats.LevelInfo
@@ -165,7 +160,7 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 				a.drawLevelDetails(target, l, info, selected >= 0, offset)
 			}}
 		case l.play:
-			ov := nativeOverride{}
+			ov := nativeOverride{text: nativeText("")} // the arrow glyph replaces the word
 			switch {
 			case !unlocked:
 				ov.brighten = -.5
@@ -186,9 +181,7 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 			}
 			return ov
 		case l.back:
-			if hoverAction == "back" {
-				return nativeOverride{brighten: .2}
-			}
+			return nativeOverride{skip: true} // the corner arrow replaces it
 		}
 		return nativeOverride{}
 	}
@@ -200,6 +193,91 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 		a.drawNativeTree(screen, root, nativeSlideOffset(root, progress), a.menuTime, override)
 	}
 	a.drawLevelOnlineButtons(screen, l, hoverAction)
+	a.drawLevelGlyphs(screen, l, hoverAction, unlocked)
+}
+
+// Port layout of the HD level select, from the iPad build's screens: the Back button is an arrow plate in the top-left
+// corner, Play shows a play triangle, and the card strip's band is thinner and sits behind the cards.
+var levelBackRect = [4]float64{5, 3, 50, 49}
+
+const (
+	levelCardY      = 100.0
+	levelBandHeight = 48.0
+)
+
+// drawArrowGlyph draws HUD_Arrow (it points left) centred on (cx, cy); mirror points it right.
+func (a *app) drawArrowGlyph(screen *ebiten.Image, cx, cy, w, h float64, mirror bool, brighten float32) {
+	texture, err := a.Texture(nativeTextureName("Textures/HUD_Arrow.tex"))
+	if err != nil {
+		return
+	}
+	bounds := texture.Bounds()
+	sx, sy := w/float64(bounds.Dx()), h/float64(bounds.Dy())
+	if mirror {
+		sx = -sx
+	}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(bounds.Dx())/2, -float64(bounds.Dy())/2)
+	options.GeoM.Scale(sx, sy)
+	options.GeoM.Translate(cx, cy)
+	if brighten != 0 {
+		options.ColorScale.Scale(1+brighten, 1+brighten, 1+brighten, 1)
+	}
+	a.drawImage(screen, texture, options)
+}
+
+// drawLevelGlyphs draws the corner Back plate with its arrow and the Play triangle.
+func (a *app) drawLevelGlyphs(screen *ebiten.Image, l *levelSelectLayout, hover string, unlocked bool) {
+	brighten := float32(0)
+	if hover == "back" {
+		brighten = .2
+	}
+	r := levelBackRect
+	a.drawNativeNinePatchRect(screen, creditsCleanTexture(l.play.Texture()), r[0], r[1], r[2]-r[0], r[3]-r[1], brighten)
+	a.drawArrowGlyph(screen, (r[0]+r[2])/2, (r[1]+r[3])/2, 26, 25, false, brighten)
+
+	progress := a.nativeSlide("levelselect", nativeAnimateInDuration(l.buttonsBox))
+	offset := nativeSlideOffset(l.buttonsBox, progress)
+	x0, y0, x1, y1 := nativeRect(l.play, l.buttonsBox)
+	glow := float32(0)
+	switch {
+	case !unlocked:
+		glow = -.5
+	case hover == "play":
+		glow = .2
+	}
+	a.drawArrowGlyph(screen, (x0+x1)/2+offset.X, (y0+y1)/2+offset.Y, 32, 30, true, glow)
+}
+
+// drawLevelCardNative draws one level card opaque, with a soft shadow behind it and a size that falls from the
+// selected card (about 1.13 of the 128x80 art) to its neighbours (about 0.81), as on the iPad.
+func (a *app) drawLevelCardNative(screen *ebiten.Image, item formats.LevelInfo, x, y, distance float64, unlocked bool) {
+	if item.PostcardImage == "" {
+		return
+	}
+	name := "ShopFront0/Textures/Shop/" + item.PostcardImage + "_SD"
+	texture, err := a.Texture(name)
+	if err != nil {
+		return
+	}
+	resolution := a.pack.TextureSourceScale(name)
+	cardRect := resolutionRect(image.Rect(0, 0, 128, 80), resolution)
+	if !cardRect.In(texture.Bounds()) {
+		return
+	}
+	scale := 1.13 - .32*math.Min(1, distance)
+	w, h := 128*scale, 80*scale
+	// Shadow: a few widening translucent layers, a little lower than the card.
+	for i := 6; i >= 1; i-- {
+		grow := float64(i) * 1.6
+		a.drawRect(screen, x-w/2-grow, y-h/2-grow+3, w+2*grow, h+2*grow, color.RGBA{0, 0, 0, 16})
+	}
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-64*resolution, -40*resolution)
+	options.GeoM.Scale(scale/resolution, scale/resolution)
+	options.GeoM.Translate(x, y)
+	a.drawImage(screen, texture.SubImage(cardRect).(*ebiten.Image), options)
+	a.drawCatalogLevelBadges(screen, item, x, y, w, h)
 }
 
 // drawLevelOnlineButtons draws HOST and JOIN as the panel's grey buttons (HUD_ButtonNinePatch, bold
@@ -247,7 +325,11 @@ func (a *app) drawLevelDetails(screen *ebiten.Image, l *levelSelectLayout, info 
 	rows := []struct {
 		label string
 		value string
-	}{{"Best Score", fmt.Sprintf("%d", a.highscores[info.ID])}}
+	}{
+		{"Best Score", fmt.Sprintf("%d", a.highscores[info.ID])},
+		{"Best Deaths", fmt.Sprintf("%d", a.levelBests[info.ID].Deaths)},
+		{"Best Kills", fmt.Sprintf("%d", a.levelBests[info.ID].Kills)},
+	}
 	for i, row := range rows {
 		cy := sepBottom + 10 + float64(i)*20
 		a.drawNativeSans(screen, row.label, x0+6+160, cy, 320, "CenterLeft", size, r, g, b, levelRowStyle)

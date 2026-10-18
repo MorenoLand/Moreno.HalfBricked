@@ -40,6 +40,7 @@ type achievementProgress struct {
 	shieldSerial                           int
 	shots, hits                            int32
 	nonPistol, died, banked                bool
+	deaths                                 int // deaths this play (the level select's Best Deaths)
 	shieldTimer                            float64
 	// waveAdvances is the native wave counter (1.2.5 frame +0x450f0): 0 at the level start, +1 per wave advance
 	// that has a next wave. It is not waveIndex+1, because survival waves loop through next_wave.

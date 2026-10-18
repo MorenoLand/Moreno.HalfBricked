@@ -130,6 +130,7 @@ type app struct {
 	creditsMargins                               map[string]int
 	native                                       nativeUIState // native_ui.go
 	highscores                                   map[string]int32
+	levelBests                                   map[string]levelBest // level_bests.go
 	coopPlayers                                  int
 	net                                          *netSession
 	pauseOnline                                  bool
@@ -5087,6 +5088,7 @@ func (p *playState) updatePlayerDeath() bool {
 		p.deathStarted = true
 		p.deathTimer = 2
 		p.achieve.died = true
+		p.achieve.deaths++
 		p.resetMultiplier()
 		if p.coopActive() {
 			if p.lives > 0 {
