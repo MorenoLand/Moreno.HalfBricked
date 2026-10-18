@@ -63,7 +63,9 @@ func (a *app) drawCoopPlayer(target *ebiten.Image, c *coopPlayer) {
 		}
 		a.barryTint = hurtTint(p.hurt, p.time, coopTint(c.index))
 		a.drawBarryShadow(target, screenX, screenY-24*zoom, bodyZoom)
+		p.spriteIndex = c.index
 		a.drawBarry(target, screenX, screenY, bodyZoom, frame, p.angle, p.flipX)
+		p.spriteIndex = 0
 		if p.flash > 0 {
 			a.drawBarryFlash(target, screenX, screenY, bodyZoom, p.angle, p.flipX)
 		}

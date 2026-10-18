@@ -24,6 +24,7 @@ type netPeer struct {
 	input    playerInput
 	lastSec  int
 	announce bool
+	dropped  bool // its player has been removed from the running game (the link closed)
 }
 
 type netHostResult struct {
@@ -366,7 +367,22 @@ func (a *app) netHostPoll() {
 		}
 		if peer.link.Closed() {
 			peer.input = playerInput{}
+			a.dropCoopPeer(peer)
 		}
+	}
+}
+
+// dropCoopPeer removes a guest whose link closed from the running co-op game: the player stops being a target and a
+// downed host no longer waits for an idle body, so the game ends when nobody is left to play.
+func (a *app) dropCoopPeer(peer *netPeer) {
+	if peer.dropped || a.play == nil || !a.play.coopActive() {
+		return
+	}
+	peer.dropped = true
+	if i := peer.index - 1; i >= 0 && i < len(a.play.coop.players) {
+		c := a.play.coop.players[i]
+		c.joined, c.dead, c.canReturn, c.gone = false, true, false, true
+		c.body.health = 0
 	}
 }
 

@@ -290,6 +290,7 @@ type playState struct {
 	pickupVoices                                           []string
 	secondaryShootCooldown                                 float64
 	paused                                                 bool
+	spriteIndex                                            int // the player whose body is being drawn (0 is player 1); odd players wear the AbeBarry sheet
 	shouldQuit                                             bool
 	weapon                                                 formats.Weapon
 	weapons                                                formats.WeaponCatalog
@@ -3352,6 +3353,13 @@ func barryCellRect(col, frame, numCols, numRows, texW, texH int) image.Rectangle
 // playerSpriteName is the body sheet set: the presidential levels dress Barry as
 // Abraham Lincoln (the "AbeBarry" sprite) when the cache has it.
 func (p *playState) playerSpriteName() string {
+	// 1.2.5 player init (0xf2064..0xf2074): an odd player index (players 2 and 4) always takes the "AbeBarry" sheet; an
+	// even one takes it only on the presidential levels (level flag 0x800).
+	if p.spriteIndex%2 == 1 {
+		if _, ok := p.sprites.Find("AbeBarry"); ok {
+			return "AbeBarry"
+		}
+	}
 	if p.levelInfo.WorldIndex == 6 || strings.HasPrefix(strings.ToLower(p.levelInfo.ID), "president") {
 		if _, ok := p.sprites.Find("AbeBarry"); ok {
 			return "AbeBarry"

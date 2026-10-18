@@ -87,6 +87,8 @@ type coopPlayer struct {
 	dead    bool
 	// canReturn is set at death when a shared life paid for a respawn.
 	canReturn bool
+	// gone marks a player removed from the game for good (an online guest whose connection closed): never rejoined.
+	gone bool
 	// spawnAge is the seconds since the player stepped out of their portal.
 	spawnAge float64
 }
@@ -305,6 +307,9 @@ func (p *playState) updateCoopPlayers(inputs []playerInput) {
 		var input playerInput
 		if c.index-1 < len(inputs) {
 			input = inputs[c.index-1]
+		}
+		if c.gone {
+			continue
 		}
 		if !c.joined {
 			if scriptActive || p.health <= 0 {
