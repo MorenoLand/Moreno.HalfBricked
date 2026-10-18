@@ -1,6 +1,8 @@
 package game
 
 import (
+	"math"
+	"image/color"
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
@@ -171,6 +173,15 @@ func (a *app) drawAchievementRows(screen *ebiten.Image, l *achievementsLayout, o
 			r, g, b := nativeTextColour(l.name, nativeOverride{})
 			a.drawNativeSans(target, label, tx+rowOffset.X+w-24, ty+rowOffset.Y+9, 48, "CenterRight", 8, r, g, b, nativeTextStyle{em: 1.25})
 		}
+	}
+	// Scrollbar (port addition: the screen data has none): a thin track at the list's right edge with a thumb that
+	// follows the first shown row.
+	if visible, total := l.visibleRows(), len(a.achievements); total > visible && visible > 0 {
+		trackX, trackY, trackH := x+width-5, y+3, height-6
+		a.drawRect(screen, trackX, trackY, 3, trackH, color.RGBA{20, 44, 20, 170})
+		thumb := math.Max(14, trackH*float64(visible)/float64(total))
+		top := trackY + (trackH-thumb)*float64(a.achievementOffset)/float64(total-visible)
+		a.drawRect(screen, trackX, top, 3, thumb, color.RGBA{100, 228, 100, 235})
 	}
 }
 
