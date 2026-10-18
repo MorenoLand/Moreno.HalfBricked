@@ -16,3 +16,6 @@ func NotifyReady() {
 		ready.Invoke()
 	}
 }
+
+// StartSelf is not available in the browser.
+func StartSelf(args []string) error { return nil }

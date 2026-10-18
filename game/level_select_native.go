@@ -330,6 +330,9 @@ func (a *app) drawLevelCardNative(screen *ebiten.Image, item formats.LevelInfo, 
 	options.GeoM.Translate(-64*resolution, -40*resolution)
 	options.GeoM.Scale(scale/resolution, scale/resolution)
 	options.GeoM.Translate(x, y)
+	if !unlocked {
+		options.ColorScale.Scale(.5, .5, .5, 1) // a locked card is shown darker (the padlock stays bright)
+	}
 	a.drawImage(screen, texture.SubImage(cardRect).(*ebiten.Image), options)
 	a.drawCatalogLevelBadges(screen, item, x, y, w, h)
 }

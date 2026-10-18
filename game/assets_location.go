@@ -17,8 +17,8 @@ import (
 //
 //  1. --assets was given: use it as before.
 //  2. A remembered APK that still exists: use it (the cache built from it is reused while its hash is unchanged).
-//  3. A capture run never asks (it must not block waiting on a dialog): it uses the default, which finds a cache
-//     already at bin/data-cache.
+//  3. A capture run never asks (it must not block waiting on a dialog): it uses a cache that is already prepared
+//     (content.FindCache: the "data" folder next to the program, then the developer checkout's bin/data-cache).
 //  4. Otherwise ask for the APK with the system file dialog, check it, remember it and use it. (A cache that is already
 //     on disk does not stop the question: the program only knows where the APK is once it has been told.)
 //
@@ -46,6 +46,9 @@ func resolveAssets(value string, explicit, choose, capture bool) (string, error)
 			return apk, nil
 		}
 		if capture {
+			if cache := content.FindCache(); cache != "" {
+				return cache, nil
+			}
 			return value, nil
 		}
 	}

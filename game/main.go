@@ -649,8 +649,11 @@ func (a *app) Update() error {
 		}
 	}
 	a.updateMenuZombieMotion(float32(1.0 / 60.0))
-	if uiKeyJustPressed(ebiten.KeyF2) {
-		a.debugPanelVisible = !a.debugPanelVisible
+	if uiKeyJustPressed(ebiten.KeyF2) && a.play == nil && a.capture == nil {
+		return switchAPK() // F2 chooses a different APK (launcher.go); not in the middle of a level
+	}
+	if uiKeyJustPressed(ebiten.KeyF3) {
+		a.debugPanelVisible = !a.debugPanelVisible // was F2; F2 now switches the APK
 	}
 	if a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
@@ -5849,7 +5852,7 @@ func Run() {
 			fatal(fmt.Errorf("the game crashed: %v\n\n%s", r, debug.Stack()))
 		}
 	}()
-	assets := flag.String("assets", "data", "generated cache, content directory, or APK")
+	assets := flag.String("assets", "", "the Age of Zombies APK, or a prepared cache or content directory (default: the APK you chose, prepared into a data folder next to the program)")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")
 	silent := flag.Bool("silent", false, "disable music and sound effects")
@@ -5880,11 +5883,6 @@ func Run() {
 			explicitAssets = true
 		}
 	})
-	if resolved, err := resolveAssets(*assets, explicitAssets, *chooseAPK, *captureDir != ""); err != nil {
-		fatal(err)
-	} else {
-		*assets = resolved
-	}
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
@@ -5904,37 +5902,62 @@ func Run() {
 	default:
 		fatal(fmt.Errorf("-wave-end must be all-dead or native, not %q", *waveEnd))
 	}
-	game, err := newApp(*assets, *debug, *mobile, *silent)
-	if err != nil {
-		fatal(err)
+	// What is done to the game once it exists (capture probes, a lit menu board).
+	setup := func(game *app) error {
+		var err error
+		game.capture, err = engine.NewCapture(*captureDir, *captureEvery)
+		if err != nil {
+			return err
+		}
+		game.captureLimit = *captureFrames
+		if *captureDir != "" {
+			game.profileWritable = false
+		}
+		game.captureAutoDialogue = *captureAutoDialogue
+		if *captureState != "" {
+			if err := game.setCaptureState(*captureState); err != nil {
+				return err
+			}
+			if game.debug {
+				game.debugPanelVisible = true
+			}
+		}
+		if *captureSelection >= 0 && *captureSelection < len(game.menuButtons()) {
+			game.menuSelection = *captureSelection
+			game.menuKeyNav, game.menuLit = true, true // show it lit, as if reached with the keyboard
+		}
+		return nil
 	}
-	game.capture, err = engine.NewCapture(*captureDir, *captureEvery)
-	if err != nil {
-		fatal(err)
+	// On the desktop the window opens first and shows the files being prepared (launcher.go). Capture probes and the
+	// browser build go straight to the game.
+	var runner ebiten.Game
+	var finish func()
+	if *captureDir == "" && *captureState == "" {
+		runner, finish = newLauncher(launchOptions{assets: *assets, explicit: explicitAssets, chooseAPK: *chooseAPK, debug: *debug, mobile: *mobile, silent: *silent}, setup)
 	}
-	game.captureLimit = *captureFrames
-	if *captureDir != "" {
-		game.profileWritable = false
-	}
-	game.captureAutoDialogue = *captureAutoDialogue
-	if *captureState != "" {
-		if err := game.setCaptureState(*captureState); err != nil {
+	if runner == nil {
+		resolved, err := resolveAssets(*assets, explicitAssets, *chooseAPK, *captureDir != "")
+		if err != nil {
 			fatal(err)
 		}
-		if game.debug {
-			game.debugPanelVisible = true
+		game, err := newApp(resolved, *debug, *mobile, *silent)
+		if err != nil {
+			fatal(err)
+		}
+		if err := setup(game); err != nil {
+			fatal(err)
+		}
+		runner = game
+		finish = func() {
+			if game.sound != nil {
+				game.sound.Close()
+			}
+			if err := game.savePlayerProfile(); err != nil {
+				log.Printf("profile: %v", err)
+			}
 		}
 	}
-	if *captureSelection >= 0 && *captureSelection < len(game.menuButtons()) {
-		game.menuSelection = *captureSelection
-		game.menuKeyNav, game.menuLit = true, true // show it lit, as if reached with the keyboard
-	}
-	defer game.sound.Close()
-	defer func() {
-		if err := game.savePlayerProfile(); err != nil {
-			log.Printf("profile: %v", err)
-		}
-	}()
+	defer finish()
 	windowWidth, windowHeight := 960, 540
 	if _, err := fmt.Sscanf(*captureWindow, "%dx%d", &windowWidth, &windowHeight); err != nil || windowWidth < 1 || windowHeight < 1 {
 		windowWidth, windowHeight = 960, 540
@@ -5946,7 +5969,7 @@ func Run() {
 		ebiten.SetWindowIcon(icons)
 	}
 	platform.NotifyReady() // the browser page hides its loading panel now
-	if err := ebiten.RunGame(game); err != nil && err != ebiten.Termination {
+	if err := ebiten.RunGame(runner); err != nil && err != ebiten.Termination {
 		fatal(err)
 	}
 }

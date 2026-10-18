@@ -4,6 +4,7 @@ package platform
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -50,3 +51,12 @@ func RememberAPK(apk string) error {
 
 // NotifyReady tells the host page the game is about to draw (browser only).
 func NotifyReady() {}
+
+// StartSelf starts this program again with the given arguments (the caller then ends the running one).
+func StartSelf(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return exec.Command(exe, args...).Start()
+}

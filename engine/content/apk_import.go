@@ -19,9 +19,12 @@ const importerVersion = "2-uiscreens"
 var ImportStarted, ImportFinished func()
 
 func prepareAPK(apkPath string) (string, error) {
-	return PrepareAPK(apkPath, filepath.Join("bin", "data-cache"))
+	return PrepareAPK(apkPath, DefaultCacheDir())
 }
 func PrepareAPK(apkPath, output string) (string, error) {
+	if err := checkCacheDirIsOurs(output); err != nil {
+		return "", err
+	}
 	marker := filepath.Join(output, ".apk-source.sha256")
 	hash, err := HashFile(apkPath)
 	if err != nil {
@@ -56,6 +59,21 @@ func PrepareAPK(apkPath, output string) (string, error) {
 		return "", err
 	}
 	return output, nil
+}
+
+// checkCacheDirIsOurs refuses to rebuild into a folder that is not a game cache: the import clears its output first, and
+// the default folder is simply named "data", which something else may already use.
+func checkCacheDirIsOurs(output string) error {
+	entries, err := os.ReadDir(output)
+	if err != nil || len(entries) == 0 {
+		return nil // missing or empty
+	}
+	for _, name := range []string{"pack.json", ".apk-source.sha256"} {
+		if _, err := os.Stat(filepath.Join(output, name)); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("the folder %q already exists and is not a HalfBricked game cache, so it is not overwritten; move or rename it", output)
 }
 
 func hasScriptLevelCache(root string) bool {

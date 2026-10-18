@@ -9,6 +9,9 @@ import (
 	"syscall/js"
 )
 
+// DefaultCacheDir in the browser is the in-memory cache folder.
+func DefaultCacheDir() string { return webCacheRoot }
+
 // webCacheRoot is where the browser build keeps the cache it builds from the player's own APK (web/memfs.js).
 const webCacheRoot = "/cache"
 
