@@ -135,6 +135,7 @@ type nativeOverride struct {
 	brighten float32                           // >0 multiplies the colours (focus / hover)
 	custom   func(*ebiten.Image, formats.Vec2) // drawn instead of the component and its children
 	texture  string                            // replacement texture path (as the screen spells it)
+	style    *nativeTextStyle                  // replacement text style (typeface weight, capitals, spacing)
 }
 
 func nativeText(s string) *string { return &s }
@@ -209,7 +210,14 @@ func (a *app) drawNativeComponentText(screen *ebiten.Image, node *formats.UIComp
 	if ov.brighten != 0 {
 		r, g, b = math.Min(255, r*float64(1+ov.brighten)), math.Min(255, g*float64(1+ov.brighten)), math.Min(255, b*float64(1+ov.brighten))
 	}
-	a.drawCreditsText(screen, text, x, y, width, node.String("alignment"), size, r, g, b)
+	style := nativeTextStyle{em: 1.25}
+	if node.Class == "ComponentButton" {
+		style.bold = true
+	}
+	if ov.style != nil {
+		style = *ov.style
+	}
+	a.drawNativeSans(screen, text, x, y, width, node.String("alignment"), size, r, g, b, style)
 }
 
 // drawNativeTexture draws a ComponentTexture: texture window, mirror, tint, pivot and rotation as above.
@@ -243,6 +251,13 @@ func (a *app) drawNativeTexture(screen *ebiten.Image, node *formats.UIComponent,
 		width = height * float64(rect.Dx()) / float64(rect.Dy())
 	case !hasHeight:
 		height = width * float64(rect.Dy()) / float64(rect.Dx())
+	}
+	if strings.HasSuffix(path, "HUD_GreenLine.tex") {
+		// The separator art is a 32x32 texture whose glow occupies a 14 pixel band: the original shows it as
+		// a thin rule as long as the window it uses (width times the texture window), about a third of the
+		// component's height (measured on the owner's reference captures of the Achievements, Statistics,
+		// Controls and level screens).
+		width, height = width*tw, height*nativeRuleThickness
 	}
 	flipX, flipY := node.TexCoordFlip()
 	sx, sy := width/float64(rect.Dx()), height/float64(rect.Dy())
@@ -280,14 +295,24 @@ func (a *app) drawNativeNinePatch(screen *ebiten.Image, node *formats.UIComponen
 	if path == "" {
 		return
 	}
-	name := nativeTextureName(path)
-	texture, err := a.Texture(name)
-	if err != nil {
-		return
-	}
 	width, okW := node.Width()
 	height, okH := node.Height()
 	if !okW || !okH {
+		return
+	}
+	x, y := node.Anchor()
+	x, y = x+offset.X, y+offset.Y
+	if node.OriginFromCenter() {
+		x, y = x-width/2, y-height/2
+	}
+	a.drawNativeNinePatchRect(screen, path, x, y, width, height, brighten)
+}
+
+// drawNativeNinePatchRect draws the window texture path over the logical rectangle (x, y, width, height).
+func (a *app) drawNativeNinePatchRect(screen *ebiten.Image, path string, x, y, width, height float64, brighten float32) {
+	name := nativeTextureName(path)
+	texture, err := a.Texture(name)
+	if err != nil {
 		return
 	}
 	resolution := a.pack.TextureSourceScale(name)
@@ -302,15 +327,16 @@ func (a *app) drawNativeNinePatch(screen *ebiten.Image, node *formats.UIComponen
 		margin = a.nativeNineMargin(name, texture)
 		a.creditsMargins[name] = margin
 	}
-	x, y := node.Anchor()
-	x, y = x+offset.X, y+offset.Y
-	if node.OriginFromCenter() {
-		x, y = x-width/2, y-height/2
-	}
 	bounds := texture.Bounds()
-	edge := math.Min(float64(margin)/resolution, math.Min(width, height)/2)
-	xs := [4]float64{x, x + edge, x + width - edge, x + width}
-	ys := [4]float64{y, y + edge, y + height - edge, y + height}
+	// The window art is shown at a fixed size on the device, square in pixels (the original's frame is
+	// the same number of pixels wide and high on its stretched 480x320 layout): the corner is the
+	// texture margin times a per-texture factor, and the vertical edge follows the horizontal scale.
+	scaleX, scaleY := a.renderScale()
+	edge := float64(margin) / resolution * nativeNineFactor(name)
+	edgeX := math.Min(edge, width/2)
+	edgeY := math.Min(edge*scaleX/scaleY, height/2)
+	xs := [4]float64{x, x + edgeX, x + width - edgeX, x + width}
+	ys := [4]float64{y, y + edgeY, y + height - edgeY, y + height}
 	us := [4]int{bounds.Min.X, bounds.Min.X + margin, bounds.Max.X - margin, bounds.Max.X}
 	vs := [4]int{bounds.Min.Y, bounds.Min.Y + margin, bounds.Max.Y - margin, bounds.Max.Y}
 	for row := 0; row < 3; row++ {
@@ -320,7 +346,7 @@ func (a *app) drawNativeNinePatch(screen *ebiten.Image, node *formats.UIComponen
 			if source.Empty() || targetWidth <= 0 || targetHeight <= 0 {
 				continue
 			}
-			options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+			options := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 			options.GeoM.Scale(targetWidth/float64(source.Dx()), targetHeight/float64(source.Dy()))
 			options.GeoM.Translate(xs[column], ys[row])
 			if brighten != 0 {
@@ -361,6 +387,9 @@ func (a *app) nativeNineMargin(name string, texture *ebiten.Image) int {
 		return creditsNineMargin(texture)
 	}
 	bounds := source.Bounds()
+	if fixed := nativeNineFixedMargin(name); fixed > 0 {
+		return fixed
+	}
 	margin := 1
 	for _, horizontal := range []bool{true, false} {
 		length := bounds.Dx()
@@ -388,6 +417,38 @@ func (a *app) nativeNineMargin(name string, texture *ebiten.Image) int {
 		margin = max(margin, start, length-1-end) // a lower shadow edge counts as much as the top one
 	}
 	return min(margin, bounds.Dx()/2-1)
+}
+
+// The headings of the front-end windows in the original: upper case, widely spaced, cyan.
+var (
+	nativeCyan         = [4]float64{4, 224, 255, 255}
+	nativeHeadingStyle = nativeTextStyle{spacing: .3, em: 1.15}
+)
+
+// nativeHeading is the override that writes a component's text as a window heading.
+func nativeHeading(c *formats.UIComponent) nativeOverride {
+	return nativeOverride{text: nativeText(strings.ToUpper(c.String("text"))), rgba: &nativeCyan, style: &nativeHeadingStyle}
+}
+
+// nativeRuleThickness is the visible share of a HUD_GreenLine component's height.
+const nativeRuleThickness = .33
+
+// nativeNineFixedMargin is the margin (texture pixels) of a window texture whose flat centre starts
+// after its rounded inner corner (NinePatchTest: the dark screen's corner curve ends at pixel 52 of 128).
+func nativeNineFixedMargin(name string) int {
+	if strings.HasSuffix(name, "NinePatchTest") {
+		return 52
+	}
+	return 0
+}
+
+// nativeNineFactor is how large a window texture's corners are drawn relative to its pixels: the
+// 128 px NinePatchTest frame (34 px thick) measures about 9.4 logical units in the original.
+func nativeNineFactor(name string) float64 {
+	if strings.HasSuffix(name, "NinePatchTest") {
+		return .275
+	}
+	return 1
 }
 
 // nativeTextureName maps a screen texture path to the pack's texture name: the shop art lives in

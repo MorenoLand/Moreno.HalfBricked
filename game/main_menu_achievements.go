@@ -90,23 +90,20 @@ func (a *app) hideUnavailableMenuZombies() {
 	}
 }
 
-// drawAchievementsLabel draws the "ACHIEVEMENTS" Button text on the group's Screen.
+// drawAchievementsLabel draws the "ACHIEVEMENTS" Button text on the group's Screen: letter-spaced
+// capitals in the Text component's green, fitted into its 79 x 23 units like the original's sign labels.
 func (a *app) drawAchievementsLabel(screen *ebiten.Image, layout *menuGroupLayout, motion menumotion.NativeMenuZombieMotion) {
 	const text = "ACHIEVEMENTS"
-	if a.font == nil || a.font.LineHeight == 0 {
-		return
-	}
-	width := a.fontTextWidth(text, 1)
-	if width <= 0 {
-		return
-	}
-	scale := achievementsLabelFit / width
-	w, h := achievementsLabelFit, float64(a.font.LineHeight)*scale
-	if a.menuAchLabel == nil || a.menuAchLabel.Bounds().Dx() != int(w)+2 || a.menuAchLabel.Bounds().Dy() != int(h)+2 {
-		a.menuAchLabel = ebiten.NewImage(int(w)+2, int(h)+2)
-		a.font.DrawScaledTinted(a.menuAchLabel, text, 1, 1, scale, scale, achievementsLabelGreen[0], achievementsLabelGreen[1], achievementsLabelGreen[2])
+	const supersample = 4 // the label is typeset at four times its size so it survives the group's scaling
+	w, h := achievementsLabelFit, 23.0
+	if a.menuAchLabel == nil {
+		a.menuAchLabel = ebiten.NewImage(int(w)*supersample, int(h)*supersample)
+		saveX, saveY := a.frontendScaleX, a.frontendScaleY
+		a.frontendScaleX, a.frontendScaleY = supersample, supersample
+		a.drawNativeSans(a.menuAchLabel, text, w/2, h/2, w, "", 14, 100, 228, 100, nativeTextStyle{bold: true, spacing: .08, em: 1})
+		a.frontendScaleX, a.frontendScaleY = saveX, saveY
 	}
 	bounds := a.menuAchLabel.Bounds()
-	label := menuGroupChild{x: layout.button.x, y: layout.button.y, w: float64(bounds.Dx()), h: float64(bounds.Dy())}
+	label := menuGroupChild{x: layout.button.x, y: layout.button.y, w: w, h: h}
 	a.drawImage(screen, a.menuAchLabel, menuGroupChildOptions(layout, motion, label, float64(bounds.Dx()), float64(bounds.Dy()), float64(bounds.Dx())/2, float64(bounds.Dy())/2, 1, 1))
 }

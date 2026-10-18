@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/formats"
@@ -19,6 +20,14 @@ import (
 //
 // The card strip (LevelSwipie) keeps the port's carousel: its swipe scale and page layout are code,
 // not data. LevelSelectScreen.txt (focus graph) is not wired: the arrow keys move the strip.
+// Typefaces of the info screen as the original draws them: the title and the best-score rows in
+// small capitals, the tagline in plain capitals.
+var (
+	levelTitleStyle    = nativeTextStyle{smallCaps: true, spacing: .04, em: 1.3}
+	levelSubtitleStyle = nativeTextStyle{em: 1}
+	levelRowStyle      = nativeTextStyle{smallCaps: true, spacing: .1, em: 1.25}
+)
+
 type levelSelectLayout struct {
 	band, bottomBox, buttonsBox, mode   *formats.UIComponent
 	title, subtitle, details, separator *formats.UIComponent
@@ -51,15 +60,44 @@ func (a *app) levelActionAtNative(l *levelSelectLayout, x, y int) string {
 		x0, y0, x1, y1 := nativeRect(c, l.buttonsBox)
 		return fx >= x0 && fx < x1 && fy >= y0 && fy < y1
 	}
+	host, join := a.levelOnlineRects(l)
+	inRect := func(r [4]float64) bool { return fx >= r[0] && fx < r[2] && fy >= r[1] && fy < r[3] }
 	switch {
 	case in(l.play):
 		return "play"
 	case in(l.back):
 		return "back"
+	case inRect(host):
+		return "host"
+	case inRect(join):
+		return "join"
 	case a.currentCoopLaunch().available && in(l.coop):
 		return "coop"
 	}
 	return ""
+}
+
+// levelOnlineRects are the port's HOST and JOIN buttons (x0, y0, x1, y1) in the free space of the
+// ButtonsBox between Play and Back: two half-width buttons side by side, above the native Co-op
+// slot when local co-op is available (the box's decor sits above and right of that space).
+func (a *app) levelOnlineRects(l *levelSelectLayout) (host, join [4]float64) {
+	px0, _, px1, py1 := nativeRect(l.play, l.buttonsBox)
+	_, cy0, _, _ := nativeRect(l.coop, l.buttonsBox)
+	_, by0, _, _ := nativeRect(l.back, l.buttonsBox)
+	gap := 3.0
+	width := (px1 - px0 - gap) / 2
+	top, bottom := py1+10, cy0-3 // below the Play row's lights, above Co-op
+	if !a.currentCoopLaunch().available {
+		bottom = by0 - 6
+		top = py1 + 14
+	}
+	if bottom-top > 26 {
+		top = (top+bottom)/2 - 13
+		bottom = top + 26
+	}
+	host = [4]float64{px0, top, px0 + width, bottom}
+	join = [4]float64{px1 - width, top, px1, bottom}
+	return
 }
 
 // levelTabAtNative is 0 for the STORY half of ModeToggle, 1 for SURVIVAL, -1 elsewhere.
@@ -116,12 +154,12 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 			if selected < 0 {
 				return nativeOverride{skip: true}
 			}
-			return nativeOverride{text: nativeText(levelTextFlat(info.DisplayName, " "))}
+			return nativeOverride{text: nativeText(levelTextFlat(info.DisplayName, " ")), style: &levelTitleStyle}
 		case l.subtitle:
 			if selected < 0 {
 				return nativeOverride{skip: true}
 			}
-			return nativeOverride{text: nativeText(levelTextFlat(strings.ReplaceAll(info.Description, "\\n", " "), " "))}
+			return nativeOverride{text: nativeText(levelTextFlat(strings.ReplaceAll(info.Description, "\\n", " "), " ")), style: &levelSubtitleStyle}
 		case l.details:
 			return nativeOverride{custom: func(target *ebiten.Image, offset formats.Vec2) {
 				a.drawLevelDetails(target, l, info, selected >= 0, offset)
@@ -161,8 +199,34 @@ func (a *app) drawLevelSelectNative(screen *ebiten.Image, l *levelSelectLayout) 
 		progress := a.nativeSlide("levelselect", nativeAnimateInDuration(root))
 		a.drawNativeTree(screen, root, nativeSlideOffset(root, progress), a.menuTime, override)
 	}
-	a.text(screen, "H  HOST ONLINE", 6, 3, .3)
-	a.text(screen, "J  JOIN ONLINE", 6, 15, .3)
+	a.drawLevelOnlineButtons(screen, l, hoverAction)
+}
+
+// drawLevelOnlineButtons draws HOST and JOIN as the panel's grey buttons (HUD_ButtonNinePatch, bold
+// black label, brightened under the pointer like Play and Back).
+func (a *app) drawLevelOnlineButtons(screen *ebiten.Image, l *levelSelectLayout, hover string) {
+	progress := a.nativeSlide("levelselect", nativeAnimateInDuration(l.buttonsBox))
+	offset := nativeSlideOffset(l.buttonsBox, progress)
+	host, join := a.levelOnlineRects(l)
+	path := creditsCleanTexture(l.play.Texture())
+	size, _ := l.play.FontSize()
+	for _, button := range []struct {
+		rect  [4]float64
+		label string
+		name  string
+	}{{host, "Host", "host"}, {join, "Join", "join"}} {
+		brighten := float32(0)
+		if hover == button.name {
+			brighten = .2
+		}
+		x0, y0, w, h := button.rect[0]+offset.X, button.rect[1]+offset.Y, button.rect[2]-button.rect[0], button.rect[3]-button.rect[1]
+		a.drawNativeNinePatchRect(screen, path, x0, y0, w, h, brighten)
+		r, g, b := nativeTextColour(l.play, nativeOverride{})
+		if brighten != 0 {
+			r, g, b = math.Min(255, r*1.2), math.Min(255, g*1.2), math.Min(255, b*1.2)
+		}
+		a.drawNativeSans(screen, button.label, x0+w/2, y0+h/2, w-4, "", size*.6, r, g, b, nativeTextStyle{bold: true, em: 1.25})
+	}
 }
 
 // drawLevelDetails draws the LevelDetails separator and its rows. The shipped template holds
@@ -186,7 +250,7 @@ func (a *app) drawLevelDetails(screen *ebiten.Image, l *levelSelectLayout, info 
 	}{{"Best Score", fmt.Sprintf("%d", a.highscores[info.ID])}}
 	for i, row := range rows {
 		cy := sepBottom + 10 + float64(i)*20
-		a.drawCreditsText(screen, row.label, x0+6+160, cy, 320, "CenterLeft", size, r, g, b)
-		a.drawCreditsText(screen, row.value, x1-6-50, cy, 100, "CenterRight", size, r, g, b)
+		a.drawNativeSans(screen, row.label, x0+6+160, cy, 320, "CenterLeft", size, r, g, b, levelRowStyle)
+		a.drawNativeSans(screen, row.value, x1-6-50, cy, 100, "CenterRight", size, r, g, b, levelRowStyle)
 	}
 }

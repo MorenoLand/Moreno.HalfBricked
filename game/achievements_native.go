@@ -114,7 +114,9 @@ func (a *app) drawAchievementsNative(screen *ebiten.Image, l *achievementsLayout
 		case c == l.list:
 			return nativeOverride{custom: func(target *ebiten.Image, offset formats.Vec2) { a.drawAchievementRows(target, l, offset) }}
 		case c.Name == "ProgressText":
-			return nativeOverride{text: nativeText(achievementProgressCount(unlocked, len(a.achievements)))}
+			return nativeOverride{text: nativeText(achievementProgressCount(unlocked, len(a.achievements))), style: &nativeTextStyle{spacing: .12, em: 1.75}}
+		case c.Name == "ComponentText" && c.Class == "ComponentText":
+			return nativeHeading(c)
 		case c == l.back && backHover:
 			return nativeOverride{brighten: .25}
 		}
@@ -131,7 +133,7 @@ func (a *app) drawAchievementRows(screen *ebiten.Image, l *achievementsLayout, o
 	width, _ := l.list.Width()
 	height, _ := l.list.Height()
 	target := a.nativeClip(screen, x, y, x+width, y+height)
-	if target == nil || a.font == nil || a.font.LineHeight == 0 {
+	if target == nil {
 		return
 	}
 	pitch := l.rowPitch()
@@ -148,12 +150,13 @@ func (a *app) drawAchievementRows(screen *ebiten.Image, l *achievementsLayout, o
 				return nativeOverride{text: nativeText(entry.Name)}
 			case l.description:
 				return nativeOverride{custom: func(t *ebiten.Image, o formats.Vec2) {
-					lines := strings.Split(a.wrapDialogue(entry.DisplayDescription(isUnlocked), descWidth, descSize/float64(a.font.LineHeight)), "\n")
+					style := nativeTextStyle{em: 1.25}
+					lines := a.nativeWrap(entry.DisplayDescription(isUnlocked), descSize*style.em, descWidth, style)
 					cx, cy := l.description.Anchor()
 					cx, cy = cx+o.X, cy+o.Y // the box is centred: its two lines fill its height
 					r, g, b := nativeTextColour(l.description, nativeOverride{})
 					for i, line := range lines[:min(len(lines), 2)] {
-						a.drawCreditsText(t, line, cx, cy-descHeight/2+descHeight/2*(float64(i)+.5), descWidth, "CenterLeft", descSize, r, g, b)
+						a.drawNativeSans(t, line, cx, cy-descHeight/2+descHeight/2*(float64(i)+.5), descWidth, "CenterLeft", descSize, r, g, b, style)
 					}
 				}}
 			case l.icon:
@@ -166,7 +169,7 @@ func (a *app) drawAchievementRows(screen *ebiten.Image, l *achievementsLayout, o
 			tx, ty := l.template.Anchor()
 			w, _ := l.template.Width()
 			r, g, b := nativeTextColour(l.name, nativeOverride{})
-			a.drawCreditsText(target, label, tx+rowOffset.X+w-24, ty+rowOffset.Y+9, 48, "CenterRight", 8, r, g, b)
+			a.drawNativeSans(target, label, tx+rowOffset.X+w-24, ty+rowOffset.Y+9, 48, "CenterRight", 8, r, g, b, nativeTextStyle{em: 1.25})
 		}
 	}
 }

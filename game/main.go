@@ -1021,6 +1021,14 @@ func (a *app) updateLevelSelectPointer(x, y int, pressed, down bool) (bool, erro
 		} else if action == "coop" {
 			a.playSound("audio/sound/sfx/menu_select.ogg", .8)
 			return true, a.activateCoop()
+		} else if action == "host" {
+			a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+			a.startNetHost()
+			return true, nil
+		} else if action == "join" {
+			a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+			a.startNetJoin()
+			return true, nil
 		}
 		if mode := a.levelTabAt(x, y); mode >= 0 {
 			a.mode = mode
@@ -1347,12 +1355,15 @@ func (a *app) setCaptureState(state string) error {
 		}
 		a.play.closeScript()
 		a.play = nil
-	case "play-paused", "play-options", "play-stats":
+	case "play-paused", "play-paused-muted", "play-options", "play-stats":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 0, 0
 		if err := a.openPlay(); err != nil {
 			return err
 		}
 		a.play.paused = true
+		if strings.EqualFold(normalized, "play-paused-muted") {
+			a.options.sound, a.options.music = false, false // the fixture's crossed-out icons
+		}
 		if strings.EqualFold(normalized, "play-options") {
 			return a.activatePauseMenu(1)
 		}
@@ -2265,8 +2276,9 @@ var mainMenuButtons = []menuButton{
 	{zombie: 2, labelRow: 0, action: 0, cx: 210, cy: 194, width: 128, height: 64, angle: 0.40},
 	{zombie: 3, labelRow: 6, action: 4, cx: 76, cy: 274, width: 128, height: 64, angle: -0.16},
 	{zombie: 2, labelRow: 14, action: 3, cx: 377, cy: 264, width: 128, height: 64, angle: 0.02},
-	// 1.2.5 only (main_menu_achievements.go): the native Achievements group at its authored position and scale.
-	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 243, cy: 84.75, width: 128, height: 64},
+	// 1.2.5 only (main_menu_achievements.go): the native Achievements group (authored scale), placed above the
+	// logo gap and right of the Options sign as in the original menu (Screen centre about (190, 75)).
+	{zombie: menuAchievementsZombie, labelRow: -1, action: menuActionAchievements, cx: 186, cy: 75, width: 128, height: 64},
 }
 
 func (a *app) drawMainMenuBanner(screen *ebiten.Image) {
@@ -5736,6 +5748,7 @@ func Run() {
 	captureEvery := flag.Int("capture-every", 0, "capture every N frames; zero captures only state changes")
 	captureState := flag.String("capture-state", "", "start a capture probe at loading, title, main-menu, main-menu-hit, level-select, play, play-ready, play-fire, play-fire-left, play-combat, play-zombie-death, play-zombie-shadow, play-tutorial-images, play-pickup, play-pickup-collected, play-portal, play-zombie-portal, play-level:<manifest-id>, or debug-viewer")
 	captureFrames := flag.Int("capture-frames", 0, "terminate after this many rendered frames when capturing")
+	captureWindow := flag.String("capture-window", "", "window size WxH for capture probes (default 960x540)")
 	captureAutoDialogue := flag.Bool("capture-auto-dialogue", false, "advance scripted dialogue during capture probes")
 	captureSelection := flag.Int("capture-selection", -1, "select a main-menu item by index for a bounded capture probe")
 	slowMotion := flag.Bool("slow-motion", true, "slow motion on the kill that ends a wave (port addition)")
@@ -5798,7 +5811,11 @@ func Run() {
 			log.Printf("profile: %v", err)
 		}
 	}()
-	ebiten.SetWindowSize(960, 540)
+	windowWidth, windowHeight := 960, 540
+	if _, err := fmt.Sscanf(*captureWindow, "%dx%d", &windowWidth, &windowHeight); err != nil || windowWidth < 1 || windowHeight < 1 {
+		windowWidth, windowHeight = 960, 540
+	}
+	ebiten.SetWindowSize(windowWidth, windowHeight)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("HalfBricked")
 	if icons := loadAppIcons(); len(icons) > 0 {

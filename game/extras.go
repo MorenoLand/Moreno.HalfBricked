@@ -79,6 +79,15 @@ func extraButtonRect() (x0, y0, x1, y1 float64) { return 318, 280, 418, 304 }
 
 func (a *app) drawExtraButton(screen *ebiten.Image) {
 	x0, y0, x1, _ := a.optionsExtraRect()
+	if l := a.optionsLayout(); l != nil {
+		// beside the native layout the link is a grey panel button with a bold black label
+		if path := creditsCleanTexture(l.backButton.Texture()); path != "" {
+			_, y0, _, y1 := a.optionsExtraRect()
+			a.drawNativeNinePatchRect(screen, path, x0, y0, x1-x0, y1-y0, 0)
+			a.drawNativeSans(screen, "Extra", (x0+x1)/2, (y0+y1)/2, x1-x0-6, "", 10, 0, 0, 0, nativeTextStyle{bold: true, em: 1.15})
+			return
+		}
+	}
 	label := "EXTRA"
 	scale := .42
 	a.text(screen, label, (x0+x1)/2-a.fontTextWidth(label, scale)/2, y0+2, scale)

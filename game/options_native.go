@@ -27,7 +27,11 @@ type optionsLayout struct {
 	defaultButton, backButton *formats.UIComponent
 	size                      *formats.UIComponent
 	overscan                  *formats.UIComponent
+	heading                   *formats.UIComponent
 }
+
+// optionsChoiceStyle is the small-capitals face of the Normal / Invert / Fixed ... labels.
+var optionsChoiceStyle = nativeTextStyle{smallCaps: true, spacing: .03, em: 1.4}
 
 var optionsLabelNames = []struct {
 	name   string
@@ -57,6 +61,7 @@ func (a *app) optionsLayout() *optionsLayout {
 	}
 	l.leftStick, l.rightStick = find(0, "LeftStick"), find(0, "RightStick")
 	l.overscan = find(0, "OverscanWindow")
+	l.heading = find(0, "HeadingText")
 	for _, label := range optionsLabelNames {
 		c := find(0, label.name)
 		if c == nil {
@@ -149,6 +154,8 @@ func (a *app) drawOptionsNative(screen *ebiten.Image, menu *optionsMenu, l *opti
 		switch c {
 		case l.overscan:
 			return nativeOverride{skip: true}
+		case l.heading:
+			return nativeHeading(c)
 		case l.leftStick:
 			return nativeOverride{texture: leftTexture}
 		case l.rightStick:
@@ -178,10 +185,11 @@ func (a *app) drawOptionsNative(screen *ebiten.Image, menu *optionsMenu, l *opti
 			ov.brighten = .25
 		}
 		if action >= optionsNormal && action <= optionsRightFloating && c.Texture() == "" {
+			ov.style = &optionsChoiceStyle
 			if menu.controls.selected(action) {
-				ov.rgba = &[4]float64{100, 228, 100, 255}
+				ov.rgba = &[4]float64{0, 255, 0, 255} // the chosen label: bright green, the other dark green
 			} else {
-				ov.rgba = &[4]float64{127, 127, 127, 255}
+				ov.rgba = &[4]float64{6, 124, 0, 255}
 			}
 		}
 		return ov

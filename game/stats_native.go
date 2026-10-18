@@ -25,6 +25,12 @@ const (
 	statsPageHeight  = 29.0 // SwipiePageTemplate height
 )
 
+// statsRowStyle is the typeface of the statistics rows.
+var (
+	statsRowStyle    = nativeTextStyle{em: 1.2}
+	statsHeaderStyle = nativeTextStyle{em: 1.7}
+)
+
 type statsLayout struct {
 	screen, backBox, list, back *formats.UIComponent
 	left, right                 *formats.UIComponent
@@ -86,13 +92,15 @@ func (a *app) drawStatsNative(screen *ebiten.Image, l *statsLayout) {
 			return nativeOverride{custom: func(target *ebiten.Image, offset formats.Vec2) { a.drawStatsRows(target, l, menu, offset) }}
 		case c == l.back && backHover:
 			return nativeOverride{brighten: .25}
+		case c.Name == "ComponentText" && c.Class == "ComponentText":
+			return nativeHeading(c)
 		}
 		return nativeOverride{}
 	}
 	a.drawNativeTree(screen, l.screen, screenOffset, a.menuTime, override)
 	a.drawNativeTree(screen, l.backBox, backOffset, a.menuTime, override)
 	ax0, ay0, _, _ := statsAchievementsRect()
-	a.text(screen, "ACHIEVEMENTS", ax0+8, ay0+8, .4)
+	a.drawNativeSans(screen, "ACHIEVEMENTS", ax0+8+50, ay0+13, 100, "CenterLeft", 9, 255, 255, 255, nativeTextStyle{spacing: .08, em: 1.25})
 }
 
 // statsRowTop is the window-relative top of the page of row k after age seconds.
@@ -133,10 +141,14 @@ func (a *app) drawStatsRows(screen *ebiten.Image, l *statsLayout, menu *statsMen
 		if record.Kind >= 1 && record.Kind <= 3 {
 			r, g, b = 0, 255, 0 // the model tints its numeric rows pure green
 		}
+		style := statsRowStyle
+		if record.Kind == 0 {
+			r, g, b, style = 16, 173, 0, statsHeaderStyle // section headings: the original's dark green, larger
+		}
 		leftX, leftY := l.left.Anchor()
-		a.drawCreditsText(target, record.Label, x+(leftX-listX)+leftWidth/2, y+top+(leftY-listY)+statsPageHeight/2, leftWidth, "CenterLeft", leftSize, r, g, b)
+		a.drawNativeSans(target, record.Label, x+(leftX-listX)+leftWidth/2, y+top+(leftY-listY)+statsPageHeight/2, leftWidth, "CenterLeft", leftSize, r, g, b, style)
 		if record.Kind >= 1 && record.Kind <= 3 {
-			a.drawCreditsText(target, menu.valueText(record), x+(rightX-listX), y+top+(rightY-listY), rightWidth, "CenterRight", rightSize, r, g, b)
+			a.drawNativeSans(target, menu.valueText(record), x+(rightX-listX), y+top+(rightY-listY), rightWidth, "CenterRight", rightSize, r, g, b, statsRowStyle)
 		}
 	}
 }
