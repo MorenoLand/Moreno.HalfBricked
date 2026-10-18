@@ -41,13 +41,13 @@ func (a *app) uiController(screen string) *focusgraph.Graph {
 // mainMenuNodes maps MainScreen.txt button aliases to the port's main-menu
 // actions (mainMenuButtons[i].action). Aliases with no port button (Achievements,
 // MoreGames, News, Privacy, Credits) are absent: focus does not move onto them.
-var mainMenuNodes = map[string]int{"PlayButton": 0, "OptionsButton": 2, "StatsButton": 3, "QuitButton": 4, "AchievementsButton": menuActionAchievements}
+var mainMenuNodes = map[string]int{"PlayButton": 0, "OptionsButton": 2, "StatsButton": 3, "QuitButton": 4, "AchievementsButton": menuActionAchievements, "MoreGamesButton": menuActionLanguages}
 
 // mainMenuNavigate returns the main-menu button index reached from index in dir
 // along MainScreen.txt's graph, or -1 when the native graph has no present
 // target (or the controller file is missing).
 func (a *app) mainMenuNavigate(index int, dir string) int {
-	target := mainMenuTarget(a.uiController("MainScreen"), index, dir)
+	target := mainMenuTargetIn(a.menuButtons(), a.uiController("MainScreen"), index, dir)
 	if target >= 0 && !a.mainMenuButtonAvailable(target) {
 		return -1 // a group the loaded pack does not have
 	}
@@ -55,14 +55,18 @@ func (a *app) mainMenuNavigate(index int, dir string) int {
 }
 
 func mainMenuTarget(controller *focusgraph.Graph, index int, dir string) int {
-	if index < 0 || index >= len(mainMenuButtons) {
+	return mainMenuTargetIn(mainMenuButtons, controller, index, dir)
+}
+
+func mainMenuTargetIn(buttons []menuButton, controller *focusgraph.Graph, index int, dir string) int {
+	if index < 0 || index >= len(buttons) {
 		return -1
 	}
 	if controller == nil {
 		return -1
 	}
 	for name, action := range mainMenuNodes {
-		if action != mainMenuButtons[index].action {
+		if action != buttons[index].action {
 			continue
 		}
 		target, ok := controller.Neighbour(name, dir)
@@ -73,7 +77,7 @@ func mainMenuTarget(controller *focusgraph.Graph, index int, dir string) int {
 		if !present {
 			return -1
 		}
-		for i, button := range mainMenuButtons {
+		for i, button := range buttons {
 			if button.action == want {
 				return i
 			}
@@ -92,7 +96,7 @@ func (a *app) mainMenuBackIndex() int {
 	if !ok {
 		return -1
 	}
-	for i, button := range mainMenuButtons {
+	for i, button := range a.menuButtons() {
 		if button.action == want {
 			return i
 		}

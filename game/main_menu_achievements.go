@@ -36,11 +36,11 @@ func creditsIconRect() image.Rectangle {
 // mainMenuButtonAvailable reports whether a main menu button exists in the loaded pack: the Achievements group needs
 // MainScreen.uiscreen (the 1.2.5 menu); the older cache has none.
 func (a *app) mainMenuButtonAvailable(index int) bool {
-	if index < 0 || index >= len(mainMenuButtons) {
+	if index < 0 || index >= len(a.menuButtons()) {
 		return false
 	}
-	if mainMenuButtons[index].action == menuActionAchievements {
-		return a.mainMenuLayout(menuActionAchievements) != nil
+	if action := a.menuButtons()[index].action; action == menuActionAchievements || action == menuActionLanguages {
+		return a.mainMenuLayout(action) != nil
 	}
 	return true
 }

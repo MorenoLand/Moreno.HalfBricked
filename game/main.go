@@ -156,6 +156,9 @@ type app struct {
 	frontendScaleY                               float64
 	menuClick                                    *menuClickState
 	menuAchLabel                                 *ebiten.Image // cached "ACHIEVEMENTS" label of the main menu group (main_menu_achievements.go)
+	menuLangLabel                                *ebiten.Image // cached "LANGUAGES" label (main_menu_hd.go)
+	languages                                    *languagesState // languages.go
+	language                                     string          // chosen language (profile key "language")
 	debugPanelVisible                            bool
 	debugPanelDragging                           bool
 	debugPanelX, debugPanelY                     float64
@@ -651,6 +654,9 @@ func (a *app) Update() error {
 	if a.page == creditsPage && a.credits != nil {
 		return a.updateCredits()
 	}
+	if a.page == languagesPage && a.languages != nil {
+		return a.updateLanguages()
+	}
 	if a.page == 6 {
 		return a.updateAchievements()
 	}
@@ -844,6 +850,8 @@ func (a *app) Update() error {
 			// MainScreen.txt marks QuitButton IsBack: the back key presses Quit.
 			a.menuSelection = index
 			return a.beginMenuClick(index)
+		} else if a.quitCornerAvailable() {
+			a.askNativeQuit(platform.QuitGame) // HD: Quit is the corner button, the back key asks the same question
 		}
 		return nil
 	}
@@ -914,6 +922,11 @@ func (a *app) Update() error {
 			if a.creditsButtonAvailable() && image.Pt(px, py).In(creditsIconRect()) {
 				a.mainMenuClickSound()
 				return a.openCreditsFromMenu()
+			}
+			if a.quitCornerAvailable() && image.Pt(px, py).In(quitCornerRect()) {
+				a.playSound("audio/sound/sfx/menu_select.ogg", .8)
+				a.askNativeQuit(platform.QuitGame)
+				return nil
 			}
 		} else {
 			index := (py - 96) / 28
@@ -1078,7 +1091,7 @@ func (a *app) updateLevelSelectPointer(x, y int, pressed, down bool) (bool, erro
 	return true, nil
 }
 func (a *app) mainMenuHit(x, y int) int {
-	for i, button := range mainMenuButtons {
+	for i, button := range a.menuButtons() {
 		dx, dy := float64(x)-button.cx, float64(y)-button.cy
 		if i < len(a.menuZombies) {
 			motion := a.menuZombies[i]
@@ -1151,6 +1164,8 @@ func (a *app) Draw(screen *ebiten.Image) {
 		}
 	} else if a.page == creditsPage && a.credits != nil {
 		a.drawCredits(screen)
+	} else if a.page == languagesPage && a.languages != nil {
+		a.drawLanguages(screen)
 	} else if a.page == 6 {
 		a.drawAchievements(screen)
 	} else if a.page == 3 || a.page == 4 || a.page == extraPage {
@@ -1312,6 +1327,9 @@ func (a *app) setCaptureState(state string) error {
 	case "stats":
 		a.titleScreen, a.page = false, 4
 		a.statsScreen = newStatsMenuBuild(&a.statistics, a.statsWestern())
+	case "languages":
+		a.titleScreen = false
+		a.openLanguages()
 	case "lobby-join":
 		a.titleScreen = false
 		a.startNetJoin()
@@ -1842,7 +1860,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 	if a.page == 0 {
 		a.drawBackdrop(screen)
 		a.drawMainMenuBanner(screen)
-		for index, button := range mainMenuButtons {
+		for index, button := range a.menuButtons() {
 			if index >= len(a.menuZombies) || !a.menuZombies[index].Visible {
 				continue
 			}
@@ -1853,6 +1871,7 @@ func (a *app) drawMenu(screen *ebiten.Image) {
 			a.drawMarqueeButton(screen, button, a.menuZombies[index], index == a.menuSelection)
 		}
 		a.drawCreditsButton(screen)
+		a.drawQuitCorner(screen)
 	} else if a.page == 3 {
 		a.drawBackdrop(screen)
 		a.drawOptionsMenu(screen, &a.options)
@@ -1884,11 +1903,11 @@ func (a *app) mainMenuClickSound() {
 }
 
 func (a *app) beginMenuClick(index int) error {
-	if index < 0 || index >= len(mainMenuButtons) {
+	if index < 0 || index >= len(a.menuButtons()) {
 		return nil
 	}
-	button := mainMenuButtons[index]
-	if len(a.menuZombies) != len(mainMenuButtons) {
+	button := a.menuButtons()[index]
+	if len(a.menuZombies) != len(a.menuButtons()) {
 		a.updateMenuZombieMotion(0)
 	}
 	for i := range a.menuZombies {
@@ -2367,8 +2386,8 @@ func (a *app) updateMenuZombieMotion(dt float32) {
 	}
 	if !a.menuMotionActive {
 		rng := weapons.NewNativeRNG()
-		a.menuZombies = make([]menumotion.NativeMenuZombieMotion, len(mainMenuButtons))
-		for i, button := range mainMenuButtons {
+		a.menuZombies = make([]menumotion.NativeMenuZombieMotion, len(a.menuButtons()))
+		for i, button := range a.menuButtons() {
 			scale := float32(.75)
 			if i == 1 {
 				scale = 1
@@ -2615,7 +2634,7 @@ func (a *app) cursor() int {
 }
 func (a *app) move(delta int) {
 	if a.page == 0 {
-		index := clamp(a.menuSelection+delta, 0, len(mainMenuButtons)-1)
+		index := clamp(a.menuSelection+delta, 0, len(a.menuButtons())-1)
 		if !a.mainMenuButtonAvailable(index) {
 			return
 		}
@@ -2633,7 +2652,7 @@ func (a *app) move(delta int) {
 	a.level = clamp(a.level+delta, 0, len(a.filteredLevels())-1)
 }
 func (a *app) mainMenuIndex() int {
-	return clamp(a.menuSelection, 0, len(mainMenuButtons)-1)
+	return clamp(a.menuSelection, 0, len(a.menuButtons())-1)
 }
 func (a *app) setCursor(index int) {
 	if a.page == 2 {
@@ -2649,7 +2668,7 @@ func (a *app) setCursor(index int) {
 func (a *app) activate() error {
 	switch a.page {
 	case 0:
-		switch mainMenuButtons[a.menuSelection].action {
+		switch a.menuButtons()[a.menuSelection].action {
 		case 0:
 			a.mode, a.page = 0, 2
 			a.restoreLastPlayed()
@@ -2664,6 +2683,8 @@ func (a *app) activate() error {
 			a.askNativeQuit(platform.QuitGame)
 		case menuActionAchievements:
 			a.openAchievements() // back returns to this page (achievementsBackPage)
+		case menuActionLanguages:
+			a.openLanguages()
 		}
 	case 2:
 		levels := a.filteredLevels()
@@ -5853,7 +5874,7 @@ func Run() {
 			game.debugPanelVisible = true
 		}
 	}
-	if *captureSelection >= 0 && *captureSelection < len(mainMenuButtons) {
+	if *captureSelection >= 0 && *captureSelection < len(game.menuButtons()) {
 		game.menuSelection = *captureSelection
 	}
 	defer game.sound.Close()
