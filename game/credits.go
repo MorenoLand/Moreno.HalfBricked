@@ -656,6 +656,10 @@ func (a *app) drawCredits(screen *ebiten.Image) {
 	if c == nil || ui == nil {
 		return
 	}
+	if a.titleNative() {
+		a.drawCreditsNative(screen, ui, c)
+		return
+	}
 	for _, rootName := range []string{"Screen", "BackBox", "NowPlaying"} {
 		root := ui.Find(rootName)
 		if root == nil {
@@ -711,4 +715,62 @@ func (a *app) drawCreditsComponentText(screen *ebiten.Image, child *formats.UICo
 	x, y := child.Anchor()
 	width, _ := child.Width()
 	a.drawCreditsText(screen, text, x+offset.X, y+offset.Y, width, child.String("alignment"), size, r, g, b)
+}
+
+// drawCreditsNative draws the credits through the same native screen path as the statistics screen (measured window
+// frame, heading style, rule thickness, clipped list), so the window matches the other 1.2.5 menus.
+func (a *app) drawCreditsNative(screen *ebiten.Image, ui *formats.UIScreen, c *creditsState) {
+	for _, rootName := range []string{"Screen", "BackBox", "NowPlaying"} {
+		root := ui.Find(rootName)
+		if root == nil {
+			continue
+		}
+		offset := a.creditsRootOffset(ui, c, rootName)
+		override := func(node *formats.UIComponent) nativeOverride {
+			switch {
+			case node.Name == "ComponentCredits":
+				return nativeOverride{custom: func(target *ebiten.Image, off formats.Vec2) { a.drawCreditsRollNative(target, ui, node, off, c) }}
+			case rootName == "Screen" && node.Name == "ComponentText" && node.Class == "ComponentText":
+				return nativeHeading(node)
+			case node.Name == "NowPlayingTrackName":
+				return nativeOverride{text: nativeText(creditsTrackNames[c.track])}
+			case node.Name == "VersionString":
+				return nativeOverride{text: nativeText(creditsVersionLine())}
+			}
+			return nativeOverride{}
+		}
+		a.drawNativeTree(screen, root, offset, c.age, override)
+	}
+}
+
+// drawCreditsRollNative is the looping credits list, clipped to the ComponentCredits rectangle.
+func (a *app) drawCreditsRollNative(screen *ebiten.Image, ui *formats.UIScreen, component *formats.UIComponent, offset formats.Vec2, c *creditsState) {
+	x, y := component.Anchor()
+	x, y = x+offset.X, y+offset.Y
+	width, _ := component.Width()
+	height, _ := component.Height()
+	target := a.nativeClip(screen, x, y, x+width, y+height)
+	if target == nil {
+		return
+	}
+	size := 18.0
+	if template := ui.FindIn("SwipiePageTemplate", "ComponentText"); template != nil {
+		if value, ok := template.FontSize(); ok {
+			size = value
+		}
+	}
+	length := creditsRollLength()
+	for index, line := range creditsRoll {
+		r, g, b, visible := creditsStyleColour(line.Style)
+		if !visible || strings.TrimSpace(line.Text) == "" {
+			continue
+		}
+		for _, shift := range []float64{0, length} {
+			top := y + float64(index)*creditsPageHeight - c.scroll + shift
+			if top+creditsPageHeight < y || top > y+height {
+				continue
+			}
+			a.drawNativeSans(target, line.Text, x+width/2, top+creditsPageHeight/2, width, "", size, r, g, b, statsRowStyle)
+		}
+	}
 }

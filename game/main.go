@@ -1311,6 +1311,9 @@ func (a *app) setCaptureState(state string) error {
 	case "stats":
 		a.titleScreen, a.page = false, 4
 		a.statsScreen = newStatsMenuBuild(&a.statistics, a.statsWestern())
+	case "credits":
+		a.titleScreen = false
+		return a.openCreditsFromMenu()
 	case "achievements", "achievements-untracked":
 		a.titleScreen = false
 		a.openAchievements()
