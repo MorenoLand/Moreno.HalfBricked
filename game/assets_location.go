@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/content"
 	"github.com/MorenoLand/Moreno.HalfBricked/game/platform"
@@ -19,9 +17,10 @@ import (
 //
 //  1. --assets was given: use it as before.
 //  2. A remembered APK that still exists: use it (the cache built from it is reused while its hash is unchanged).
-//  3. A ready cache already at bin/data-cache (a developer checkout): use it, no question.
-//  4. A capture run never asks (it must not block waiting on a dialog).
-//  5. Otherwise ask for the APK with the system file dialog, check it, remember it and use it.
+//  3. A capture run never asks (it must not block waiting on a dialog): it uses the default, which finds a cache
+//     already at bin/data-cache.
+//  4. Otherwise ask for the APK with the system file dialog, check it, remember it and use it. (A cache that is already
+//     on disk does not stop the question: the program only knows where the APK is once it has been told.)
 //
 // --choose-apk forces the question again.
 func resolveAssets(value string, explicit, choose, capture bool) (string, error) {
@@ -46,7 +45,7 @@ func resolveAssets(value string, explicit, choose, capture bool) (string, error)
 		if apk := platform.RememberedAPK(); apk != "" {
 			return apk, nil
 		}
-		if _, err := os.Stat(filepath.Join("bin", "data-cache", "pack.json")); err == nil || capture {
+		if capture {
 			return value, nil
 		}
 	}

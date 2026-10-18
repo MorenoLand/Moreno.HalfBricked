@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"runtime/debug"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/achievements"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/carousel"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/menumotion"
@@ -5843,6 +5844,11 @@ func loadAppIcons() []image.Image {
 // Run starts the game.
 func Run() {
 	setupLogging()
+	defer func() {
+		if r := recover(); r != nil {
+			fatal(fmt.Errorf("the game crashed: %v\n\n%s", r, debug.Stack()))
+		}
+	}()
 	assets := flag.String("assets", "data", "generated cache, content directory, or APK")
 	debug := flag.Bool("debug", false, "enable the diagnostic map viewer and its controls")
 	mobile := flag.Bool("mobile", false, "enable the mobile virtual-stick HUD")

@@ -5,6 +5,7 @@ package platform
 import (
 	"fmt"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -44,7 +45,8 @@ const (
 // PickAPK shows the system "open file" dialog for an .apk. It returns "" when the player cancels.
 func PickAPK() (string, error) {
 	buffer := make([]uint16, 32768)
-	filter, _ := syscall.UTF16FromString("Android package (*.apk)\x00*.apk\x00All files (*.*)\x00*.*\x00")
+	// The filter is a list of NUL-separated pairs ending in a double NUL, which UTF16FromString refuses to encode.
+	filter := utf16.Encode([]rune("Android package (*.apk)\x00*.apk\x00All files (*.*)\x00*.*\x00\x00"))
 	title, _ := syscall.UTF16PtrFromString("Select the Age of Zombies APK")
 	ofn := openFileName{
 		filter:      &filter[0],
