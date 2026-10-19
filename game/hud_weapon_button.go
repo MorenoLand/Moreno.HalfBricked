@@ -42,6 +42,17 @@ func primaryWeaponIconCell(weapon formats.Weapon) (int, bool) {
 // above the left stick, mirroring the grenade button above the right one. The
 // pistol has unlimited rounds, so nothing is shown for it.
 func (a *app) drawPrimaryWeaponButton(screen *ebiten.Image) {
+	if a.play != nil {
+		if flight := a.play.pendingFlight(false); flight != nil {
+			// The new weapon is still flying to the button: it keeps showing what it showed before the pickup.
+			if flight.prevShown {
+				x, y, width, height := a.play.primaryButtonGeometry()
+				a.drawControlButtonPlate(screen, x, y, width, height)
+				a.drawButtonReadout(screen, x, y, "Common0/Textures/Weapons_Primary_SD", flight.prevCell, flight.prevCount)
+			}
+			return
+		}
+	}
 	if a.play == nil || a.play.weapon.Ammo <= 0 || a.play.weapon.GunType == "PISTOL" {
 		return
 	}

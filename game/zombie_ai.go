@@ -276,6 +276,9 @@ func (p *playState) separateZombie(index int, dt float64) {
 	}
 	scripted := p.scriptRuntime != nil && !p.scriptRuntime.Done()
 	pushX, pushY = p.separatePlayers(z, dt, pushX, pushY, scripted)
+	if sx, sy, ok := p.sentryCollisionDisplacement(z.x, z.y, zombieBodyReachFactor*z.size.X); ok { // sentry_solid.go
+		pushX, pushY = pushX+sx, pushY+sy
+	}
 	if pushX != 0 || pushY != 0 {
 		z.x += pushX
 		z.y += pushY

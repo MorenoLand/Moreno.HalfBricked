@@ -168,13 +168,8 @@ func (a *app) drawLobbyButton(screen *ebiten.Image, button lobbyButton, hover bo
 		amount := a.hoverAmount("btn"+button.action+button.label, hover && button.enabled)
 		centerX := float64(button.rect.Min.X) + float64(button.rect.Dx())/2
 		top := float64(button.rect.Min.Y) + (float64(button.rect.Dy())-size)/2
+		// Hover is the gold lifted text alone, no underline.
 		a.drawHoverText(screen, button.label, centerX, top, scale, amount)
-		// Hover is the gold text plus a thin line that grows under it. (A flat translucent rectangle here read as a
-		// white box over the button.)
-		if amount > .02 {
-			width := a.fontTextWidth(button.label, scale) * amount
-			a.drawRect(screen, centerX-width/2, top+size+1, width, 1, color.RGBA{uint8(200 * amount), uint8(160 * amount), uint8(50 * amount), uint8(200 * amount)})
-		}
 	}
 }
 

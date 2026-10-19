@@ -14,9 +14,9 @@ func (p *playState) primaryButtonGeometry() (x, y, width, height float64) {
 	return
 }
 
-// primaryButtonGap places the weapon button directly on top of the left stick
-// ring (a gap of 16 leaves the plate touching the ring without covering it).
-const primaryButtonGap = 16.0
+// primaryButtonGap places the weapon button above the left stick ring by the same gap the grenade button has above the
+// right one (secondaryButtonGeometry), so the two plates sit at the same height over their sticks.
+const primaryButtonGap = 20.0
 
 func (p *playState) controlButtonGeometry(baseX, baseY, defaultX, defaultY, gap float64) (x, y, width, height float64) {
 	width, height = p.secondaryControlSize.X, p.secondaryControlSize.Y
@@ -47,11 +47,20 @@ func (p *playState) padRingHalfHeight() float64 {
 		height = logicalHeight
 	}
 	sx, sy := width/logicalWidth, height/logicalHeight
-	radius := float64(p.controls.PadRadius)
 	if p.mobileControls {
-		return radius * sx / sy
+		return float64(p.controls.PadRadius) * sx / sy
 	}
-	return radius / sy
+	return float64(p.controls.PadRadius) * p.padScale(height) / sy
+}
+
+// padScale is how much larger than its option value the desktop stick ring and nub are drawn: they grow gently with the
+// window height (a fixed size looked tiny in a large window, a ring that grows with the width looked huge). 1 up to a
+// 720 px high window, at most 2.5. Touch devices keep the option value in logical units (they scale with the window).
+func (p *playState) padScale(height float64) float64 {
+	if p.mobileControls || height <= 0 {
+		return 1
+	}
+	return math.Max(1, math.Min(2.5, height/720))
 }
 
 // leftStickAnchor mirrors rightStickAnchor for the left (move) stick.
@@ -94,7 +103,7 @@ func (p *playState) configureControls(controls optionsControls, width, height in
 	if previous == 0 {
 		previous = nativeOptionsDefaults(false).PadRadius
 	}
-	inset := math.Max(float64(previous), 100)
+	inset := math.Max(float64(previous)*p.padScale(float64(height))*1.15, 100) // keeps the whole ring on screen
 	leftX, rightX := inset*logicalWidth/float64(width), (float64(width)-inset)*logicalWidth/float64(width)
 	y := (float64(height) - inset) * logicalHeight / float64(height)
 	if controls.Normal {

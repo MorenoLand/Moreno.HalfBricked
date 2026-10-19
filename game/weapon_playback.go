@@ -41,6 +41,9 @@ func (a *app) stopWeaponPlayback() {
 }
 func (a *app) playWeaponSound(symbol string) {
 	if a.silent || !a.options.sound || a.sound == nil {
+		if !a.silent && a.sound != nil && weapons.NativeWeaponSoundLoopSamples(symbol) < 0 {
+			a.forwardSoundToGuests(a.scriptSoundPath(symbol), .8) // muted host: the guests still hear the shot
+		}
 		return
 	}
 	point := weapons.NativeWeaponSoundLoopSamples(symbol)

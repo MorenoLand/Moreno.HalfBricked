@@ -2,7 +2,9 @@ package game
 
 import (
 	"math"
+	"strings"
 
+	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
@@ -90,4 +92,62 @@ func (a *app) drawMysteryMark(screen *ebiten.Image, entity *scriptEntity, x, y, 
 	width := a.fontTextWidth("?", scale)
 	a.text(screen, "?", x-width/2*zoom, y-50*0.375*zoom-16*zoom, scale*zoom)
 	return true
+}
+
+// specialCrateBadge is the sheet and cell of the weapon a special crate (sentry, bazooka, cow pat) holds. PORT ADDITION
+// (-mystery-mark): the crate art only has a "?", so a small icon of the weapon is drawn on it, and on its off-screen marker.
+func specialCrateBadge(name string) (sheet string, cell int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "p_sentry", "p_bazooka", "p_cow_pat":
+		if binding, found := weapons.PickupParityBinding(name); found && binding.Secondary {
+			return "Common0/Textures/Weapons_Secondary_SD", binding.Cell, true
+		}
+	}
+	return "", 0, false
+}
+
+// drawSpecialCrateBadge draws the badge in the lower right of the crate drawn with its centre at (x, y) (the pickup box
+// anchor, see drawPickupBox).
+func (a *app) drawSpecialCrateBadge(screen *ebiten.Image, entity *scriptEntity, x, y, zoom float64) {
+	if !portMysteryMark || entity.mystery {
+		return
+	}
+	sheetName, cell, ok := specialCrateBadge(entity.texture)
+	if !ok {
+		return
+	}
+	sheet, err := a.Texture(sheetName)
+	if err != nil {
+		return
+	}
+	const cells = 8
+	rect := sheet.Bounds()
+	rect.Min.X, rect.Max.X = rect.Min.X+rect.Dx()*cell/cells, rect.Min.X+rect.Dx()*(cell+1)/cells
+	icon := sheet.SubImage(rect).(*ebiten.Image)
+	size := pickupDrawSize(entity.texture)
+	side := size * .32 * zoom
+	options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
+	options.GeoM.Translate(-float64(icon.Bounds().Dx())/2, -float64(icon.Bounds().Dy())/2)
+	options.GeoM.Scale(side/float64(icon.Bounds().Dx()), side/float64(icon.Bounds().Dy()))
+	options.GeoM.Translate(x+size*.2*zoom, y-size*.375*zoom+size*.22*zoom)
+	a.drawImage(screen, icon, options)
+}
+
+// pickupBinding is weapons.PickupParityBinding plus, as a PORT ADDITION (-mystery-mark), the four sentry variant crates
+// the 1.2.5 survival pools hold (p_sentryUzi, p_sentryShotgun, p_sentryFlamer, p_sentryBazooka): the native table has no
+// icon cell for them, so they were plain crates. They show the sentry icon.
+type pickupIconBinding struct {
+	Cell      int
+	Secondary bool
+}
+
+func pickupBinding(name string) (pickupIconBinding, bool) {
+	if portMysteryMark {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "p_sentryuzi", "p_sentryshotgun", "p_sentryflamer", "p_sentrybazooka":
+			name = "p_sentry"
+		}
+	}
+	binding, ok := weapons.PickupParityBinding(name)
+	return pickupIconBinding{Cell: binding.Cell, Secondary: binding.Secondary}, ok
 }

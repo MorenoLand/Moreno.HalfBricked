@@ -416,6 +416,7 @@ func (a *app) netHostSend() {
 	// the names are not sent as well.
 	snap.Sfx = nil
 	snap.Played = n.played
+	snap.Say = a.currentSay()
 	n.played = nil
 	n.sfx = nil
 	raw := netwire.Encode(netwire.Msg{T: "snap", Snap: snap})
@@ -483,16 +484,37 @@ func (a *app) updateNetGuest() error {
 		a.setMenuMusic()
 		return nil
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && a.confirm == nil {
 		n.menuOpen, n.menuRow = !n.menuOpen, 0 // Esc opens a menu (net_guest_menu.go); leaving is a choice in it
 	}
-	if n.menuOpen {
-		if leave := a.updateGuestMenu(); leave {
-			a.leaveNet("left the game")
-			a.play = nil
-			a.setMenuMusic()
-			return nil
+	if n.menuOpen && a.confirm == nil {
+		if err := a.updateGuestMenu(); err != nil {
+			return err
 		}
+	}
+	if done, err := a.guestReceive(); done || err != nil {
+		return err
+	}
+	in, hit := a.guestInput()
+	if n.menuOpen {
+		in, hit = playerInput{}, false // the menu is up: no shooting through it
+	}
+	a.guestSend(in, hit)
+	p.updateCamera()
+	p.updateProgressOpacity(1.0 / 60.0)
+	p.updateBossMeter()
+	p.banner.advance(1.0 / 60.0)
+	return nil
+}
+
+// guestReceive applies what the host sent. done is true when the game or the link ended and the caller must stop.
+func (a *app) guestReceive() (done bool, err error) {
+	n, p := a.net, a.play
+	if n.link.Closed() {
+		a.leaveNet("host left")
+		a.play = nil
+		a.setMenuMusic()
+		return true, nil
 	}
 	// Only the newest snapshot of the ones that arrived together is worth decoding: a late frame used to decode every
 	// queued snapshot in turn, which made the next frame later still.
@@ -525,21 +547,23 @@ func (a *app) updateNetGuest() error {
 				a.resultsScreen = newResultsMenu(resultsDataFromWire(msg.Res))
 				a.page = 5
 				a.stopWeaponPlayback()
-				return nil
+				return true, nil
 			}
 		case "start":
-			return a.startNetGuestGame(msg)
+			return true, a.startNetGuestGame(msg)
 		case "end":
 			a.leaveNet("host ended the game")
 			a.play = nil
 			a.setMenuMusic()
-			return nil
+			return true, nil
 		}
 	}
-	in, hit := a.guestInput()
-	if n.menuOpen {
-		in, hit = playerInput{}, false // the menu is up: no shooting through it
-	}
+	return false, nil
+}
+
+// guestSend ships the guest's controls: when they change, and at least every few frames so the host never acts on stale ones.
+func (a *app) guestSend(in playerInput, hit bool) {
+	n := a.net
 	if hit {
 		n.secSent++
 	}
@@ -550,11 +574,6 @@ func (a *app) updateNetGuest() error {
 		n.link.Send(false, netwire.Encode(netwire.Msg{T: "in", In: &wire}))
 		n.lastInput, n.lastSent = wire, 0
 	}
-	p.updateCamera()
-	p.updateProgressOpacity(1.0 / 60.0)
-	p.updateBossMeter()
-	p.banner.advance(1.0 / 60.0)
-	return nil
 }
 
 // netHostResults tells the guests once when the host's results screen opens.

@@ -391,7 +391,9 @@ func (p *playState) updateCoopPlayer(c *coopPlayer, input playerInput, scriptAct
 		if input.aiming() {
 			p.angle, p.flipX = barryDirection(input.aimX, input.aimY)
 			if p.fireGateOpen() {
-				p.fire(input.aimX, input.aimY)
+				if p.fire(input.aimX, input.aimY) && p.shotSound != "" {
+					p.coopShots = append(p.coopShots, p.shotSound) // played by playCoopShots (the host hears and forwards them)
+				}
 			}
 		} else if p.moving {
 			p.angle, p.flipX = barryDirection(dx, dy)

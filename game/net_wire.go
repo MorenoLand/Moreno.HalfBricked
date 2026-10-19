@@ -21,6 +21,7 @@ func (p *playState) wireBody(b bodyState, joined, dead bool) netwire.Player {
 // snapshot captures everything a guest needs to draw this frame.
 func (p *playState) snapshot(seq uint32) *netwire.Snapshot {
 	s := &netwire.Snapshot{Seq: seq, Time: p.time, Score: p.score, Lives: p.lives, Multiplier: p.multiplier, WaveIndex: p.waveIndex, WaveLive: p.wavesStarted, Kills: p.levelKills, ZombieSum: p.levelZombieTotal, Finished: p.wavesFinished, Sfx: append([]string(nil), p.sfxQueue...)}
+	s.Paused = p.paused
 	s.Players = append(s.Players, p.wireBody(p.body(), true, p.health <= 0))
 	if p.coopActive() {
 		for _, c := range p.coop.players {
@@ -60,8 +61,13 @@ func (p *playState) snapshot(seq uint32) *netwire.Snapshot {
 		s.Bullets = append(s.Bullets, wb)
 	}
 	for id, e := range p.scriptEntities {
-		if e != nil && e.kind == "pickup" {
+		if e == nil {
+			continue
+		}
+		if e.kind == "pickup" {
 			s.Pickups = append(s.Pickups, netwire.Pickup{ID: id, X: round(e.x), Y: round(e.y), Texture: e.texture, Lift: round(e.lift)})
+		} else if e.kind == "sprite" && e.texture != "" { // script-created characters; script zombies travel as zombies
+			s.Actors = append(s.Actors, netwire.Actor{ID: id, X: round(e.x), Y: round(e.y), Rot: e.rotation, ScaleX: e.scaleX, ScaleY: e.scaleY, Alpha: e.alpha, Texture: e.texture, FlipX: e.flipX, FlipY: e.flipY, Sized: e.sized, RotSet: e.rotationSet, Screen: e.screen, Feet: e.feet, Angle: e.angle, Anim: e.animation, Frame: e.frame})
 		}
 	}
 	for _, b := range p.thrown {
@@ -134,6 +140,8 @@ func (p *playState) bodyFromWire(w netwire.Player, previous bodyState) bodyState
 
 // applySnapshot overwrites the guest's mirror of the host's world.
 func (p *playState) applySnapshot(s *netwire.Snapshot) {
+	p.hostPaused = s.Paused
+	p.guestSay = s.Say
 	p.time, p.score, p.lives, p.multiplier = s.Time, s.Score, s.Lives, s.Multiplier
 	p.applyComboWire(s.Combo, s.HudFlash, s.HudColor)
 	p.waveIndex, p.levelKills, p.levelZombieTotal, p.wavesFinished = s.WaveIndex, s.Kills, s.ZombieSum, s.Finished
@@ -180,6 +188,9 @@ func (p *playState) applySnapshot(s *netwire.Snapshot) {
 	p.scriptEntities = map[int]*scriptEntity{}
 	for _, e := range s.Pickups {
 		p.scriptEntities[e.ID] = &scriptEntity{id: e.ID, kind: "pickup", texture: e.Texture, x: e.X, y: e.Y, scaleX: 1, scaleY: 1, alpha: 1, lift: e.Lift}
+	}
+	for _, e := range s.Actors {
+		p.scriptEntities[e.ID] = &scriptEntity{id: e.ID, kind: "sprite", entityType: e.Texture, texture: e.Texture, x: e.X, y: e.Y, rotation: e.Rot, scaleX: e.ScaleX, scaleY: e.ScaleY, alpha: e.Alpha, flipX: e.FlipX, flipY: e.FlipY, sized: e.Sized, rotationSet: e.RotSet, screen: e.Screen, feet: e.Feet, angle: e.Angle, animation: e.Anim, frame: e.Frame}
 	}
 	p.mines = p.mines[:0]
 	for _, m := range s.Mines {

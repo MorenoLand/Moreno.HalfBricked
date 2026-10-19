@@ -97,6 +97,12 @@ func muzzleColumn(dx, dy float64) int {
 	return column
 }
 
+// PORT ADDITION (not in the original binary), switchable with -hand-swap=false. Facing straight down (column 0) the gun
+// art is mirrored when the aim is left of Barry, which moves it into the other hand, but the native tables have one
+// entry for that column, so shots, flames and the saw blade stayed on the old side. With this on their x offset is
+// mirrored with the art.
+var portHandSwap = true
+
 // gunDirection is the 0..15 direction index of a drawn body (+0x34).
 func gunDirection(angle int, flipX bool) int {
 	if angle < 0 {
@@ -137,6 +143,9 @@ func (a *app) drawGunFlare(screen *ebiten.Image, x, y, scale float64, angle int,
 			return
 		}
 		offset := weapons.GunFlareOffsets[dir]
+		if portHandSwap && flipX && angle == 0 {
+			offset[0] = -offset[0] // the gun art is mirrored into the other hand: so is the blade (see portHandSwap)
+		}
 		bob := weapons.GunBobOffsets[int(p.time/gunBobPeriod)&3]
 		a.drawFlareQuad(screen, sawBladeTexture, x+float64(offset[0])*scale, y+(float64(offset[1]+bob)-weapons.GunFlareAnchorY)*scale, scale, 0, weapons.BuzzsawFlareLeftHalf(p.gun.Spin))
 	case "DUALPISTOL":

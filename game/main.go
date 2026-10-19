@@ -16,6 +16,7 @@ import (
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/perfmark"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/stats"
 	"github.com/MorenoLand/Moreno.HalfBricked/engine/weapons"
+	"github.com/MorenoLand/Moreno.HalfBricked/game/netwire"
 	"image"
 	"image/color"
 	"image/draw"
@@ -395,6 +396,11 @@ type playState struct {
 	slowMoLeft, slowMoTotal, slowMoAccum                   float64     // slowmo.go: slow motion on the kill that ends a wave
 	slowInterp                                             bool
 	lifePopups                                             []lifePopup
+	itemFlights                                            []itemFlight // pickup_flight.go
+	guestSay                                               *netwire.Say // online guest: the host's dialogue line
+	hostPaused                                             bool         // online guest: the host has the game paused
+	coopShots                                              []string     // shot sounds of the other players this frame (coop_sound.go)
+	coopShotAt                                             map[string]float64
 	// scriptMoveFlag / scriptShootFlag are the native +0x509ed / +0x509ec override bytes: the last value a script
 	// stored (zero from the start). They gate move and aim input while a script runs, and an exit script starts
 	// with whatever the entry script left in them.
@@ -552,6 +558,9 @@ func (a *app) menuPaths() []string {
 	return append(sounds, paths...)
 }
 func (a *app) playSound(path string, volume float64) {
+	if a != nil && !a.silent && !a.options.sound && a.sound != nil {
+		a.forwardSoundToGuests(path, volume) // a muted host still passes the sound on: each player's sound setting is their own
+	}
 	if a == nil || a.silent || !a.options.sound || a.sound == nil {
 		return
 	}
@@ -661,6 +670,15 @@ func (a *app) Update() error {
 	}
 	if a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
+	}
+	if a.netHosting() && a.play != nil && a.play.paused && !a.net.lobby {
+		a.netHostSend() // a paused host keeps the guests informed (the snapshot says Paused)
+	}
+	if a.netGuest() && a.play != nil && !a.net.lobby && a.page != 2 && a.page != 5 {
+		if done, err := a.guestReceive(); done || err != nil { // the guest's own pages (options, stats...) leave the link running
+			return err
+		}
+		a.guestSend(playerInput{}, false)
 	}
 	if a.native.closeKey != "" {
 		return a.stepMenuClose() // a screen is sliding out: no input until it is gone
@@ -828,6 +846,11 @@ func (a *app) Update() error {
 			a.play.entryControlsRestored = a.play.enterAfterScript()
 		}
 		a.play.spinEndFinished = a.weaponPlayback.player == nil || !a.weaponPlayback.player.IsPlaying()
+		if !a.play.paused && a.play.world != nil {
+			// Animated props (smoke, fires) run off the 60 Hz update clock; advancing this in drawPlay made them play
+			// faster the higher the frame rate was.
+			a.play.world.AnimationTime += 1.0 / 60.0 * a.play.slowMoScale()
+		}
 		inputs := a.gatherPlayerInputs()
 		a.play.input = inputs[0]
 		if a.play.Update(x, y, ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft), inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft), a.mobile) {
@@ -837,6 +860,7 @@ func (a *app) Update() error {
 		}
 		if !a.play.paused {
 			a.play.updateCoopPlayers(inputs[1:])
+			a.playCoopShots()
 		}
 		if a.netHosting() {
 			a.netHostSend()
@@ -1784,6 +1808,19 @@ func (a *app) setCaptureState(state string) error {
 		a.play.hudVisible = true
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x + 64, Y: a.play.y})
+		return nil
+	case "play-pickup-special":
+		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
+		if err := a.openPlay(); err != nil {
+			return err
+		}
+		a.play.closeScript()
+		a.play.dialogueIndex = len(a.play.dialogue)
+		a.play.hudVisible = true
+		a.play.waveIndex = len(a.play.world.Level.Waves)
+		for index, name := range []string{"p_sentry", "p_bazooka", "p_cow_pat", "p_sentryUzi", "p_grenade"} {
+			a.play.spawnPickup(name, formats.Vec2{X: a.play.x - 160 + float64(index)*80, Y: a.play.y + 70})
+		}
 		return nil
 	case "play-pickup-collected":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
@@ -2847,9 +2884,6 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 		a.play.world.CameraX -= a.play.shakeOffX
 		a.play.world.CameraY -= a.play.shakeOffY
 	}()
-	if !a.play.paused {
-		a.play.world.AnimationTime += 1.0 / 60.0 * a.play.slowMoScale()
-	}
 	screenX := (a.play.x-a.play.world.CameraX)*a.play.world.Zoom + a.play.world.ViewportX
 	screenY := (a.play.y-a.play.world.CameraY)*a.play.world.Zoom + a.play.world.ViewportY
 	frame := int(a.play.time*8) % 4
@@ -2920,6 +2954,8 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	}
 	if a.netGuest() && a.net.menuOpen {
 		a.drawGuestMenu(screen)
+	} else if a.netGuest() && a.play.hostPaused {
+		a.drawHostPausedNotice(screen)
 	}
 	a.drawSandbox(screen)
 	a.drawDebugPanel(screen)
@@ -3001,6 +3037,7 @@ func (a *app) drawGameHUD(screen *ebiten.Image) {
 	livesText := fmt.Sprintf("x%d", max(a.play.lives, 0))
 	a.text(screen, livesText, 410, 20, 22.0/32.0)
 	a.drawLifePopups(screen)
+	a.drawItemFlights(screen)
 	a.drawShieldHUD(screen)
 	if a.play.coopHUDActive() {
 		a.drawCoopHUD(screen)
@@ -3049,10 +3086,41 @@ func (a *app) drawMultiplier(screen *ebiten.Image, x, y float64, multiplier int)
 }
 
 func (a *app) drawDialogue(screen *ebiten.Image) {
-	if a.play == nil || a.play.dialogueIndex >= len(a.play.dialogue) {
+	if a.play == nil {
+		return
+	}
+	if a.netGuest() {
+		// The guest runs no script: it shows the line the host sent (netwire.Say); the host alone skips lines.
+		if say := a.play.guestSay; say != nil {
+			a.drawDialogueLine(screen, say.T, say.C)
+		}
+		return
+	}
+	if a.play.dialogueIndex >= len(a.play.dialogue) {
 		return
 	}
 	line := a.play.dialogue[a.play.dialogueIndex]
+	cameo := ""
+	if line.cameo >= 0 {
+		cameo = a.dialogueCameo(line.cameo)
+	}
+	a.drawDialogueLine(screen, line.text, cameo)
+}
+
+// currentSay is the dialogue line on screen as the wire carries it, nil when there is none.
+func (a *app) currentSay() *netwire.Say {
+	if a.play == nil || a.play.dialogueIndex >= len(a.play.dialogue) {
+		return nil
+	}
+	line := a.play.dialogue[a.play.dialogueIndex]
+	say := &netwire.Say{T: line.text}
+	if line.cameo >= 0 {
+		say.C = a.dialogueCameo(line.cameo)
+	}
+	return say
+}
+
+func (a *app) drawDialogueLine(screen *ebiten.Image, text, cameo string) {
 	panelWidth, panelHeight := logicalWidth-2, logicalHeight*19/100
 	panelX, panelBottom := (logicalWidth-panelWidth)/2, logicalHeight-5
 	panelTop := panelBottom - panelHeight
@@ -3061,25 +3129,23 @@ func (a *app) drawDialogue(screen *ebiten.Image) {
 		drawNineSlice(a, screen, texture, image.Rect(0, 0, 64, 64), target)
 	}
 	cameoResolved := false
-	if line.cameo >= 0 {
-		if cameo := a.dialogueCameo(line.cameo); cameo != "" {
-			if texture, err := a.Texture(cameo); err == nil {
-				resolution := a.pack.TextureSourceScale(cameo)
-				scale := .55 / resolution
-				if resolution > 1 {
-					textX, _ := dialogueTextLayout(panelX, panelWidth, true)
-					scale = math.Min(scale, math.Min((textX-28)/float64(texture.Bounds().Dx()), float64(panelBottom-panelTop-15)/float64(texture.Bounds().Dy())))
-				}
-				options := &ebiten.DrawImageOptions{}
-				options.GeoM.Scale(scale, scale)
-				options.GeoM.Translate(28, float64(panelTop+15))
-				a.drawImage(screen, texture, options)
-				cameoResolved = true
+	if cameo != "" {
+		if texture, err := a.Texture(cameo); err == nil {
+			resolution := a.pack.TextureSourceScale(cameo)
+			scale := .55 / resolution
+			if resolution > 1 {
+				textX, _ := dialogueTextLayout(panelX, panelWidth, true)
+				scale = math.Min(scale, math.Min((textX-28)/float64(texture.Bounds().Dx()), float64(panelBottom-panelTop-15)/float64(texture.Bounds().Dy())))
 			}
+			options := &ebiten.DrawImageOptions{}
+			options.GeoM.Scale(scale, scale)
+			options.GeoM.Translate(28, float64(panelTop+15))
+			a.drawImage(screen, texture, options)
+			cameoResolved = true
 		}
 	}
 	textX, textWidth := dialogueTextLayout(panelX, panelWidth, cameoResolved)
-	a.text(screen, a.wrapDialogue(line.text, textWidth, .45), textX, float64(panelTop+8), .45)
+	a.text(screen, a.wrapDialogue(text, textWidth, .45), textX, float64(panelTop+8), .45)
 }
 
 func dialogueTextLayout(panelX, panelWidth int, cameoResolved bool) (float64, float64) {
@@ -3787,6 +3853,17 @@ func (a *app) drawPlayControls(screen *ebiten.Image) {
 }
 
 func (a *app) drawGrenadeButton(screen *ebiten.Image) {
+	if a.play != nil {
+		if flight := a.play.pendingFlight(true); flight != nil {
+			// The new item is still flying to the button: it keeps showing what it showed before the pickup.
+			if flight.prevShown {
+				x, y, width, height := a.play.secondaryButtonGeometry()
+				a.drawControlButtonPlate(screen, x, y, width, height)
+				a.drawButtonReadout(screen, x, y, "Common0/Textures/Weapons_Secondary_SD", flight.prevCell, flight.prevCount)
+			}
+			return
+		}
+	}
 	if a.play == nil || a.play.grenades <= 0 {
 		return
 	}
@@ -3812,8 +3889,10 @@ func (a *app) drawStick(screen *ebiten.Image, name string, baseX, baseY, deflect
 	sx, sy := a.renderScale()
 	nubRadius := 32.0
 	if !a.mobile {
-		padRadius /= sx
-		nubRadius /= sx
+		// Desktop: the ring and nub are a size in screen pixels that grows gently with the window (padScale).
+		scale := a.play.padScale(float64(a.play.controlHeight))
+		padRadius *= scale / sx
+		nubRadius *= scale / sx
 	}
 	if image, err := a.Texture("Common0/Textures/Analog_Back_SD"); err == nil {
 		options := &ebiten.DrawImageOptions{Filter: ebiten.FilterNearest}
@@ -3981,6 +4060,7 @@ func (a *app) openPlay() error {
 	play.levelZombieTotal = levelZombieCount(level.Waves, a.mode == 1)
 	play.levelInfo = level.Info
 	play.trainSpec = a.loadTrainSpec()
+	play.mobileControls = a.mobile
 	play.configureControls(a.options.controls, a.outputWidth, a.outputHeight)
 	play.controlWidth, play.controlHeight, play.statistics = a.outputWidth, a.outputHeight, &a.statistics
 	play.secondaryControlSize, _ = a.variables.Vec2Value("HUD_SECOND_BUTTON_SIZE_VAR")
@@ -4327,6 +4407,10 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 				candidateX += zombiePushX
 				candidateY += zombiePushY
 			}
+			if sentryPushX, sentryPushY, sentryHit := p.sentryCollisionDisplacement(candidateX, candidateY, radius); sentryHit {
+				candidateX += sentryPushX
+				candidateY += sentryPushY
+			}
 			for resolve := 0; resolve < 4; resolve++ {
 				pushX, pushY, hit := p.playerTileDisplacement(candidateX, candidateY, radius, tileSize)
 				if !hit {
@@ -4353,6 +4437,21 @@ func (p *playState) stepBody(dx, dy float64, mobile, scriptFacingLocked, primary
 		}
 		p.x += pushX
 		p.y += pushY
+	}
+	if !(primary && p.scriptWalking) {
+		if pushX, pushY, hit := p.sentryCollisionDisplacement(p.x, p.y, radius); hit {
+			p.x += pushX
+			p.y += pushY
+			// The walls win over the sentry: a push into a wall is undone, so Barry is never forced out of bounds.
+			for resolve := 0; resolve < 4; resolve++ {
+				tileX, tileY, tileHit := p.playerTileDisplacement(p.x, p.y, radius, tileSize)
+				if !tileHit {
+					break
+				}
+				p.x += tileX
+				p.y += tileY
+			}
+		}
 	}
 	if pushX, pushY, hit := p.zombieCollisionDisplacement(p.x, p.y, radius); hit {
 		p.x += pushX
@@ -5479,6 +5578,9 @@ func muzzleTransform(dx, dy float64) (float64, float64, float64, bool) {
 		return 0, 0, 0, false
 	}
 	offset := barryMuzzleOffsets[column]
+	if portHandSwap && flipX && column == 0 {
+		offset.x = -offset.x // facing straight down and aimed left: the drawn gun is mirrored into the other hand
+	}
 	return offset.x, offset.y, math.Atan2(dy, dx), true
 }
 func (p *playState) projectileDirection(dx, dy, offsetX, offsetY float64) (float64, float64) {
@@ -5891,6 +5993,9 @@ func Run() {
 	waveGap := flag.Float64("wave-gap", 5, "seconds of pause between a cleared wave and the next one under the all-dead rule (port addition; 0 starts the next wave at once)")
 	sceneCarFix := flag.Bool("scene-car-fix", true, "show the passing car of the World1Level2 opening, which the original script creates off the map (port addition)")
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
+	pickupFlight := flag.Bool("pickup-flight", true, "a picked up special weapon or grenade icon flies to its button above the stick (port addition)")
+	handSwap := flag.Bool("hand-swap", true, "shots and the saw blade follow the gun when it swaps hands facing straight down (port addition)")
+	sentrySolid := flag.Bool("sentry-solid", true, "placed sentries are solid: Barry and the zombies cannot walk through them (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	discordID := flag.String("discord-app-id", discord.DefaultAppID, "Discord application id for Rich Presence (port addition)")
 	waveEnd := flag.String("wave-end", "all-dead", "wave end rule: all-dead (default: every spawner done and no zombie alive) or native (FUN_000bf120 as recovered: timer, and fewer than end_wave_zombies alive, so the next wave can start with some left)")
@@ -5905,6 +6010,9 @@ func Run() {
 	portSlowMo = *slowMotion
 	portZombieGunSound = *zombieGunSound
 	portMysteryMark = *mysteryMark
+	portPickupFlight = *pickupFlight
+	portSentrySolid = *sentrySolid
+	portHandSwap = *handSwap
 	portSceneCarFix = *sceneCarFix
 	portWaveBreather = math.Max(0, *waveGap)
 	survivalStoryGate = *survivalGate

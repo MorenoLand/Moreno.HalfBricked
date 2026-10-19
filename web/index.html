@@ -65,14 +65,46 @@ canvas{position:fixed;inset:0;display:block;width:100vw!important;height:100vh!i
     b.onclick = fn;
     bar.appendChild(b);
   }
+  // navigator.clipboard exists only on https or localhost (a page served over plain http from another machine has none),
+  // and a rejected write used to fail silently: so fall back to a hidden text area and execCommand("copy"), and say what
+  // happened on the button.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(() => true, () => false);
+    }
+    return Promise.resolve(false);
+  }
+  function copyFallback(text) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.cssText = "position:fixed;left:0;top:0;opacity:0";
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    area.remove();
+    return ok;
+  }
+  let copyButton;
   button("copy log", () => {
-    const text = events.map(e => (((e.at - t0) / 1000).toFixed(2) + "s  " + e.kind + "  " + e.ms.toFixed(0) + " ms  " + e.label)).join("\n");
-    navigator.clipboard && navigator.clipboard.writeText(text);
+    const lines = events.map(e => (((e.at - t0) / 1000).toFixed(2) + "s  " + e.kind + "  " + e.ms.toFixed(0) + " ms  " + e.label));
+    const text = head.textContent + "\n" + lines.join("\n");
+    copyText(text).then(ok => ok || copyFallback(text)).then(ok => {
+      copyButton.textContent = ok ? "copied!" : "copy failed";
+      setTimeout(() => { copyButton.textContent = "copy log"; }, 1500);
+    });
   });
+  copyButton = bar.lastChild;
   button("clear", () => { events.length = 0; });
-  button("hide", () => { panel.style.display = "none"; });
+  // Hiding leaves a small "perf" tab to bring the log back.
+  const tab = document.createElement("button");
+  tab.textContent = "perf";
+  tab.style.cssText = "position:fixed;left:8px;top:8px;z-index:99999;display:none;font:12px system-ui;padding:2px 8px;opacity:.8";
+  tab.onclick = () => { panel.style.display = ""; tab.style.display = "none"; };
+  button("hide", () => { panel.style.display = "none"; tab.style.display = ""; });
   panel.append(bar, head, body);
-  document.body.appendChild(panel);
+  document.body.append(panel, tab);
 
   function render() {
     const now = performance.now();

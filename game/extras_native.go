@@ -84,7 +84,7 @@ func (a *app) drawExtrasNative(screen *ebiten.Image) {
 	a.drawLobbyArt(screen, "Textures/HUD_GreenLine.tex", px+extraNatPanelW/2, py+37, 300, 3, false)
 
 	// Focus bar of the keyboard row.
-	if a.extraRow == extraRowFOV || a.extraRow == extraRowDiscord {
+	if a.extraRow == extraRowFOV || (a.extraRow == extraRowDiscord && discordAvailable()) {
 		centre := extraNatFOVY
 		if a.extraRow == extraRowDiscord {
 			centre = extraNatDiscordY
@@ -105,21 +105,23 @@ func (a *app) drawExtrasNative(screen *ebiten.Image) {
 	a.drawNativeNinePatchRect(screen, "Textures/HUD_ButtonNinePatch.tex", knobX-6, trackY-10, 12, 20, 0)
 	a.drawNativeSans(screen, fmt.Sprintf("%d", a.extras.fov()), extraNatValueX, trackY, 40, "", 13, 100, 228, 100, nativeTextStyle{bold: true, em: 1.2})
 
-	// Discord: an ON / OFF button.
-	label("DISCORD RPC", extraNatDiscordY)
-	toggle := extraNatToggleRect()
 	pointerX, pointerY := a.pointer()
-	hover := progress >= 1 && image.Pt(pointerX, pointerY).In(toggle)
-	brighten := float32(0)
-	if hover {
-		brighten = .25
+	if discordAvailable() { // the web build has no Discord option (discord_support.go)
+		// Discord: an ON / OFF button.
+		label("DISCORD RPC", extraNatDiscordY)
+		toggle := extraNatToggleRect()
+		hover := progress >= 1 && image.Pt(pointerX, pointerY).In(toggle)
+		brighten := float32(0)
+		if hover {
+			brighten = .25
+		}
+		a.drawNativeNinePatchRect(screen, "Textures/HUD_ButtonNinePatch.tex", float64(toggle.Min.X), float64(toggle.Min.Y)+dy, float64(toggle.Dx()), float64(toggle.Dy()), brighten)
+		state, r, g, b := "OFF", 150.0, 30.0, 30.0
+		if a.extras.DiscordRPC {
+			state, r, g, b = "ON", 10.0, 90.0, 10.0
+		}
+		a.drawNativeSans(screen, state, float64(toggle.Min.X)+float64(toggle.Dx())/2, float64(toggle.Min.Y)+float64(toggle.Dy())/2+dy, float64(toggle.Dx()), "", 12, r, g, b, nativeTextStyle{bold: true, em: 1.2})
 	}
-	a.drawNativeNinePatchRect(screen, "Textures/HUD_ButtonNinePatch.tex", float64(toggle.Min.X), float64(toggle.Min.Y)+dy, float64(toggle.Dx()), float64(toggle.Dy()), brighten)
-	state, r, g, b := "OFF", 150.0, 30.0, 30.0
-	if a.extras.DiscordRPC {
-		state, r, g, b = "ON", 10.0, 90.0, 10.0
-	}
-	a.drawNativeSans(screen, state, float64(toggle.Min.X)+float64(toggle.Dx())/2, float64(toggle.Min.Y)+float64(toggle.Dy())/2+dy, float64(toggle.Dx()), "", 12, r, g, b, nativeTextStyle{bold: true, em: 1.2})
 
 	a.drawNativeSans(screen, "FOV 90 is the original view.", px+extraNatPanelW/2, py+extraNatPanelH-18, extraNatPanelW-20, "", 10, 190, 190, 190, lobbyNatStepStyle)
 

@@ -134,9 +134,15 @@ func (a *app) updateExtras() error {
 	}
 	if uiKeyJustPressed(ebiten.KeyArrowUp) {
 		a.extraRow = (a.extraRow + extraRows - 1) % extraRows
+		if a.extraRow == extraRowDiscord && !discordAvailable() {
+			a.extraRow = (a.extraRow + extraRows - 1) % extraRows
+		}
 	}
 	if uiKeyJustPressed(ebiten.KeyArrowDown) {
 		a.extraRow = (a.extraRow + 1) % extraRows
+		if a.extraRow == extraRowDiscord && !discordAvailable() {
+			a.extraRow = (a.extraRow + 1) % extraRows
+		}
 	}
 	if a.extraRow == extraRowFOV {
 		if uiKeyJustPressed(ebiten.KeyArrowLeft) {
@@ -147,7 +153,7 @@ func (a *app) updateExtras() error {
 		}
 	}
 	activate := uiKeyJustPressed(ebiten.KeyEnter) || uiKeyJustPressed(ebiten.KeyKPEnter) || uiKeyJustPressed(ebiten.KeySpace)
-	if a.extraRow == extraRowDiscord && (activate || uiKeyJustPressed(ebiten.KeyArrowLeft) || uiKeyJustPressed(ebiten.KeyArrowRight)) {
+	if a.extraRow == extraRowDiscord && discordAvailable() && (activate || uiKeyJustPressed(ebiten.KeyArrowLeft) || uiKeyJustPressed(ebiten.KeyArrowRight)) {
 		a.extras.DiscordRPC = !a.extras.DiscordRPC
 	}
 	if a.extraRow == extraRowBack && activate {
@@ -162,6 +168,9 @@ func (a *app) updateExtras() error {
 	}
 	if pressed {
 		for row := 0; row < extraRows; row++ {
+			if row == extraRowDiscord && !discordAvailable() {
+				continue
+			}
 			if y >= a.extraRowTop(row)-4 && y <= a.extraRowTop(row)+extraRowHeight-4 {
 				a.extraRow = row
 				switch row {
@@ -215,12 +224,14 @@ func (a *app) drawExtras(screen *ebiten.Image) {
 	a.drawRect(screen, knob-4, y+3, 8, 18, color.RGBA{255, 255, 255, 255})
 	a.text(screen, fmt.Sprintf("%d", a.extras.fov()), extraValueX, y, .5)
 
-	row(extraRowDiscord, "DISCORD RPC")
-	state := "OFF"
-	if a.extras.DiscordRPC {
-		state = "ON"
+	if discordAvailable() {
+		row(extraRowDiscord, "DISCORD RPC")
+		state := "OFF"
+		if a.extras.DiscordRPC {
+			state = "ON"
+		}
+		a.text(screen, state, extraToggleX, extraRowY(extraRowDiscord), .5)
 	}
-	a.text(screen, state, extraToggleX, extraRowY(extraRowDiscord), .5)
 
 	row(extraRowBack, "BACK")
 	hint := strings.ToUpper("FOV 90 is the original view")

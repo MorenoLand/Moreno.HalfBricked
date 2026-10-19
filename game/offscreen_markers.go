@@ -351,6 +351,15 @@ func (a *app) drawPickupMarkers(screen *ebiten.Image) {
 			options.GeoM.Translate(g.iconX, g.iconY)
 			options.ColorScale.ScaleAlpha(float32(iconAlpha) / 255)
 			a.drawImage(screen, icon.SubImage(rect).(*ebiten.Image), options)
+		} else if portMysteryMark && e.mystery {
+			// PORT ADDITION (-mystery-mark): the crate itself is drawn as a "?" (random_box_mark.go), so its marker
+			// carries the "?" where the weapon icon would be.
+			iconAlpha := min(alpha*2, 0xff)
+			scale := g.iconSide / 22
+			width := a.fontTextWidth("?", scale)
+			if a.font != nil {
+				a.font.DrawScaledTintedAlpha(screen, "?", (g.iconX-width/2)*a.frontendScaleX, (g.iconY-11*scale)*a.frontendScaleY, scale*a.frontendScaleX, scale*a.frontendScaleY, 1, 1, 1, float32(iconAlpha)/255)
+			}
 		}
 	}
 }
@@ -368,11 +377,13 @@ func (a *app) pickupIconSource(e *scriptEntity) (*ebiten.Image, image.Rectangle,
 			return icon, icon.Bounds(), true
 		}
 	}
-	if pickupCrateTexture(e.texture) == "Common0/Textures/Special_Crate" || (e.mystery && portMysteryMark) {
+	if _, _, badge := specialCrateBadge(e.texture); portMysteryMark && badge && !e.mystery {
+		// the marker of a sentry / bazooka / cow pat crate shows the weapon too (random_box_mark.go)
+	} else if pickupCrateTexture(e.texture) == "Common0/Textures/Special_Crate" || (e.mystery && portMysteryMark) {
 		return nil, image.Rectangle{}, false
 	}
 	path, columns, col := commonSDTexture(e.texture), 1, 0
-	if binding, ok := weapons.PickupParityBinding(e.texture); ok {
+	if binding, ok := pickupBinding(e.texture); ok {
 		path, columns, col = "Common0/Textures/Weapons_Primary_SD", 8, binding.Cell
 		if binding.Secondary {
 			path = "Common0/Textures/Weapons_Secondary_SD"

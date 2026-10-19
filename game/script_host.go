@@ -1613,6 +1613,7 @@ func (p *playState) updateScriptWalk() {
 // updatePickups gives each pickup to the nearest living player within reach.
 func (p *playState) updatePickups() {
 	p.updateLifePopups(1.0 / 60.0)
+	p.updateItemFlights(1.0 / 60.0)
 	targets := p.livingPlayers()
 	if len(targets) == 0 {
 		targets = []playerTarget{{index: 0, x: p.x, y: p.y}}
@@ -1650,6 +1651,7 @@ func (p *playState) updatePickups() {
 			p.addLifePopup(entity.x, entity.y-entity.lift)
 		}
 		if targets[best].index == 0 {
+			p.addItemFlight(name, entity.x, entity.y-entity.lift)
 			p.collectPickup(name)
 		} else {
 			for _, c := range p.coop.players {
@@ -1975,7 +1977,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	if entity.kind == "pickup" {
 		columns, rows = 1, 1
-		if binding, ok := weapons.PickupParityBinding(entity.texture); ok {
+		if binding, ok := pickupBinding(entity.texture); ok {
 			texturePath, columns = "Common0/Textures/Weapons_Primary_SD", 8
 			if binding.Secondary {
 				texturePath = "Common0/Textures/Weapons_Secondary_SD"
@@ -2013,7 +2015,7 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 	}
 	if entity.kind == "pickup" {
 		col, frame = 0, 0
-		if binding, ok := weapons.PickupParityBinding(entity.texture); ok {
+		if binding, ok := pickupBinding(entity.texture); ok {
 			col = binding.Cell
 		}
 		if cell, ok := pickupPrimaryCell(entity.texture); ok {
@@ -2071,7 +2073,9 @@ func (a *app) drawScriptEntity(screen *ebiten.Image, entity *scriptEntity) {
 			return
 		}
 		if pickupCrateTexture(entity.texture) == "Common0/Textures/Special_Crate" {
-			// Mystery crates show their own "?" and no weapon icon.
+			// Mystery crates show their own "?"; the sentry, bazooka and cow pat crates get a small weapon badge on it
+			// (random_box_mark.go).
+			a.drawSpecialCrateBadge(screen, entity, screenX, screenY, zoom)
 			return
 		}
 	}

@@ -104,6 +104,21 @@ type Pickup struct {
 	Lift    float64
 }
 
+// Actor is a scripted cutscene entity (a character created by the level script).
+type Actor struct {
+	ID             int
+	X, Y, Rot      float64
+	ScaleX, ScaleY float64
+	Alpha          float64
+	Texture        string
+	FlipX, FlipY   bool `json:",omitempty"`
+	Sized          bool `json:",omitempty"`
+	RotSet         bool `json:",omitempty"`
+	Screen, Feet   bool `json:",omitempty"`
+	Angle          int
+	Anim, Frame    int
+}
+
 type Snapshot struct {
 	Seq        uint32
 	Time       float64
@@ -138,6 +153,15 @@ type Snapshot struct {
 	HudFlash   float64
 	HudColor   [3]float64
 
+	// Actors are the scripted cutscene characters, so the guest sees the scene the host's script is playing.
+	Actors []Actor `json:",omitempty"`
+
+	// Paused is set while the host has the game paused: the world is frozen, so the guest shows a notice.
+	Paused bool `json:",omitempty"`
+
+	// Say is the line of cutscene dialogue on the host's screen right now; the guest draws it and the host alone skips it.
+	Say *Say `json:",omitempty"`
+
 	// Played are the one-shot sounds the host started since the last snapshot (so the guest hears the same game).
 	Played []Play `json:",omitempty"`
 
@@ -147,6 +171,12 @@ type Snapshot struct {
 	RobotFlyers  []RobotShot `json:",omitempty"`
 	RobotRockets []RobotShot `json:",omitempty"`
 	RobotBeams   []RobotShot `json:",omitempty"`
+}
+
+// Say is one spoken line: its text and the cameo (portrait) texture path, empty for none.
+type Say struct {
+	T string
+	C string `json:",omitempty"`
 }
 
 // Play is one sound the host started.
