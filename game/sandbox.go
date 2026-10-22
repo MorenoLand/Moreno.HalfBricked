@@ -183,7 +183,7 @@ func (a *app) sandboxItems() []sandboxItem {
 		}),
 		action("CLEAR MINES+SENTRIES", func(p *playState) { p.mines, p.sentries = nil, nil }),
 		action("RESTOCK AMMO", func(p *playState) { p.restockAmmo() }),
-		action("SPAWN TRAIN", func(p *playState) { p.spawnTrain() }),
+		action("SPAWN TRAIN", func(p *playState) { p.spawnTrainWith(true) }),
 	}
 }
 

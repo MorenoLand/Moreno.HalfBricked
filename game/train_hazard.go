@@ -157,6 +157,7 @@ type trainHazard struct {
 	countdown                    float64
 	active                       bool
 	collisionOff                 bool // native +0xa5, cleared the first frame the scene state is not 1
+	wholeSprite                  bool // PORT ADDITION: F1 sandbox train only; the whole sprite hurts, not just the native lower band
 	whistleThreshold             float64
 	whistleArmed                 bool
 	animTimer                    float64
@@ -175,7 +176,10 @@ func (s trainSpec) box() (left, top, right, bottom float64) {
 
 // spawnTrain handles the "train" spawn type. The original creates the entity
 // from the wave data; its position, timing and speed come from the XML record.
-func (p *playState) spawnTrain() {
+func (p *playState) spawnTrain() { p.spawnTrainWith(false) }
+
+// spawnTrainWith is spawnTrain; wholeSprite is the sandbox-only port addition.
+func (p *playState) spawnTrainWith(wholeSprite bool) {
 	if p.train != nil {
 		return
 	}
@@ -183,7 +187,7 @@ func (p *playState) spawnTrain() {
 	if spec.Speed == 0 {
 		spec = defaultTrainSpec()
 	}
-	p.train = &trainHazard{spec: spec, x: spec.StartX, y: spec.StartY, countdown: spec.StartTime, whistleThreshold: trainWhistleOne, whistleArmed: true}
+	p.train = &trainHazard{spec: spec, x: spec.StartX, y: spec.StartY, countdown: spec.StartTime, whistleThreshold: trainWhistleOne, whistleArmed: true, wholeSprite: wholeSprite}
 }
 
 // updateTrain advances the hazard one 60 Hz frame. It runs inside
@@ -292,6 +296,10 @@ func (t *trainHazard) updateSounds(p *playState, dt float64) {
 
 func inTrainBox(t *trainHazard, x, y float64) bool {
 	l, top, r, b := t.spec.box()
+	if t.wholeSprite { // PORT ADDITION (sandbox spawn only): the full visible sprite, centred on the train
+		halfW, halfH := trainSpriteW*t.spec.ScaleX/2, trainSpriteH*t.spec.ScaleY/2
+		l, r, top, b = -halfW, halfW, -halfH, halfH
+	}
 	return x >= t.x+l && x <= t.x+r && y >= t.y+top && y <= t.y+b
 }
 
