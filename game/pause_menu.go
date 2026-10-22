@@ -80,6 +80,7 @@ func (a *app) quitToMenu() error {
 	a.play.closeScript()
 	a.play, a.page = nil, 0
 	a.setMenuMusic()
+	a.editorReturnFromTest() // a level started from the editor goes back to it
 	return a.savePlayerProfile()
 }
 func (a *app) updatePauseMenu() error {

@@ -48,6 +48,24 @@ type Level struct {
 	AnimatedProps []AnimatedProp         `json:"animatedProps"`
 	Waves         []Wave                 `json:"waves"`
 	WaveBuild     string                 `json:"-"`
+	// Port additions, written only by levels made in the level editor (the original levels never have them).
+	Intro   []IntroLine   `json:"intro,omitempty"`
+	Pickups []LevelPickup `json:"pickups,omitempty"`
+}
+
+// IntroLine is one line of the conversation a custom level opens with. Cameo is a portrait texture name ("" for none).
+type IntroLine struct {
+	Cameo string `json:"cameo,omitempty"`
+	Text  string `json:"text"`
+}
+
+// LevelPickup is a crate a custom level puts down at a fixed place: when the level starts (Wave 0 or 1) or when the given
+// wave (counting from 1) begins.
+type LevelPickup struct {
+	Name string  `json:"name"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Wave int     `json:"wave,omitempty"`
 }
 
 type Wave struct {

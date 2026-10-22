@@ -67,6 +67,8 @@ type app struct {
 	extraDrag                                    bool
 	discord                                      discord.RPC
 	discordClock                                 int
+	editor                                       *levelEditor // the level editor (leveledit.go), opened with F4
+	customLevels                                 map[string]bool // ids of the levels from the custom folder or the editor (leveledit_share.go)
 	statistics                                   stats.StatsData
 	statsScreen                                  *statsMenu
 	resultsScreen                                *resultsMenu
@@ -241,8 +243,9 @@ type zombieState struct {
 }
 
 type dialogueLine struct {
-	text  string
-	cameo int
+	text     string
+	cameo    int
+	cameoTex string // a portrait named directly (the level editor's intro); the script cameos use the index
 }
 
 // cardClick remembers the last level card click so a second one can play it.
@@ -438,6 +441,7 @@ type playState struct {
 	hudVisible                      bool
 	dialogue                        []dialogueLine
 	dialogueIndex                   int
+	introHold                       bool // a custom level's intro is on screen: the waves wait
 	dialogueAge                     float64
 }
 
@@ -511,6 +515,7 @@ func newApp(root string, debug, mobile, silent bool) (*app, error) {
 		sound = engine.NewSoundSystem(pack)
 	}
 	game := &app{pack: pack, levels: pack.List(), variables: pack.Variables(), debug: debug, mobile: mobile || engine.IsMobileDevice(), silent: silent, titleScreen: true, menuSelection: 1, options: newOptionsMenu(!silent, !silent), weapon: weapon, weapons: weapons, zombieWeapons: zombieWeapons, sprites: sprites, unlocked: initialUnlocks(pack.List()), sound: sound, images: map[string]*ebiten.Image{}, sources: map[string]image.Image{}, startupFrames: 45, frontendScaleX: 1, frontendScaleY: 1, debugPanelX: 8, debugPanelY: 8}
+	game.loadCustomLevels()
 	if sound != nil {
 		sound.OnPlay = game.forwardSoundToGuests
 	}
@@ -671,6 +676,13 @@ func (a *app) Update() error {
 	if a.debugPanelVisible && a.updateDebugPanel() {
 		return nil
 	}
+	returned := a.editor != nil && a.editor.testing && a.editorTestStep() // F4, or any way out of the level, goes back to the editor
+	if uiKeyJustPressed(ebiten.KeyF4) && !returned {
+		a.toggleEditor()
+	}
+	if a.editor != nil && a.editor.open {
+		return a.updateEditor()
+	}
 	if a.netHosting() && a.play != nil && a.play.paused && !a.net.lobby {
 		a.netHostSend() // a paused host keeps the guests informed (the snapshot says Paused)
 	}
@@ -820,8 +832,8 @@ func (a *app) Update() error {
 					a.play.dialogueAge = 0
 				}
 			}
-			if a.play.scriptRuntime == nil || a.play.scriptRuntime.Done() {
-				a.play.updateWaves()
+			if (a.play.scriptRuntime == nil || a.play.scriptRuntime.Done()) && !a.play.introHold {
+				a.play.updateWaves() // a level's own intro conversation holds the waves back until it is read
 			}
 			a.play.updateZombies()
 			if a.play.updatePlayerDeath() {
@@ -1201,7 +1213,9 @@ func (a *app) Draw(screen *ebiten.Image) {
 	} else {
 		screen.Fill(colorDark)
 	}
-	if a.net != nil && a.net.lobby {
+	if a.editor != nil && a.editor.open {
+		a.drawEditor(screen)
+	} else if a.net != nil && a.net.lobby {
 		a.drawNetLobby(screen)
 	} else if a.startupFrames > 0 {
 		a.drawStartup(screen)
@@ -1809,6 +1823,8 @@ func (a *app) setCaptureState(state string) error {
 		a.play.waveIndex = len(a.play.world.Level.Waves)
 		a.play.spawnPickup("p_grenade", formats.Vec2{X: a.play.x + 64, Y: a.play.y})
 		return nil
+	case "editor", "editor-list", "editor-props", "editor-collision", "editor-test", "editor-help", "editor-waves", "editor-tilesets", "editor-new", "editor-details", "editor-testplay", "editor-problems", "editor-testopts", "editor-minimap", "editor-pickups", "editor-select", "editor-proplib", "editor-shortcuts", "editor-filemenu", "editor-history":
+		return a.editorCapture(strings.ToLower(normalized))
 	case "play-pickup-special":
 		a.titleScreen, a.page, a.world, a.mode, a.level = false, 2, 0, 1, 0
 		if err := a.openPlay(); err != nil {
@@ -2957,6 +2973,7 @@ func (a *app) drawPlay(screen *ebiten.Image) {
 	} else if a.netGuest() && a.play.hostPaused {
 		a.drawHostPausedNotice(screen)
 	}
+	a.drawEditorTestHint(screen)
 	a.drawSandbox(screen)
 	a.drawDebugPanel(screen)
 }
@@ -3100,8 +3117,8 @@ func (a *app) drawDialogue(screen *ebiten.Image) {
 		return
 	}
 	line := a.play.dialogue[a.play.dialogueIndex]
-	cameo := ""
-	if line.cameo >= 0 {
+	cameo := line.cameoTex
+	if cameo == "" && line.cameo >= 0 {
 		cameo = a.dialogueCameo(line.cameo)
 	}
 	a.drawDialogueLine(screen, line.text, cameo)
@@ -3113,8 +3130,8 @@ func (a *app) currentSay() *netwire.Say {
 		return nil
 	}
 	line := a.play.dialogue[a.play.dialogueIndex]
-	say := &netwire.Say{T: line.text}
-	if line.cameo >= 0 {
+	say := &netwire.Say{T: line.text, C: line.cameoTex}
+	if say.C == "" && line.cameo >= 0 {
 		say.C = a.dialogueCameo(line.cameo)
 	}
 	return say
@@ -4067,6 +4084,14 @@ func (a *app) openPlay() error {
 	play.secondaryDensity = a.pack.TextureSourceScale("Common0/Textures/SecondaryButton_SD")
 	play.mobileControls = a.mobile
 	play.statsPositionX, play.statsPositionY = spawnX, spawnY
+	if len(level.Intro) > 0 && !a.netGuest() {
+		// A level made in the editor can open with a conversation (the level editor's intro); the waves wait for it.
+		for _, line := range level.Intro {
+			play.dialogue = append(play.dialogue, dialogueLine{text: line.Text, cameo: -1, cameoTex: cameoTexture(line.Cameo)})
+		}
+		play.dialogueIndex, play.introHold = 0, true
+	}
+	play.spawnLevelPickups(0)
 	if a.mode == 0 && !a.netGuest() {
 		source, err := a.pack.ScriptSource(entryScriptPath(level.Info))
 		switch {
@@ -4745,6 +4770,7 @@ func (p *playState) updateWaves() {
 			p.waveIndex = next
 			p.waveElapsed = 0
 			p.waveSpawned = nil
+			p.spawnLevelPickups(next + 1) // crates a custom level places for this wave
 			if waveEndRule == waveEndAllDead && portWaveBreather > 0 && !p.waveTailEmpty(next) {
 				// The complete line already showed during the rest: only the new wave's title comes now.
 				p.bannerSeen = p.waveIndex
@@ -5995,6 +6021,7 @@ func Run() {
 	mysteryMark := flag.Bool("mystery-mark", true, "random crates show a ? and a +1 flies to the life counter on an extra life (port addition)")
 	pickupFlight := flag.Bool("pickup-flight", true, "a picked up special weapon or grenade icon flies to its button above the stick (port addition)")
 	handSwap := flag.Bool("hand-swap", true, "shots and the saw blade follow the gun when it swaps hands facing straight down (port addition)")
+	levelEditor := flag.Bool("level-editor", true, "F4 opens the level editor (port addition)")
 	sentrySolid := flag.Bool("sentry-solid", true, "placed sentries are solid: Barry and the zombies cannot walk through them (port addition)")
 	zombieGunSound := flag.Bool("zombie-gun-sound", true, "armed zombies fire with a gun sound (port addition; the original is silent)")
 	discordID := flag.String("discord-app-id", discord.DefaultAppID, "Discord application id for Rich Presence (port addition)")
@@ -6012,6 +6039,7 @@ func Run() {
 	portMysteryMark = *mysteryMark
 	portPickupFlight = *pickupFlight
 	portSentrySolid = *sentrySolid
+	portLevelEditor = *levelEditor
 	portHandSwap = *handSwap
 	portSceneCarFix = *sceneCarFix
 	portWaveBreather = math.Max(0, *waveGap)
