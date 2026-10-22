@@ -1104,7 +1104,7 @@ func (a *app) updateEditorList() error {
 			e.listRow = max(0, e.listRow-10)
 		}
 		if _, wheel := ebiten.Wheel(); wheel != 0 {
-			e.listTop = max(0, min(max(0, len(levels)-editorListVisible), e.listTop-int(math.Round(wheel*3))))
+			e.listTop = max(0, min(max(0, len(levels)-editorListVisible), e.listTop-wheelStep(wheel, 3)))
 		}
 	}
 	if e.listRow < e.listTop {

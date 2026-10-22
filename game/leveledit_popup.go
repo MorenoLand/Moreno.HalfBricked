@@ -62,7 +62,7 @@ func (a *app) updatePopup(px, py float64) {
 		return
 	}
 	if _, wheel := ebiten.Wheel(); wheel != 0 {
-		p.top = max(0, min(max(0, len(p.items)-p.maxRows), p.top-int(wheel*2)))
+		p.top = max(0, min(max(0, len(p.items)-p.maxRows), p.top-wheelStep(wheel, 2)))
 	}
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		return

@@ -148,7 +148,7 @@ func (a *app) updatePropLibrary(px, py float64) {
 	}
 	const rows = 19
 	if _, wheel := ebiten.Wheel(); wheel != 0 {
-		e.libTop = max(0, min(max(0, len(list)-rows), e.libTop-int(wheel*3)))
+		e.libTop = max(0, min(max(0, len(list)-rows), e.libTop-wheelStep(wheel, 3)))
 	}
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		return

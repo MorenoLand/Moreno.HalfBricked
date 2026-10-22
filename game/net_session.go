@@ -96,6 +96,7 @@ func (a *app) netGuest() bool   { return a.net != nil && !a.net.isHost }
 func (a *app) startNetHost() {
 	n := &netSession{isHost: true, lobby: true}
 	a.net = n
+	a.playSound("audio/sound/sfx/menu_transition_in.ogg", .7) // the host page slides in like the other menus
 	a.requestHostCode()
 }
 
@@ -111,10 +112,12 @@ func (a *app) requestHostCode() {
 
 func (a *app) startNetJoin() {
 	a.net = &netSession{lobby: true}
+	a.playSound("audio/sound/sfx/menu_transition_in.ogg", .7)
 }
 
 // leaveLobbyAnimated leaves the host / join page after its slide-out (the HD lobby; the legacy one leaves at once).
 func (a *app) leaveLobbyAnimated() {
+	a.playSound("audio/sound/sfx/menu_transition_out.ogg", .7) // at the press, like the other menus
 	_ = a.closeMenuAnimated("netlobby", func() error {
 		a.leaveNet("cancelled")
 		return nil

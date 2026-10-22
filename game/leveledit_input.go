@@ -341,7 +341,7 @@ func (a *app) updateEditor() error {
 	overStrip := px < editorToolStrip
 	if _, wheel := ebiten.Wheel(); wheel != 0 && px < editorPanelX && !overStrip {
 		worldX, worldY := e.mouseWorld(px, py)
-		v.Zoom = math.Max(.1, math.Min(4, v.Zoom*(1+wheel*.12)))
+		v.Zoom = math.Max(.1, math.Min(4, v.Zoom*math.Pow(1.18, math.Max(-3, math.Min(3, wheel))))) // one notch is one step, whatever size the wheel reports (browsers report big values)
 		v.CameraX = worldX - (px/2-v.ViewportX)/v.Zoom
 		v.CameraY = worldY - (py/2-v.ViewportY)/v.Zoom
 	}

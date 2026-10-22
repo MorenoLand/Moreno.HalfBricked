@@ -95,6 +95,9 @@ func (a *app) updateLobbyMouse() error {
 		if !button.enabled || !image.Pt(x, y).In(button.rect) {
 			continue
 		}
+		if button.action != "back" {
+			a.playSound("audio/sound/sfx/menu_select.ogg", .8) // the back button has its own sound (leaveLobbyAnimated)
+		}
 		switch button.action {
 		case "copy":
 			platform.ClipboardWrite(n.ownCode())

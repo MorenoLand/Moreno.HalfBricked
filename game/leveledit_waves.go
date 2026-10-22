@@ -573,7 +573,7 @@ func (a *app) updateWaves(px, py float64) {
 		}
 	}
 	if _, wheel := ebiten.Wheel(); wheel != 0 {
-		step := -int(math.Round(wheel * 2))
+		step := -wheelStep(wheel, 2)
 		switch {
 		case px < waveColB-8:
 			e.waveTop += step

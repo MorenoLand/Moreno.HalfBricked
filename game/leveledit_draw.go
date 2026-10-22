@@ -142,3 +142,15 @@ func (a *app) vWrap(value string, width, size float64) []string {
 	}
 	return lines
 }
+
+// wheelStep turns a mouse wheel report into a fixed number of rows (browsers report much larger wheel values than a
+// desktop does, which used to jump a list to its end).
+func wheelStep(wheel float64, rows int) int {
+	switch {
+	case wheel > 0:
+		return rows
+	case wheel < 0:
+		return -rows
+	}
+	return 0
+}
